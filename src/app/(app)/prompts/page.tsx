@@ -641,7 +641,7 @@ export default function PromptsPage() {
     }
 
     return (
-      <Card className="flex-1 flex flex-col shadow-lg min-h-0"> {}
+      <Card className="flex-1 flex flex-col shadow-lg min-h-0">
         <CardHeader className="border-b">
           <div className="flex justify-between items-start">
             <div>
@@ -672,7 +672,7 @@ export default function PromptsPage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 p-0 flex min-h-0"> {}
+        <CardContent className="flex-1 p-0 flex min-h-0">
           <div className="flex-1 p-4 flex flex-col">
             <Label htmlFor="prompt-template-area" className="mb-2 font-medium">
               Prompt Template (Version {selectedVersion?.versionNumber || 'N/A'})
@@ -713,7 +713,7 @@ export default function PromptsPage() {
                           <span className="text-sm font-medium truncate min-w-0" title={param.name}>{param.name}</span>
                         </div>
                         <Button onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
-                          Insert Variable
+                          Insert
                         </Button>
                         <p className="text-xs text-muted-foreground truncate min-w-0" title={param.description}>{param.description}</p>
                       </Card>
@@ -737,7 +737,7 @@ export default function PromptsPage() {
                           <span className="text-sm font-medium truncate min-w-0" title={param.name}>{param.name}</span>
                         </div>
                         <Button onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
-                          Insert Details
+                          Insert
                         </Button>
                         <p className="text-xs text-muted-foreground truncate min-w-0" title={param.definition}>{param.definition}</p>
                       </Card>
@@ -762,7 +762,7 @@ export default function PromptsPage() {
 
 
   return (
-    <div className="flex h-[calc(100vh-theme(spacing.28))] gap-6"> {}
+    <div className="flex h-[calc(100vh-theme(spacing.28))] gap-6">
       <Card className="w-1/4 min-w-[300px] flex flex-col shadow-lg">
         <CardHeader className="border-b">
           <CardTitle>Prompt Templates</CardTitle>
@@ -808,3 +808,4 @@ export default function PromptsPage() {
     </div>
   );
 }
+

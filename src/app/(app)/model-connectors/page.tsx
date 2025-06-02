@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,24 +9,56 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, PlugZap, Eye, EyeOff } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, PlugZap, Eye, EyeOff, AlertTriangle, Loader2 } from "lucide-react";
 import { Textarea } from '@/components/ui/textarea';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp, type FieldValue } from 'firebase/firestore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from '@/hooks/use-toast';
 
 interface ModelConnector {
-  id: string;
+  id: string; // Firestore document ID
   name: string;
   provider: 'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Other';
   apiKey: string;
   config: string; // JSON string for other configurations
+  createdAt?: Timestamp;
 }
 
-const initialConnectors: ModelConnector[] = [
-  { id: '1', name: 'OpenAI GPT-4 Prod', provider: 'OpenAI', apiKey: 'sk-******************', config: '{ "model": "gpt-4-turbo" }' },
-  { id: '2', name: 'Vertex Gemini Staging', provider: 'Vertex AI', apiKey: 'vertex-******************', config: '{ "model": "gemini-1.5-pro" }' },
-];
+type ModelConnectorCreationPayload = Omit<ModelConnector, 'id' | 'createdAt'> & { createdAt: FieldValue };
+type ModelConnectorUpdatePayload = Partial<Omit<ModelConnector, 'id' | 'createdAt'>> & { id: string };
+
+
+const fetchModelConnectors = async (userId: string | null): Promise<ModelConnector[]> => {
+  if (!userId) return [];
+  const connectorsCollection = collection(db, 'users', userId, 'modelConnectors');
+  const q = query(connectorsCollection, orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ModelConnector));
+};
 
 export default function ModelConnectorsPage() {
-  const [connectors, setConnectors] = useState<ModelConnector[]>(initialConnectors);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isLoadingUserId, setIsLoadingUserId] = useState(true);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('currentUserId');
+    if (storedUserId && storedUserId.trim() !== "") {
+      setCurrentUserId(storedUserId.trim());
+    } else {
+      setCurrentUserId(null);
+    }
+    setIsLoadingUserId(false);
+  }, []);
+  
+  const { data: connectors = [], isLoading: isLoadingConnectors, error: fetchConnectorsError } = useQuery<ModelConnector[], Error>({
+    queryKey: ['modelConnectors', currentUserId],
+    queryFn: () => fetchModelConnectors(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
+  });
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingConnector, setEditingConnector] = useState<ModelConnector | null>(null);
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
@@ -35,23 +68,79 @@ export default function ModelConnectorsPage() {
   const [apiKey, setApiKey] = useState('');
   const [config, setConfig] = useState('');
 
+
+  const addConnectorMutation = useMutation<void, Error, ModelConnectorCreationPayload>({
+    mutationFn: async (newConnectorData) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      await addDoc(collection(db, 'users', currentUserId, 'modelConnectors'), newConnectorData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
+      toast({ title: "Success", description: "Model connector added." });
+      resetForm();
+      setIsDialogOpen(false);
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to add connector: ${error.message}`, variant: "destructive" });
+    }
+  });
+
+  const updateConnectorMutation = useMutation<void, Error, ModelConnectorUpdatePayload>({
+    mutationFn: async (connectorToUpdate) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      const { id, ...dataToUpdate } = connectorToUpdate;
+      const docRef = doc(db, 'users', currentUserId, 'modelConnectors', id);
+      await updateDoc(docRef, dataToUpdate);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
+      toast({ title: "Success", description: "Model connector updated." });
+      resetForm();
+      setIsDialogOpen(false);
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to update connector: ${error.message}`, variant: "destructive" });
+    }
+  });
+  
+  const deleteConnectorMutation = useMutation<void, Error, string>({
+    mutationFn: async (connectorIdToDelete) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      await deleteDoc(doc(db, 'users', currentUserId, 'modelConnectors', connectorIdToDelete));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
+      toast({ title: "Success", description: "Model connector deleted." });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to delete connector: ${error.message}`, variant: "destructive" });
+    }
+  });
+
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const newConnector: ModelConnector = {
-      id: editingConnector ? editingConnector.id : Date.now().toString(),
-      name: connectorName,
+    if (!currentUserId) {
+        toast({title: "Error", description: "User not identified.", variant: "destructive"});
+        return;
+    }
+    if (!connectorName.trim() || !apiKey.trim()) {
+        toast({title: "Validation Error", description: "Connector Name and API Key are required.", variant: "destructive"});
+        return;
+    }
+
+    const connectorData = {
+      name: connectorName.trim(),
       provider,
-      apiKey,
-      config,
+      apiKey: apiKey.trim(), // Storing API key directly; ensure security measures if used client-side.
+      config: config.trim(),
     };
 
     if (editingConnector) {
-      setConnectors(connectors.map(c => c.id === editingConnector.id ? newConnector : c));
+      updateConnectorMutation.mutate({ ...connectorData, id: editingConnector.id });
     } else {
-      setConnectors([...connectors, newConnector]);
+      addConnectorMutation.mutate({ ...connectorData, createdAt: serverTimestamp() });
     }
-    resetForm();
-    setIsDialogOpen(false);
   };
 
   const resetForm = () => {
@@ -66,18 +155,52 @@ export default function ModelConnectorsPage() {
     setEditingConnector(connector);
     setConnectorName(connector.name);
     setProvider(connector.provider);
-    setApiKey(connector.apiKey); // In a real app, you might not re-populate the API key for editing for security.
+    setApiKey(connector.apiKey); 
     setConfig(connector.config);
     setIsDialogOpen(true);
   };
 
   const handleDelete = (id: string) => {
-    setConnectors(connectors.filter(c => c.id !== id));
+     if (!currentUserId) {
+        toast({title: "Error", description: "User not identified.", variant: "destructive"});
+        return;
+    }
+    if (confirm('Are you sure you want to delete this model connector?')) {
+        deleteConnectorMutation.mutate(id);
+    }
   };
   
   const toggleApiKeyVisibility = (id: string) => {
     setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
   };
+
+  const handleOpenNewDialog = () => {
+    if (!currentUserId) {
+      toast({title: "Login Required", description: "Please log in to add connectors.", variant: "destructive"});
+      return;
+    }
+    resetForm();
+    setIsDialogOpen(true);
+  }
+
+  if (isLoadingUserId || (isLoadingConnectors && currentUserId)) {
+    return (
+      <div className="space-y-6">
+        <Card className="shadow-lg"><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-52" /></CardContent></Card>
+        <Card><CardHeader><Skeleton className="h-8 w-1/2" /></CardHeader><CardContent><Skeleton className="h-24 w-full" /></CardContent></Card>
+      </div>
+    );
+  }
+
+  if (fetchConnectorsError) {
+    return (
+        <Card className="shadow-lg">
+            <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle></CardHeader>
+            <CardContent><p>{fetchConnectorsError.message}</p></CardContent>
+        </Card>
+    );
+  }
+
 
   return (
     <div className="space-y-6">
@@ -87,14 +210,14 @@ export default function ModelConnectorsPage() {
             <PlugZap className="h-7 w-7 text-primary" />
             <div>
               <CardTitle className="text-2xl font-headline">Model Connectors</CardTitle>
-              <CardDescription>Manage your Judge LLM connections. API keys and configurations are stored securely (conceptually for this UI).</CardDescription>
+              <CardDescription>Manage your Judge LLM connections. API keys and configurations are stored in Firestore.</CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={() => { setEditingConnector(null); resetForm(); setIsDialogOpen(true); }}>
+              <Button onClick={handleOpenNewDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending}>
                 <PlusCircle className="mr-2 h-5 w-5" /> Add New Connector
               </Button>
             </DialogTrigger>
@@ -103,12 +226,13 @@ export default function ModelConnectorsPage() {
                 <DialogTitle>{editingConnector ? 'Edit' : 'Add New'} Model Connector</DialogTitle>
                 <DialogDescription>
                   Configure a connection to a Judge LLM provider.
+                  <br/><span className="text-xs text-amber-600">API keys are sensitive. Ensure your Firestore rules are secure.</span>
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 py-4">
                 <div>
                   <Label htmlFor="conn-name">Connector Name</Label>
-                  <Input id="conn-name" value={connectorName} onChange={(e) => setConnectorName(e.target.value)} placeholder="e.g., OpenAI Prod Key" required />
+                  <Input id="conn-name" value={connectorName} onChange={(e) => setConnectorName(e.target.value)} placeholder="e.g., My Gemini Pro" required />
                 </div>
                 <div>
                   <Label htmlFor="conn-provider">LLM Provider</Label>
@@ -118,7 +242,7 @@ export default function ModelConnectorsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="OpenAI">OpenAI</SelectItem>
-                      <SelectItem value="Vertex AI">Vertex AI</SelectItem>
+                      <SelectItem value="Vertex AI">Vertex AI (Gemini)</SelectItem>
                       <SelectItem value="Azure OpenAI">Azure OpenAI</SelectItem>
                       <SelectItem value="Local LLM">Local LLM</SelectItem>
                       <SelectItem value="Other">Other</SelectItem>
@@ -131,11 +255,15 @@ export default function ModelConnectorsPage() {
                 </div>
                 <div>
                   <Label htmlFor="conn-config">Additional Configuration (JSON)</Label>
-                  <Textarea id="conn-config" value={config} onChange={(e) => setConfig(e.target.value)} placeholder='e.g., { "model": "gpt-4", "temperature": 0.7 }' rows={3} />
+                  <Textarea id="conn-config" value={config} onChange={(e) => setConfig(e.target.value)} placeholder='e.g., { "model": "gemini-1.5-pro", "temperature": 0.7 }' rows={3} />
+                   <p className="text-xs text-muted-foreground mt-1">For Vertex AI (Gemini), you might put model name here like: <code className="bg-muted p-0.5 rounded-sm">{'{ "model": "gemini-1.5-pro-latest" }'}</code></p>
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
-                  <Button type="submit">{editingConnector ? 'Save Changes' : 'Add Connector'}</Button>
+                  <Button type="submit" disabled={addConnectorMutation.isPending || updateConnectorMutation.isPending || !currentUserId}>
+                     {(addConnectorMutation.isPending || updateConnectorMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {editingConnector ? 'Save Changes' : 'Add Connector'}
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -146,11 +274,14 @@ export default function ModelConnectorsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Saved Connectors</CardTitle>
-          <CardDescription>Your configured Judge LLM connections.</CardDescription>
+          <CardDescription>Your configured Judge LLM connections. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription>
         </CardHeader>
         <CardContent>
-          {connectors.length === 0 ? (
+          {!currentUserId && !isLoadingUserId ? (
+             <div className="text-center text-muted-foreground py-8"><p>Please log in to manage model connectors.</p></div>
+          ) : connectors.length === 0 && !isLoadingConnectors ? (
              <div className="text-center text-muted-foreground py-8">
+              <PlugZap className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <p>No model connectors configured yet.</p>
               <p className="text-sm">Click "Add New Connector" to get started.</p>
             </div>
@@ -178,12 +309,12 @@ export default function ModelConnectorsPage() {
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{conn.config || 'N/A'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate" title={conn.config}>{conn.config || 'N/A'}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} className="mr-2">
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} className="mr-2" disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
                         <Edit2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90">
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90" disabled={!currentUserId || deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
@@ -197,3 +328,4 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
+
