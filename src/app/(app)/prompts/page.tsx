@@ -95,7 +95,6 @@ const fetchEvaluationParametersForPrompts = async (userId: string | null): Promi
   if (!userId) return [];
   try {
     const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
-    // Assuming 'createdAt' field exists for ordering. If not, adjust or remove orderBy.
     const q = query(evalParamsCollectionRef, orderBy('createdAt', 'asc'));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(docSnap => {
@@ -224,7 +223,7 @@ export default function PromptsPage() {
 
 
   useEffect(() => {
-    if (!currentUserId || isLoadingPrompts || fetchPromptsError) return;
+    if (!currentUserId || isLoadingPrompts || fetchPromptsError || !promptsData) return;
 
     if (promptsData && promptsData.length > 0) {
       if (!selectedPromptId || !promptsData.find(p => p.id === selectedPromptId)) {
@@ -698,61 +697,59 @@ export default function PromptsPage() {
             />
           </div>
           <div className="w-1/3 min-w-[300px] border-l p-4 bg-muted/20 flex flex-col">
-            <div className="flex-grow overflow-hidden">
-              <ScrollArea className="h-full">
-                <div>
-                  <h3 className="text-md font-semibold mb-3">Product Parameters</h3>
-                  {isLoadingProdParams ? <Skeleton className="h-20 w-full" /> :
-                  fetchProdParamsError ? <p className="text-xs text-destructive">Error loading product parameters.</p> :
-                  productParameters.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No product parameters defined. Go to Schema Definition.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {productParameters.map(param => (
-                        <Card key={param.id} className="p-2 shadow-sm bg-background">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Tag className="h-4 w-4 text-primary" />
-                              <span className="text-sm font-medium">{param.name}</span>
-                            </div>
-                            <Button size="sm" variant="outline" onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion}>
-                              Insert
-                            </Button>
+            <ScrollArea className="flex-1"> {/* ScrollArea is now flex-1 */}
+              <div>
+                <h3 className="text-md font-semibold mb-3">Product Parameters</h3>
+                {isLoadingProdParams ? <Skeleton className="h-20 w-full" /> :
+                fetchProdParamsError ? <p className="text-xs text-destructive">Error loading product parameters.</p> :
+                productParameters.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No product parameters defined. Go to Schema Definition.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {productParameters.map(param => (
+                      <Card key={param.id} className="p-2 shadow-sm bg-background">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Tag className="h-4 w-4 text-primary" />
+                            <span className="text-sm font-medium">{param.name}</span>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1 pl-6 truncate" title={param.description}>{param.description}</p>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                          <Button onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion} className="bg-sky-500 hover:bg-sky-600 text-white px-2 py-1 text-xs rounded">
+                            Insert
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 pl-6 truncate" title={param.description}>{param.description}</p>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-                <div className="mt-4 pt-4 border-t">
-                  <h3 className="text-md font-semibold mb-3">Evaluation Parameters</h3>
-                  {isLoadingEvalParams ? <Skeleton className="h-20 w-full" /> :
-                  fetchEvalParamsError ? <p className="text-xs text-destructive">Error loading evaluation parameters.</p> :
-                  evaluationParameters.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No evaluation parameters defined. Go to Evaluation Parameters.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {evaluationParameters.map(param => (
-                        <Card key={param.id} className="p-2 shadow-sm bg-background">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Target className="h-4 w-4 text-green-600" />
-                              <span className="text-sm font-medium">{param.name}</span>
-                            </div>
-                            <Button size="sm" variant="outline" onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion}>
-                              Insert
-                            </Button>
+              <div className="mt-4 pt-4 border-t">
+                <h3 className="text-md font-semibold mb-3">Evaluation Parameters</h3>
+                {isLoadingEvalParams ? <Skeleton className="h-20 w-full" /> :
+                fetchEvalParamsError ? <p className="text-xs text-destructive">Error loading evaluation parameters.</p> :
+                evaluationParameters.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No evaluation parameters defined. Go to Evaluation Parameters.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {evaluationParameters.map(param => (
+                      <Card key={param.id} className="p-2 shadow-sm bg-background">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Target className="h-4 w-4 text-green-600" />
+                            <span className="text-sm font-medium">{param.name}</span>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1 pl-6 truncate" title={param.definition}>{param.definition}</p>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </ScrollArea>
-            </div>
+                          <Button onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion} className="bg-teal-500 hover:bg-teal-600 text-white px-2 py-1 text-xs rounded">
+                            Insert
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 pl-6 truncate" title={param.definition}>{param.definition}</p>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
           </div>
         </CardContent>
         <CardFooter className="border-t pt-4 flex justify-end gap-2">
