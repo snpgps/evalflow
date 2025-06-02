@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, type FormEvent, useEffect } from 'react';
@@ -8,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"; // Removed DialogTrigger
 import { PlusCircle, Edit2, Trash2, Settings2, AlertTriangle } from "lucide-react";
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp } from 'firebase/firestore';
@@ -155,6 +156,12 @@ export default function SchemaDefinitionPage() {
     }
   };
 
+  const handleAddNewParameterClick = () => {
+    setEditingParameter(null);
+    resetForm();
+    setIsDialogOpen(true);
+  };
+
   if (isLoadingUserId || (isLoadingParameters && currentUserId)) {
     return (
       <div className="space-y-6">
@@ -201,12 +208,10 @@ export default function SchemaDefinitionPage() {
           </div>
         </CardHeader>
         <CardContent>
+          <Button onClick={handleAddNewParameterClick} disabled={!currentUserId || addMutation.isPending || updateMutation.isPending}>
+            <PlusCircle className="mr-2 h-5 w-5" /> Add New Parameter
+          </Button>
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
-            <DialogTrigger asChild>
-              <Button onClick={() => { setEditingParameter(null); resetForm(); setIsDialogOpen(true); }} disabled={!currentUserId || addMutation.isPending || updateMutation.isPending}>
-                <PlusCircle className="mr-2 h-5 w-5" /> Add New Parameter
-              </Button>
-            </DialogTrigger>
             <DialogContent className="sm:max-w-[525px]">
               <DialogHeader>
                 <DialogTitle>{editingParameter ? 'Edit' : 'Add New'} Product Parameter</DialogTitle>
@@ -303,3 +308,5 @@ export default function SchemaDefinitionPage() {
     </div>
   );
 }
+
+    
