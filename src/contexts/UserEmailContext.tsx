@@ -3,7 +3,7 @@
 
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+// useRouter is no longer needed here as redirect logic is removed.
 
 interface UserEmailContextType {
   userEmail: string | null;
@@ -16,24 +16,24 @@ const UserEmailContext = createContext<UserEmailContextType | undefined>(undefin
 export function UserEmailProvider({ children }: { children: ReactNode }) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
+  // const router = useRouter(); // Removed
 
   useEffect(() => {
-    const storedEmail = localStorage.getItem('currentUserEmail');
-    if (storedEmail) {
-      setUserEmail(storedEmail);
+    try {
+      const storedEmail = localStorage.getItem('currentUserEmail');
+      if (storedEmail) {
+        setUserEmail(storedEmail);
+      }
+    } catch (error) {
+      console.error("Error accessing localStorage:", error);
+      // Potentially setUserEmail(null) or some other error state
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
 
-  useEffect(() => {
-    if (!isLoading && !userEmail) {
-      // Only redirect if not already on a public page or login page
-      if (!window.location.pathname.startsWith('/auth') && window.location.pathname !== '/') {
-         router.push('/auth/login');
-      }
-    }
-  }, [userEmail, isLoading, router]);
+  // Removed the useEffect that handled redirection.
+  // This logic is now solely in AppLayout.tsx (AppContent component) for (app) routes.
 
   const handleSetUserEmail = (email: string | null) => {
     if (email) {
@@ -44,7 +44,6 @@ export function UserEmailProvider({ children }: { children: ReactNode }) {
     setUserEmail(email);
   };
   
-  // Expose a setter that also updates localStorage
   const contextSetUserEmail: Dispatch<SetStateAction<string | null>> = (valueOrFn) => {
     if (typeof valueOrFn === 'function') {
       setUserEmail(prev => {
