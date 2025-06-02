@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, Link2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, Link2, SheetIcon, Settings2 } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { db } from '@/lib/firebase';
 import { 
@@ -18,6 +19,8 @@ import {
 } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
+import * as XLSX from 'xlsx';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Interfaces for data structure
 interface DatasetVersion {
@@ -27,6 +30,8 @@ interface DatasetVersion {
   uploadDate: string; // ISO String
   size: string; // e.g. "2.5MB"
   records: number;
+  selectedSheetName?: string; // For XLSX files
+  columnMapping?: Record<string, string>; // e.g., { schemaParamName: sheetColumnName }
   createdAt?: Timestamp; // Firestore Timestamp
 }
 
@@ -47,6 +52,11 @@ type DatasetUpdatePayload = { id: string } & Partial<Omit<Dataset, 'id' | 'versi
 // Type for new dataset version data
 type NewDatasetVersionData = Omit<DatasetVersion, 'id' | 'createdAt'> & { createdAt: FieldValue };
 
+// Minimal interface for Product Parameters fetched for mapping
+interface ProductParameterForMapping {
+  id: string;
+  name: string;
+}
 
 // Firestore interactions
 const fetchDatasetsWithVersions = async (userId: string | null): Promise<Dataset[]> => {
@@ -77,6 +87,17 @@ const fetchDatasetsWithVersions = async (userId: string | null): Promise<Dataset
   return datasetsData;
 };
 
+const fetchProductParametersForMapping = async (userId: string | null): Promise<ProductParameterForMapping[]> => {
+  if (!userId) return [];
+  const paramsCollectionRef = collection(db, 'users', userId, 'productParameters');
+  const paramsQuery = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
+  const snapshot = await getDocs(paramsQuery);
+  return snapshot.docs.map(docSnap => ({
+    id: docSnap.id,
+    name: docSnap.data().name as string, 
+  }));
+};
+
 
 export default function DatasetsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -99,6 +120,12 @@ export default function DatasetsPage() {
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
+  const { data: productParametersForMapping = [], isLoading: isLoadingProdParams } = useQuery<ProductParameterForMapping[], Error>({
+    queryKey: ['productParametersForMapping', currentUserId],
+    queryFn: () => fetchProductParametersForMapping(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
+  });
+
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isDatasetDialogOpen, setIsDatasetDialogOpen] = useState(false);
   const [editingDataset, setEditingDataset] = useState<Dataset | null>(null);
@@ -106,8 +133,14 @@ export default function DatasetsPage() {
   const [datasetName, setDatasetName] = useState('');
   const [datasetDescription, setDatasetDescription] = useState('');
   const [datasetProductSchemaName, setDatasetProductSchemaName] = useState('');
+  
+  // State for file upload dialog
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [currentDatasetIdForUpload, setCurrentDatasetIdForUpload] = useState<string | null>(null);
+  const [availableSheetNames, setAvailableSheetNames] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>('');
+  const [sheetColumnHeaders, setSheetColumnHeaders] = useState<string[]>([]);
+  const [currentColumnMapping, setCurrentColumnMapping] = useState<Record<string, string>>({});
 
 
   // Mutations
@@ -164,22 +197,100 @@ export default function DatasetsPage() {
     },
     onSuccess: _ => {
       queryClient.invalidateQueries({queryKey: ['datasets', currentUserId]});
-      setSelectedFile(null);
+      resetUploadDialogState();
       setIsUploadDialogOpen(false);
-      setCurrentDatasetIdForUpload(null);
     }
   });
 
+  const resetUploadDialogState = () => {
+    setSelectedFile(null);
+    setCurrentDatasetIdForUpload(null);
+    setAvailableSheetNames([]);
+    setSelectedSheet('');
+    setSheetColumnHeaders([]);
+    setCurrentColumnMapping({});
+  }
 
-  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      setSelectedFile(event.target.files[0]);
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    resetUploadDialogState(); // Reset dependent states when file changes
+    setCurrentDatasetIdForUpload(currentDatasetIdForUpload); // Preserve this if it was set
+
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      if (file.name.endsWith('.xlsx')) {
+        try {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const data = e.target?.result;
+            if (data) {
+              const workbook = XLSX.read(data, { type: 'array' });
+              setAvailableSheetNames(workbook.SheetNames);
+              if (workbook.SheetNames.length > 0) {
+                // setSelectedSheet(workbook.SheetNames[0]); // Auto-select first sheet
+                // handleSheetSelection(workbook.SheetNames[0], workbook);
+              }
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        } catch (error) {
+          console.error("Error parsing XLSX file:", error);
+          alert("Failed to parse Excel file. Please ensure it's a valid .xlsx file.");
+          resetUploadDialogState();
+        }
+      }
+    } else {
+      setSelectedFile(null);
     }
   };
+
+  const handleSheetSelection = (sheetName: string) => {
+    setSelectedSheet(sheetName);
+    setSheetColumnHeaders([]); // Reset headers
+    setCurrentColumnMapping({}); // Reset mapping
+
+    if (selectedFile && sheetName) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = e.target?.result;
+        if (data) {
+          const workbook = XLSX.read(data, { type: 'array' });
+          const worksheet = workbook.Sheets[sheetName];
+          if (worksheet) {
+            // Get headers (first row)
+            const headers: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as any[];
+            setSheetColumnHeaders(headers.map(String)); // Convert all headers to string
+            
+            // Initialize mapping: try to auto-map if schema param name matches a sheet column name
+            const initialMapping: Record<string, string> = {};
+            productParametersForMapping.forEach(param => {
+                const foundColumn = headers.find(h => String(h).toLowerCase() === param.name.toLowerCase());
+                if (foundColumn) {
+                    initialMapping[param.name] = String(foundColumn);
+                }
+            });
+            setCurrentColumnMapping(initialMapping);
+
+          }
+        }
+      };
+      reader.readAsArrayBuffer(selectedFile);
+    }
+  };
+  
+  const handleColumnMappingChange = (schemaParamName: string, sheetColumnName: string) => {
+    setCurrentColumnMapping(prev => ({ ...prev, [schemaParamName]: sheetColumnName }));
+  };
+
 
   const handleUploadSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!selectedFile || !currentDatasetIdForUpload || !currentUserId) return;
+    if (selectedFile.name.endsWith('.xlsx') && !selectedSheet && availableSheetNames.length > 0) {
+      alert("Please select a sheet from the Excel file.");
+      return;
+    }
+
 
     const targetDataset = datasets.find(d => d.id === currentDatasetIdForUpload);
     if (!targetDataset) return;
@@ -193,9 +304,14 @@ export default function DatasetsPage() {
       fileName: selectedFile.name,
       uploadDate: new Date().toISOString().split('T')[0],
       size: `${(selectedFile.size / (1024 * 1024)).toFixed(2)}MB`,
-      records: 0, // Placeholder for actual record count from file
+      records: 0, // Placeholder
       createdAt: serverTimestamp(),
     };
+
+    if (selectedFile.name.endsWith('.xlsx') && selectedSheet) {
+      newVersionData.selectedSheetName = selectedSheet;
+      newVersionData.columnMapping = currentColumnMapping;
+    }
     
     addDatasetVersionMutation.mutate({ datasetId: currentDatasetIdForUpload, versionData: newVersionData });
   };
@@ -249,6 +365,7 @@ export default function DatasetsPage() {
   };
 
   const openUploadDialog = (datasetId: string) => {
+    resetUploadDialogState(); // Ensure dialog is fresh
     setCurrentDatasetIdForUpload(datasetId);
     setIsUploadDialogOpen(true);
   };
@@ -263,7 +380,7 @@ export default function DatasetsPage() {
     setIsDatasetDialogOpen(true);
   }
 
-  if (isLoadingUserId || (isLoadingDatasets && currentUserId)) {
+  if (isLoadingUserId || (isLoadingDatasets && currentUserId) || (isLoadingProdParams && currentUserId)) {
     return (
       <div className="space-y-6">
         <Card className="shadow-lg"><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-56" /></CardContent></Card>
@@ -364,7 +481,7 @@ export default function DatasetsPage() {
                 <Button size="sm" onClick={() => openUploadDialog(dataset.id)} disabled={!currentUserId || addDatasetVersionMutation.isPending}>
                   <FileUp className="mr-2 h-4 w-4" /> Upload New Version
                 </Button>
-                 <Button variant="destructiveOutline" size="sm" onClick={() => handleDeleteDataset(dataset.id)} disabled={!currentUserId || (deleteDatasetMutation.isPending && deleteDatasetMutation.variables === dataset.id)}>
+                 <Button variant="destructive" size="sm" onClick={() => handleDeleteDataset(dataset.id)} disabled={!currentUserId || (deleteDatasetMutation.isPending && deleteDatasetMutation.variables === dataset.id)}>
                     <Trash2 className="h-4 w-4 mr-2" /> Delete Dataset
                   </Button>
               </div>
@@ -381,6 +498,7 @@ export default function DatasetsPage() {
                       <TableHead>Upload Date</TableHead>
                       <TableHead>Size</TableHead>
                       <TableHead>Records</TableHead>
+                      <TableHead>Sheet</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -392,8 +510,9 @@ export default function DatasetsPage() {
                         <TableCell>{version.uploadDate}</TableCell>
                         <TableCell>{version.size}</TableCell>
                         <TableCell>{version.records.toLocaleString()}</TableCell>
+                        <TableCell>{version.selectedSheetName || 'N/A'}</TableCell>
                         <TableCell className="text-right">
-                           <Button variant="ghost" size="icon" className="mr-2" title="Review Schema/Sample (Not Implemented)">
+                           <Button variant="ghost" size="icon" className="mr-2" title="Review Data/Mapping (Not Implemented)">
                             <Eye className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="icon" title="Download Version (Not Implemented)">
@@ -410,25 +529,75 @@ export default function DatasetsPage() {
         ))
       )}
       
-      <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={isUploadDialogOpen} onOpenChange={(isOpen) => {setIsUploadDialogOpen(isOpen); if(!isOpen) resetUploadDialogState();}}>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Upload New Dataset Version</DialogTitle>
             <DialogDescription>
-              Upload an Excel (XLSX) or CSV file. Ensure columns match the defined product parameters. File content is not processed/stored in this demo.
+              Upload an Excel (XLSX) or CSV file. For XLSX, you can select a sheet and map columns.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUploadSubmit} className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="dataset-file">Dataset File (.xlsx, .csv)</Label>
-              <Input id="dataset-file" type="file" accept=".xlsx,.csv" onChange={handleFileChange} required />
+            <ScrollArea className="max-h-[70vh] p-1">
+            <div className="space-y-4 pr-4">
+              <div>
+                <Label htmlFor="dataset-file">Dataset File (.xlsx, .csv)</Label>
+                <Input id="dataset-file" type="file" accept=".xlsx,.csv" onChange={handleFileChange} required />
+              </div>
+              {selectedFile && (
+                <p className="text-sm text-muted-foreground">Selected: {selectedFile.name} ({(selectedFile.size / (1024*1024)).toFixed(2)} MB)</p>
+              )}
+
+              {selectedFile?.name.endsWith('.xlsx') && availableSheetNames.length > 0 && (
+                <div className="space-y-2 pt-2 border-t">
+                   <Label htmlFor="sheet-select" className="flex items-center"><SheetIcon className="mr-2 h-4 w-4 text-green-600"/>Select Sheet</Label>
+                  <Select value={selectedSheet} onValueChange={handleSheetSelection} required>
+                    <SelectTrigger id="sheet-select"><SelectValue placeholder="Select a sheet" /></SelectTrigger>
+                    <SelectContent>
+                      {availableSheetNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {selectedFile?.name.endsWith('.xlsx') && selectedSheet && sheetColumnHeaders.length > 0 && productParametersForMapping.length > 0 && (
+                <div className="space-y-3 pt-3 border-t">
+                  <Label className="flex items-center"><Settings2 className="mr-2 h-4 w-4 text-blue-600"/>Map Schema Parameters to Sheet Columns</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Map parameters from your 'Schema Definition' to columns in '{selectedSheet}'. Mappings are used to prepare data for prompts.
+                  </p>
+                  <Card className="p-4 bg-muted/30 max-h-60 overflow-y-auto">
+                     <div className="space-y-3">
+                      {productParametersForMapping.map(param => (
+                        <div key={param.id} className="grid grid-cols-2 gap-2 items-center">
+                          <Label htmlFor={`map-${param.id}`} className="text-sm font-medium truncate" title={param.name}>{param.name}:</Label>
+                          <Select
+                            value={currentColumnMapping[param.name] || ''}
+                            onValueChange={(value) => handleColumnMappingChange(param.name, value)}
+                          >
+                            <SelectTrigger id={`map-${param.id}`} className="h-9 text-xs">
+                              <SelectValue placeholder="Select column" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value=""><em>None</em></SelectItem>
+                              {sheetColumnHeaders.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              )}
+               {selectedFile?.name.endsWith('.xlsx') && selectedSheet && productParametersForMapping.length === 0 && !isLoadingProdParams && (
+                 <p className="text-sm text-amber-700">No product parameters found. Please define some in 'Schema Definition' to enable column mapping.</p>
+               )}
+
+              <p className="text-xs text-muted-foreground pt-2">Note: Record count will be set to 0. Actual file content storage/processing is not implemented in this step.</p>
             </div>
-            {selectedFile && (
-              <p className="text-sm text-muted-foreground">Selected: {selectedFile.name} ({(selectedFile.size / (1024*1024)).toFixed(2)} MB)</p>
-            )}
-            <p className="text-xs text-muted-foreground">Note: Record count will be set to 0. Actual file parsing/content storage is not implemented.</p>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsUploadDialogOpen(false)}>Cancel</Button>
+            </ScrollArea>
+            <DialogFooter className="pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => {setIsUploadDialogOpen(false); resetUploadDialogState();}}>Cancel</Button>
               <Button type="submit" disabled={!selectedFile || !currentUserId || addDatasetVersionMutation.isPending}>
                 {addDatasetVersionMutation.isPending ? 'Uploading...' : 'Upload Version'}
               </Button>
@@ -439,4 +608,3 @@ export default function DatasetsPage() {
     </div>
   );
 }
-
