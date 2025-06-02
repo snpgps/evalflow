@@ -80,10 +80,14 @@ export default function EvaluationParametersPage() {
   const addMutation = useMutation<void, Error, Omit<EvalParameter, 'id' | 'createdAt'>>({
     mutationFn: async (newParameterData) => {
       if (!currentUserId) throw new Error("User not identified for add operation.");
-      await addDoc(collection(db, 'users', currentUserId, 'evaluationParameters'), {
+      const dataWithTimestamp = {
         ...newParameterData,
         createdAt: serverTimestamp(),
-      });
+      };
+      if (!newParameterData.categorizationLabels) {
+        (dataWithTimestamp as any).categorizationLabels = [];
+      }
+      await addDoc(collection(db, 'users', currentUserId, 'evaluationParameters'), dataWithTimestamp);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['evaluationParameters', currentUserId] });
@@ -101,7 +105,11 @@ export default function EvaluationParametersPage() {
       if (!currentUserId) throw new Error("User not identified for update operation.");
       const { id, ...dataToUpdate } = parameterToUpdate;
       const docRef = doc(db, 'users', currentUserId, 'evaluationParameters', id);
-      await updateDoc(docRef, dataToUpdate);
+       const updatePayload: any = {...dataToUpdate};
+      if (dataToUpdate.categorizationLabels === undefined) {
+        updatePayload.categorizationLabels = [];
+      }
+      await updateDoc(docRef, updatePayload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['evaluationParameters', currentUserId] });
@@ -159,8 +167,8 @@ export default function EvaluationParametersPage() {
     }
 
     const labelsToSave: CategorizationLabelToStore[] = currentCategorizationLabels
-      .map(({ tempId, ...restOfLabel }) => restOfLabel) // Strip tempId
-      .filter(cl => cl.name.trim() && cl.definition.trim()); // Save only valid labels
+      .map(({ tempId, ...restOfLabel }) => restOfLabel) 
+      .filter(cl => cl.name.trim() && cl.definition.trim()); 
 
     if (editingEvalParam) {
       const payloadForUpdate: EvalParameterUpdatePayload = {
@@ -169,7 +177,7 @@ export default function EvaluationParametersPage() {
         definition: paramDefinition.trim(),
         goodExample: goodExample.trim(),
         badExample: badExample.trim(),
-        categorizationLabels: labelsToSave,
+        categorizationLabels: labelsToSave.length > 0 ? labelsToSave : [],
       };
       updateMutation.mutate(payloadForUpdate);
     } else {
@@ -178,7 +186,7 @@ export default function EvaluationParametersPage() {
         definition: paramDefinition.trim(),
         goodExample: goodExample.trim(),
         badExample: badExample.trim(),
-        categorizationLabels: labelsToSave,
+        categorizationLabels: labelsToSave.length > 0 ? labelsToSave : [],
       };
       addMutation.mutate(newParamData);
     }
@@ -223,8 +231,8 @@ export default function EvaluationParametersPage() {
       alert("Please log in first to add parameters.");
       return;
     }
-    setEditingEvalParam(null); // Ensure we are in "add new" mode
-    resetForm(); // Resets all fields including categorization labels
+    setEditingEvalParam(null); 
+    resetForm(); 
     setIsDialogOpen(true);
   };
 
@@ -282,7 +290,7 @@ export default function EvaluationParametersPage() {
       </Card>
       
       <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
-        <DialogContent className="sm:max-w-2xl"> {/* Increased width for more content */}
+        <DialogContent className="sm:max-w-2xl"> 
           <DialogHeader>
             <DialogTitle>{editingEvalParam ? 'Edit' : 'Add New'} Evaluation Parameter</DialogTitle>
             <DialogDescription>
@@ -290,7 +298,7 @@ export default function EvaluationParametersPage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
-            <ScrollArea className="max-h-[70vh] p-1 pr-6"> {/* Added ScrollArea */}
+            <ScrollArea className="max-h-[70vh] p-1 pr-6"> 
               <div className="space-y-4 py-4 pr-1">
                 <div>
                   <Label htmlFor="eval-name">Parameter Name</Label>
@@ -311,6 +319,7 @@ export default function EvaluationParametersPage() {
 
                 <div className="space-y-3 pt-4 border-t">
                   <h4 className="text-md font-medium">Categorization Labels (Optional)</h4>
+                  <div>Test - Categorization Section Check</div> {/* Diagnostic Div */}
                   {currentCategorizationLabels.map((label, index) => (
                     <Card key={label.tempId} className="p-3 space-y-2 bg-muted/50">
                       <div className="flex justify-between items-center">
@@ -375,7 +384,6 @@ export default function EvaluationParametersPage() {
                   <TableHead>Definition</TableHead>
                   <TableHead>Good Example</TableHead>
                   <TableHead>Bad Example</TableHead>
-                  {/* Column for categorization labels could be added here if direct display is needed */}
                   <TableHead className="text-right w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -408,6 +416,4 @@ export default function EvaluationParametersPage() {
     </div>
   );
 }
-    
-
     
