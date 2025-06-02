@@ -1,31 +1,58 @@
+
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, Target, GripVertical, CheckCircle, XCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PlusCircle, Edit2, Trash2, Target, GripVertical, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import { db } from '@/lib/firebase';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp } from 'firebase/firestore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface EvalParameter {
-  id: string;
+  id: string; // Firestore document ID
   name: string;
   definition: string;
   goodExample: string;
   badExample: string;
+  createdAt?: Timestamp;
 }
 
-const initialEvalParameters: EvalParameter[] = [
-  { id: '1', name: 'Hallucination', definition: 'Did the bot invent facts or provide information not present in the source?', goodExample: 'Response sticks to provided documents.', badExample: 'Bot mentions a feature that does not exist.' },
-  { id: '2', name: 'Context Relevance', definition: 'Is the response grounded in the provided data/context?', goodExample: 'Answer directly uses information from the user query and product details.', badExample: 'Response is generic and not tailored to the specific product.' },
-  { id: '3', name: 'Groundedness', definition: 'Does the response make claims that can be verified against the provided source documents?', goodExample: 'All statements are supported by the context.', badExample: 'The model makes an unsupported claim.' },
-];
+const fetchEvaluationParameters = async (userId: string | null): Promise<EvalParameter[]> => {
+  if (!userId) return [];
+  const parametersCollection = collection(db, 'users', userId, 'evaluationParameters');
+  const q = query(parametersCollection, orderBy('createdAt', 'asc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EvalParameter));
+};
 
 export default function EvaluationParametersPage() {
-  const [evalParameters, setEvalParameters] = useState<EvalParameter[]>(initialEvalParameters);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isLoadingUserId, setIsLoadingUserId] = useState(true);
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('currentUserId');
+    if (storedUserId && storedUserId.trim() !== "") {
+      setCurrentUserId(storedUserId.trim());
+    } else {
+      setCurrentUserId(null);
+    }
+    setIsLoadingUserId(false);
+  }, []);
+
+  const { data: evalParameters = [], isLoading: isLoadingParameters, error: fetchError } = useQuery<EvalParameter[], Error>({
+    queryKey: ['evaluationParameters', currentUserId],
+    queryFn: () => fetchEvaluationParameters(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
+  });
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEvalParam, setEditingEvalParam] = useState<EvalParameter | null>(null);
 
@@ -34,23 +61,80 @@ export default function EvaluationParametersPage() {
   const [goodExample, setGoodExample] = useState('');
   const [badExample, setBadExample] = useState('');
 
+  const addMutation = useMutation<void, Error, Omit<EvalParameter, 'id' | 'createdAt'>>({
+    mutationFn: async (newParameterData) => {
+      if (!currentUserId) throw new Error("User not identified for add operation.");
+      await addDoc(collection(db, 'users', currentUserId, 'evaluationParameters'), {
+        ...newParameterData,
+        createdAt: serverTimestamp(),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['evaluationParameters', currentUserId] });
+      resetForm();
+      setIsDialogOpen(false);
+    },
+    onError: (error) => {
+      console.error("Error adding evaluation parameter:", error);
+      alert(`Error adding parameter: ${error.message}`);
+    }
+  });
+
+  const updateMutation = useMutation<void, Error, EvalParameter>({
+    mutationFn: async (parameterToUpdate) => {
+      if (!currentUserId) throw new Error("User not identified for update operation.");
+      const { id, createdAt, ...dataToUpdate } = parameterToUpdate; // Exclude createdAt from update
+      const docRef = doc(db, 'users', currentUserId, 'evaluationParameters', id);
+      await updateDoc(docRef, dataToUpdate);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['evaluationParameters', currentUserId] });
+      resetForm();
+      setIsDialogOpen(false);
+    },
+    onError: (error) => {
+      console.error("Error updating evaluation parameter:", error);
+      alert(`Error updating parameter: ${error.message}`);
+    }
+  });
+
+  const deleteMutation = useMutation<void, Error, string>({
+    mutationFn: async (parameterId) => {
+      if (!currentUserId) throw new Error("User not identified for delete operation.");
+      await deleteDoc(doc(db, 'users', currentUserId, 'evaluationParameters', parameterId));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['evaluationParameters', currentUserId] });
+    },
+    onError: (error) => {
+      console.error("Error deleting evaluation parameter:", error);
+      alert(`Error deleting parameter: ${error.message}`);
+    }
+  });
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const newEvalParam: EvalParameter = {
-      id: editingEvalParam ? editingEvalParam.id : Date.now().toString(),
-      name: paramName,
-      definition: paramDefinition,
-      goodExample,
-      badExample,
+    if (!currentUserId) {
+      alert("No User ID found. Please log in again.");
+      return;
+    }
+    if (!paramName.trim() || !paramDefinition.trim() || !goodExample.trim() || !badExample.trim()) {
+      alert("All fields are required.");
+      return;
+    }
+
+    const evalParamData = {
+      name: paramName.trim(),
+      definition: paramDefinition.trim(),
+      goodExample: goodExample.trim(),
+      badExample: badExample.trim(),
     };
 
     if (editingEvalParam) {
-      setEvalParameters(evalParameters.map(p => p.id === editingEvalParam.id ? newEvalParam : p));
+      updateMutation.mutate({ ...evalParamData, id: editingEvalParam.id });
     } else {
-      setEvalParameters([...evalParameters, newEvalParam]);
+      addMutation.mutate(evalParamData);
     }
-    resetForm();
-    setIsDialogOpen(false);
   };
 
   const resetForm = () => {
@@ -71,23 +155,57 @@ export default function EvaluationParametersPage() {
   };
 
   const handleDelete = (id: string) => {
-    setEvalParameters(evalParameters.filter(p => p.id !== id));
+    if (!currentUserId) {
+      alert("No User ID found. Please log in again.");
+      return;
+    }
+    if (confirm('Are you sure you want to delete this evaluation parameter?')) {
+      deleteMutation.mutate(id);
+    }
   };
   
-  // Placeholder for drag-and-drop reordering logic
-  const handleDragStart = (e: React.DragEvent<HTMLTableRowElement>, id: string) => {
-    e.dataTransfer.setData("evalParamId", id);
+  const handleAddNewParameterClick = () => {
+    if (!currentUserId) {
+      alert("Please log in first to add parameters.");
+      return;
+    }
+    setEditingEvalParam(null);
+    resetForm();
+    setIsDialogOpen(true);
   };
 
-  const handleDragOver = (e: React.DragEvent<HTMLTableRowElement>) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLTableRowElement>, targetId: string) => {
-    const draggedId = e.dataTransfer.getData("evalParamId");
-    // Implement reordering logic here
-    console.log(`Drag ${draggedId} to ${targetId}`);
-  };
+  if (isLoadingUserId || (isLoadingParameters && currentUserId)) {
+    return (
+      <div className="space-y-6">
+        <Card className="shadow-lg">
+          <CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader>
+          <CardContent><Skeleton className="h-10 w-64" /></CardContent>
+        </Card>
+        <Card>
+          <CardHeader><Skeleton className="h-8 w-1/2" /></CardHeader>
+          <CardContent className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
+  if (fetchError) {
+    return (
+      <Card className="shadow-lg">
+        <CardHeader>
+            <CardTitle className="text-2xl font-headline text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Could not fetch evaluation parameters: {fetchError.message}</p>
+           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered a User ID on the login page and have a stable internet connection.</p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -102,12 +220,10 @@ export default function EvaluationParametersPage() {
           </div>
         </CardHeader>
         <CardContent>
+          <Button onClick={handleAddNewParameterClick} disabled={!currentUserId || addMutation.isPending || updateMutation.isPending}>
+            <PlusCircle className="mr-2 h-5 w-5" /> Add New Evaluation Parameter
+          </Button>
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
-            <DialogTrigger asChild>
-              <Button onClick={() => { setEditingEvalParam(null); resetForm(); setIsDialogOpen(true); }}>
-                <PlusCircle className="mr-2 h-5 w-5" /> Add New Evaluation Parameter
-              </Button>
-            </DialogTrigger>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>{editingEvalParam ? 'Edit' : 'Add New'} Evaluation Parameter</DialogTitle>
@@ -134,7 +250,9 @@ export default function EvaluationParametersPage() {
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
-                  <Button type="submit">{editingEvalParam ? 'Save Changes' : 'Add Parameter'}</Button>
+                  <Button type="submit" disabled={addMutation.isPending || updateMutation.isPending || !currentUserId}>
+                     {addMutation.isPending || updateMutation.isPending ? 'Saving...' : (editingEvalParam ? 'Save Changes' : 'Add Parameter')}
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -145,19 +263,23 @@ export default function EvaluationParametersPage() {
       <Card>
         <CardHeader>
           <CardTitle>Defined Evaluation Parameters</CardTitle>
-          <CardDescription>Manage your existing evaluation parameters. Drag to reorder.</CardDescription>
+          <CardDescription>Manage your existing evaluation parameters. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription>
         </CardHeader>
         <CardContent>
-          {evalParameters.length === 0 ? (
+          {!currentUserId && !isLoadingUserId ? (
              <div className="text-center text-muted-foreground py-8">
-              <p>No evaluation parameters defined yet.</p>
+                <p>Please log in to see your evaluation parameters.</p>
+              </div>
+          ) : evalParameters.length === 0 && !isLoadingParameters ? (
+            <div className="text-center text-muted-foreground py-8">
+              <p>No evaluation parameters defined yet {currentUserId ? `for User ID: ${currentUserId}` : ''}.</p>
               <p className="text-sm">Click "Add New Evaluation Parameter" to get started.</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50px]">Reorder</TableHead>
+                  <TableHead className="w-[50px]">Order</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Definition</TableHead>
                   <TableHead>Good Example</TableHead>
@@ -169,22 +291,18 @@ export default function EvaluationParametersPage() {
                 {evalParameters.map((param) => (
                   <TableRow 
                     key={param.id}
-                    draggable 
-                    onDragStart={(e) => handleDragStart(e, param.id)}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, param.id)}
-                    className="hover:bg-muted/50 cursor-grab"
+                    className="hover:bg-muted/50"
                   >
-                    <TableCell><GripVertical className="h-5 w-5 text-muted-foreground" /></TableCell>
+                    <TableCell className="cursor-grab"><GripVertical className="h-5 w-5 text-muted-foreground" /></TableCell>
                     <TableCell className="font-medium">{param.name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{param.definition}</TableCell>
                     <TableCell className="text-sm text-green-600 max-w-xs truncate"><CheckCircle className="inline h-4 w-4 mr-1" />{param.goodExample}</TableCell>
                     <TableCell className="text-sm text-red-600 max-w-xs truncate"><XCircle className="inline h-4 w-4 mr-1" />{param.badExample}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-2">
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-2" disabled={updateMutation.isPending || deleteMutation.isPending || !currentUserId}>
                         <Edit2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(param.id)} className="text-destructive hover:text-destructive/90">
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || (updateMutation.isPending && editingEvalParam?.id === param.id) || !currentUserId}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
@@ -198,3 +316,5 @@ export default function EvaluationParametersPage() {
     </div>
   );
 }
+
+    
