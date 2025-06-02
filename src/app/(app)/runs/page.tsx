@@ -1,87 +1,261 @@
+
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { PlusCircle, PlayCircle, Eye, Copy, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { PlusCircle, PlayCircle, Eye, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { toast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
+import { 
+  collection, addDoc, getDocs, doc, deleteDoc, serverTimestamp, 
+  query, orderBy, Timestamp, type FieldValue 
+} from 'firebase/firestore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Skeleton } from '@/components/ui/skeleton';
+
+// Interfaces for dropdown data
+interface SelectableDataset { id: string; name: string; versions: { id: string; versionNumber: number }[]; }
+interface SelectableModelConnector { id: string; name: string; }
+interface SelectablePromptTemplate { id: string; name: string; versions: { id: string; versionNumber: number }[]; }
+interface SelectableEvalParameter { id: string; name: string; }
 
 
+// Interface for EvalRun Firestore document
 interface EvalRun {
-  id: string;
+  id: string; // Firestore document ID
   name: string;
   status: 'Completed' | 'Running' | 'Pending' | 'Failed';
-  datasetName: string;
-  datasetVersion: string;
-  modelConnector: string;
-  promptTemplate: string;
-  promptVersion: string;
-  createdAt: string;
-  accuracy?: number; // Overall accuracy
-  progress?: number; // For running evals
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+  completedAt?: Timestamp;
+
+  // Configuration
+  datasetId: string;
+  datasetName?: string; 
+  datasetVersionId?: string;
+  datasetVersionNumber?: number;
+
+  modelConnectorId: string;
+  modelConnectorName?: string; 
+
+  promptId: string;
+  promptName?: string; 
+  promptVersionId?: string;
+  promptVersionNumber?: number;
+
+  selectedEvalParamIds: string[];
+  selectedEvalParamNames?: string[]; 
+
+  runOnNRows: number; 
+
+  // Results
+  overallAccuracy?: number;
+  progress?: number;
+  results?: any[]; 
+  summaryMetrics?: Record<string, any>;
+  errorMessage?: string;
+  userId?: string; // To ensure user-specific data
 }
 
-const initialRuns: EvalRun[] = [
-  { id: 'run1', name: 'Chatbot Support Eval - Run 1', status: 'Completed', datasetName: 'Chatbot Product Support Q&A', datasetVersion: 'v2', modelConnector: 'OpenAI GPT-4 Prod', promptTemplate: 'Product Support Judge Prompt', promptVersion: 'v2', createdAt: '2024-07-22', accuracy: 85.5, progress: 100 },
-  { id: 'run2', name: 'E-commerce Desc Gen - Initial', status: 'Running', datasetName: 'E-commerce Product Description Generation', datasetVersion: 'v1', modelConnector: 'Vertex Gemini Staging', promptTemplate: 'Description Quality Prompt', promptVersion: 'v1', createdAt: '2024-07-23', progress: 60 },
-  { id: 'run3', name: 'Chatbot Support Eval - Run 2 (new prompt)', status: 'Pending', datasetName: 'Chatbot Product Support Q&A', datasetVersion: 'v2', modelConnector: 'OpenAI GPT-4 Prod', promptTemplate: 'Product Support Judge Prompt', promptVersion: 'v3 (draft)', createdAt: '2024-07-24', progress: 0 },
-  { id: 'run4', name: 'Content Moderation Test', status: 'Failed', datasetName: 'User Generated Content', datasetVersion: 'v1', modelConnector: 'Local LLM', promptTemplate: 'Toxicity Check', promptVersion: 'v1', createdAt: '2024-07-21', progress: 10 },
-];
+type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'overallAccuracy' | 'errorMessage'> & {
+  createdAt: FieldValue;
+  updatedAt: FieldValue;
+};
 
-// Mock data for form selects - these would come from other pages' state/data
-const mockDatasets = [{ id: 'ds1', name: 'Chatbot Product Support Q&A (v2)' }, { id: 'ds2', name: 'E-commerce Product Descriptions (v1)' }];
-const mockSchemas = [{ id: 'sch1', name: 'Chatbot Schema' }, { id: 'sch2', name: 'E-commerce Schema' }];
-const mockEvalParams = [{ id: 'ep1', name: 'Support Eval Set' }, { id: 'ep2', name: 'Generation Quality Metrics' }];
-const mockConnectors = [{ id: 'mc1', name: 'OpenAI GPT-4 Prod' }, { id: 'mc2', name: 'Vertex Gemini Staging' }];
-const mockPrompts = [{ id: 'p1', name: 'Product Support Judge Prompt (v2)' }, { id: 'p2', name: 'Product Support Judge Prompt (v3 draft)' }];
+
+// Fetch functions for dropdowns
+const fetchSelectableDatasets = async (userId: string): Promise<SelectableDataset[]> => {
+  const datasetsCollectionRef = collection(db, 'users', userId, 'datasets');
+  const q = query(datasetsCollectionRef, orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  const datasetsData: SelectableDataset[] = [];
+  for (const docSnap of snapshot.docs) {
+    const data = docSnap.data();
+    const versionsSnapshot = await getDocs(collection(db, 'users', userId, 'datasets', docSnap.id, 'versions'));
+    const versions = versionsSnapshot.docs.map(vDoc => ({ id: vDoc.id, versionNumber: vDoc.data().versionNumber as number }));
+    datasetsData.push({ id: docSnap.id, name: data.name as string, versions });
+  }
+  return datasetsData;
+};
+
+const fetchSelectableModelConnectors = async (userId: string): Promise<SelectableModelConnector[]> => {
+  const connectorsCollectionRef = collection(db, 'users', userId, 'modelConnectors');
+  const q = query(connectorsCollectionRef, orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, name: docSnap.data().name as string }));
+};
+
+const fetchSelectablePromptTemplates = async (userId: string): Promise<SelectablePromptTemplate[]> => {
+  const promptsCollectionRef = collection(db, 'users', userId, 'promptTemplates');
+  const q = query(promptsCollectionRef, orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  const promptsData: SelectablePromptTemplate[] = [];
+  for (const docSnap of snapshot.docs) {
+    const data = docSnap.data();
+    const versionsSnapshot = await getDocs(collection(db, 'users', userId, 'promptTemplates', docSnap.id, 'versions'));
+    const versions = versionsSnapshot.docs.map(vDoc => ({ id: vDoc.id, versionNumber: vDoc.data().versionNumber as number }));
+    promptsData.push({ id: docSnap.id, name: data.name as string, versions });
+  }
+  return promptsData;
+};
+
+const fetchSelectableEvalParameters = async (userId: string): Promise<SelectableEvalParameter[]> => {
+  const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
+  const q = query(evalParamsCollectionRef, orderBy('createdAt', 'asc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, name: docSnap.data().name as string }));
+};
+
+// Fetch Evaluation Runs
+const fetchEvalRuns = async (userId: string): Promise<EvalRun[]> => {
+  const evalRunsCollectionRef = collection(db, 'users', userId, 'evaluationRuns');
+  const q = query(evalRunsCollectionRef, orderBy('createdAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as EvalRun));
+};
 
 
 export default function EvalRunsPage() {
-  const [runs, setRuns] = useState<EvalRun[]>(initialRuns);
-  const [isNewRunDialogOpen, setIsNewRunDialogOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isLoadingUserId, setIsLoadingUserId] = useState(true);
+  const queryClient = useQueryClient();
 
-  // Form state for new run
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('currentUserId');
+    setCurrentUserId(storedUserId || null);
+    setIsLoadingUserId(false);
+  }, []);
+
+  const { data: evalRuns = [], isLoading: isLoadingEvalRuns, error: fetchEvalRunsError } = useQuery<EvalRun[], Error>({
+    queryKey: ['evalRuns', currentUserId],
+    queryFn: () => fetchEvalRuns(currentUserId!),
+    enabled: !!currentUserId && !isLoadingUserId,
+  });
+  
+  // Data for Dialog Dropdowns
+  const { data: datasets = [], isLoading: isLoadingDatasets } = useQuery<SelectableDataset[], Error>({
+    queryKey: ['selectableDatasets', currentUserId],
+    queryFn: () => fetchSelectableDatasets(currentUserId!),
+    enabled: !!currentUserId,
+  });
+  const { data: modelConnectors = [], isLoading: isLoadingConnectors } = useQuery<SelectableModelConnector[], Error>({
+    queryKey: ['selectableModelConnectors', currentUserId],
+    queryFn: () => fetchSelectableModelConnectors(currentUserId!),
+    enabled: !!currentUserId,
+  });
+  const { data: promptTemplates = [], isLoading: isLoadingPrompts } = useQuery<SelectablePromptTemplate[], Error>({
+    queryKey: ['selectablePromptTemplates', currentUserId],
+    queryFn: () => fetchSelectablePromptTemplates(currentUserId!),
+    enabled: !!currentUserId,
+  });
+  const { data: evaluationParameters = [], isLoading: isLoadingEvalParams } = useQuery<SelectableEvalParameter[], Error>({
+    queryKey: ['selectableEvalParameters', currentUserId],
+    queryFn: () => fetchSelectableEvalParameters(currentUserId!),
+    enabled: !!currentUserId,
+  });
+
+
+  const [isNewRunDialogOpen, setIsNewRunDialogOpen] = useState(false);
   const [newRunName, setNewRunName] = useState('');
-  const [selectedDataset, setSelectedDataset] = useState('');
-  const [selectedSchema, setSelectedSchema] = useState('');
-  const [selectedEvalParams, setSelectedEvalParams] = useState('');
-  const [selectedConnector, setSelectedConnector] = useState('');
-  const [selectedPrompt, setSelectedPrompt] = useState('');
+  const [selectedDatasetId, setSelectedDatasetId] = useState('');
+  const [selectedDatasetVersionId, setSelectedDatasetVersionId] = useState('');
+  const [selectedConnectorId, setSelectedConnectorId] = useState('');
+  const [selectedPromptId, setSelectedPromptId] = useState('');
+  const [selectedPromptVersionId, setSelectedPromptVersionId] = useState('');
+  const [selectedEvalParamIds, setSelectedEvalParamIds] = useState<string[]>([]);
+  const [runOnNRows, setRunOnNRows] = useState<number>(0);
+
+
+  const addEvalRunMutation = useMutation<void, Error, NewEvalRunPayload>({
+    mutationFn: async (newRunData) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      await addDoc(collection(db, 'users', currentUserId, 'evaluationRuns'), newRunData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
+      toast({ title: "Success", description: "New evaluation run created and set to Pending." });
+      resetNewRunForm();
+      setIsNewRunDialogOpen(false);
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to create run: ${error.message}`, variant: "destructive" });
+    }
+  });
+  
+  const deleteEvalRunMutation = useMutation<void, Error, string>({
+    mutationFn: async (runId: string) => {
+        if (!currentUserId) throw new Error("User not identified.");
+        await deleteDoc(doc(db, 'users', currentUserId, 'evaluationRuns', runId));
+    },
+    onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
+        toast({title: "Success", description: "Evaluation run deleted."});
+    },
+    onError: (error) => {
+        toast({title: "Error", description: `Failed to delete run: ${error.message}`, variant: "destructive"});
+    }
+  });
 
   const handleNewRunSubmit = (e: FormEvent) => {
     e.preventDefault();
-    // Create new run object and add to state
-    const newRun: EvalRun = {
-      id: `run${Date.now()}`,
-      name: newRunName || `Eval Run ${new Date().toLocaleDateString()}`,
+    if (!currentUserId) return;
+
+    const dataset = datasets.find(d => d.id === selectedDatasetId);
+    const datasetVersion = dataset?.versions.find(v => v.id === selectedDatasetVersionId);
+    const connector = modelConnectors.find(c => c.id === selectedConnectorId);
+    const prompt = promptTemplates.find(p => p.id === selectedPromptId);
+    const promptVersion = prompt?.versions.find(v => v.id === selectedPromptVersionId);
+    const selEvalParams = evaluationParameters.filter(ep => selectedEvalParamIds.includes(ep.id));
+
+    const newRunData: NewEvalRunPayload = {
+      name: newRunName.trim() || `Eval Run - ${new Date().toLocaleString()}`,
       status: 'Pending',
-      datasetName: mockDatasets.find(d => d.id === selectedDataset)?.name || 'N/A',
-      datasetVersion: 'N/A', // This would need more complex data from dataset selection
-      modelConnector: mockConnectors.find(c => c.id === selectedConnector)?.name || 'N/A',
-      promptTemplate: mockPrompts.find(p => p.id === selectedPrompt)?.name || 'N/A',
-      promptVersion: 'N/A', // This would need more complex data from prompt selection
-      createdAt: new Date().toISOString().split('T')[0],
-      progress: 0,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      userId: currentUserId,
+      datasetId: selectedDatasetId,
+      datasetName: dataset?.name,
+      datasetVersionId: selectedDatasetVersionId,
+      datasetVersionNumber: datasetVersion?.versionNumber,
+      modelConnectorId: selectedConnectorId,
+      modelConnectorName: connector?.name,
+      promptId: selectedPromptId,
+      promptName: prompt?.name,
+      promptVersionId: selectedPromptVersionId,
+      promptVersionNumber: promptVersion?.versionNumber,
+      selectedEvalParamIds: selectedEvalParamIds,
+      selectedEvalParamNames: selEvalParams.map(ep => ep.name),
+      runOnNRows: Number(runOnNRows) || 0,
     };
-    setRuns([newRun, ...runs]);
-    resetNewRunForm();
-    setIsNewRunDialogOpen(false);
+    addEvalRunMutation.mutate(newRunData);
   };
 
   const resetNewRunForm = () => {
     setNewRunName('');
-    setSelectedDataset('');
-    setSelectedSchema('');
-    setSelectedEvalParams('');
-    setSelectedConnector('');
-    setSelectedPrompt('');
+    setSelectedDatasetId('');
+    setSelectedDatasetVersionId('');
+    setSelectedConnectorId('');
+    setSelectedPromptId('');
+    setSelectedPromptVersionId('');
+    setSelectedEvalParamIds([]);
+    setRunOnNRows(0);
+  };
+  
+  const handleDeleteRun = (runId: string) => {
+    if (confirm('Are you sure you want to delete this evaluation run? This action cannot be undone.')) {
+        deleteEvalRunMutation.mutate(runId);
+    }
   };
 
   const getStatusBadge = (status: EvalRun['status']) => {
@@ -93,6 +267,14 @@ export default function EvalRunsPage() {
       default: return <Badge variant="outline">{status}</Badge>;
     }
   };
+  
+  const formatTimestamp = (timestamp?: Timestamp) => {
+    return timestamp ? timestamp.toDate().toLocaleDateString() : 'N/A';
+  };
+
+  if (isLoadingUserId) return <div className="p-6"><Skeleton className="h-32 w-full"/></div>;
+  if (!currentUserId) return <Card><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
+
 
   return (
     <div className="space-y-6">
@@ -102,86 +284,106 @@ export default function EvalRunsPage() {
             <PlayCircle className="h-7 w-7 text-primary" />
             <div>
               <CardTitle className="text-2xl font-headline">Evaluation Runs</CardTitle>
-              <CardDescription>Manage and track your AI model evaluation runs. Initiate new runs and view results.</CardDescription>
+              <CardDescription>Manage and track your AI model evaluation runs.</CardDescription>
             </div>
           </div>
            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}}>
+              <Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending}>
                 <PlusCircle className="mr-2 h-5 w-5" /> New Evaluation Run
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Configure New Evaluation Run</DialogTitle>
-                <DialogDescription>
-                  Select components and parameters for your new eval run.
-                </DialogDescription>
+                <DialogDescription>Select components and parameters for your new eval run.</DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleNewRunSubmit} className="space-y-4 py-4">
-                <div>
-                  <Label htmlFor="run-name">Run Name (Optional)</Label>
-                  <Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July"/>
-                </div>
-                <div>
-                  <Label htmlFor="run-dataset">Dataset &amp; Version</Label>
-                  <Select value={selectedDataset} onValueChange={setSelectedDataset} required>
-                    <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger>
-                    <SelectContent>{mockDatasets.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="run-schema">Product Parameter Schema</Label>
-                  <Select value={selectedSchema} onValueChange={setSelectedSchema} required>
-                    <SelectTrigger id="run-schema"><SelectValue placeholder="Select schema" /></SelectTrigger>
-                    <SelectContent>{mockSchemas.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="run-eval-params">Evaluation Parameters Set</Label>
-                  <Select value={selectedEvalParams} onValueChange={setSelectedEvalParams} required>
-                    <SelectTrigger id="run-eval-params"><SelectValue placeholder="Select evaluation set" /></SelectTrigger>
-                    <SelectContent>{mockEvalParams.map(ep => <SelectItem key={ep.id} value={ep.id}>{ep.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="run-connector">Model Connector (Judge LLM)</Label>
-                  <Select value={selectedConnector} onValueChange={setSelectedConnector} required>
-                    <SelectTrigger id="run-connector"><SelectValue placeholder="Select model connector" /></SelectTrigger>
-                    <SelectContent>{mockConnectors.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="run-prompt">Prompt Template &amp; Version</Label>
-                  <Select value={selectedPrompt} onValueChange={setSelectedPrompt} required>
-                    <SelectTrigger id="run-prompt"><SelectValue placeholder="Select prompt" /></SelectTrigger>
-                    <SelectContent>{mockPrompts.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <Card className="mt-4 bg-muted/50 p-4">
-                  <CardHeader className="p-0 pb-2">
-                     <CardTitle className="text-base flex items-center"><Settings className="mr-2 h-4 w-4 text-muted-foreground" /> Advanced Settings</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0 space-y-2 text-sm">
-                    <p className="text-muted-foreground">Configure batching, concurrency, and cost limits (UI placeholders).</p>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="run-concurrency">Max Concurrency</Label>
-                      <Input id="run-concurrency" type="number" defaultValue="5" className="w-20 h-8" />
+              {isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams ? (
+                <div className="py-8 flex justify-center items-center"><Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading configuration options...</span></div>
+              ) : (
+                <form onSubmit={handleNewRunSubmit} className="space-y-4 py-4">
+                  <ScrollArea className="max-h-[60vh] p-1">
+                    <div className="space-y-4 pr-3">
+                      <div><Label htmlFor="run-name">Run Name (Optional)</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July"/></div>
+                      
+                      <div>
+                        <Label htmlFor="run-dataset">Dataset</Label>
+                        <Select value={selectedDatasetId} onValueChange={setSelectedDatasetId} required>
+                          <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger>
+                          <SelectContent>{datasets.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                      {selectedDatasetId && datasets.find(d => d.id === selectedDatasetId)?.versions.length > 0 && (
+                        <div>
+                          <Label htmlFor="run-dataset-version">Dataset Version</Label>
+                          <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required>
+                            <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger>
+                            <SelectContent>{datasets.find(d => d.id === selectedDatasetId)?.versions.map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      <div><Label htmlFor="run-connector">Model Connector (Judge LLM)</Label>
+                        <Select value={selectedConnectorId} onValueChange={setSelectedConnectorId} required>
+                          <SelectTrigger id="run-connector"><SelectValue placeholder="Select model connector" /></SelectTrigger>
+                          <SelectContent>{modelConnectors.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="run-prompt">Prompt Template</Label>
+                        <Select value={selectedPromptId} onValueChange={setSelectedPromptId} required>
+                          <SelectTrigger id="run-prompt"><SelectValue placeholder="Select prompt" /></SelectTrigger>
+                          <SelectContent>{promptTemplates.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+                       {selectedPromptId && promptTemplates.find(p => p.id === selectedPromptId)?.versions.length > 0 && (
+                        <div>
+                          <Label htmlFor="run-prompt-version">Prompt Version</Label>
+                          <Select value={selectedPromptVersionId} onValueChange={setSelectedPromptVersionId} required>
+                            <SelectTrigger id="run-prompt-version"><SelectValue placeholder="Select version" /></SelectTrigger>
+                            <SelectContent>{promptTemplates.find(p => p.id === selectedPromptId)?.versions.map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      <div><Label>Evaluation Parameters (Select one or more)</Label>
+                        <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50">
+                          <div className="space-y-2">
+                            {evaluationParameters.map(ep => (
+                              <div key={ep.id} className="flex items-center space-x-2">
+                                <Checkbox 
+                                  id={`ep-${ep.id}`} 
+                                  checked={selectedEvalParamIds.includes(ep.id)}
+                                  onCheckedChange={(checked) => {
+                                    setSelectedEvalParamIds(prev => 
+                                      checked ? [...prev, ep.id] : prev.filter(id => id !== ep.id)
+                                    );
+                                  }}
+                                />
+                                <Label htmlFor={`ep-${ep.id}`} className="font-normal">{ep.name}</Label>
+                              </div>
+                            ))}
+                            {evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>}
+                          </div>
+                        </Card>
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="run-nrows">Test on first N rows (0 for all)</Label>
+                        <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => setRunOnNRows(Number(e.target.value))} min="0" />
+                      </div>
                     </div>
-                     <div className="flex items-center justify-between">
-                      <Label htmlFor="run-cost-limit">Cost Limit ($)</Label>
-                      <Input id="run-cost-limit" type="number" placeholder="Optional" className="w-20 h-8" />
-                    </div>
-                     <p className="text-xs text-muted-foreground pt-2">Estimated cost: <span className="font-semibold">$XX.XX</span> (Calculation TBD)</p>
-                  </CardContent>
-                </Card>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
-                  <Button type="submit">
-                    <PlayCircle className="mr-2 h-4 w-4" /> Start Evaluation
-                  </Button>
-                </DialogFooter>
-              </form>
+                  </ScrollArea>
+                  <DialogFooter className="pt-4 border-t">
+                    <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
+                    <Button type="submit" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0}>
+                      {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />}
+                      Start Evaluation
+                    </Button>
+                  </DialogFooter>
+                </form>
+              )}
             </DialogContent>
           </Dialog>
         </CardHeader>
@@ -190,59 +392,47 @@ export default function EvalRunsPage() {
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
-            <div>
-              <CardTitle>Evaluation Run History</CardTitle>
-              <CardDescription>Review past and ongoing evaluation runs.</CardDescription>
-            </div>
-            <Button variant="outline" size="sm"><Filter className="mr-2 h-4 w-4" /> Filter Runs</Button>
+            <div><CardTitle>Evaluation Run History</CardTitle><CardDescription>Review past and ongoing evaluation runs.</CardDescription></div>
+            <Button variant="outline" size="sm" disabled><Filter className="mr-2 h-4 w-4" /> Filter Runs</Button>
           </div>
         </CardHeader>
         <CardContent>
-          {runs.length === 0 ? (
+          {isLoadingEvalRuns && <div className="p-6"><Skeleton className="h-40 w-full"/></div>}
+          {fetchEvalRunsError && <p className="text-destructive p-4">Error fetching runs: {fetchEvalRunsError.message}</p>}
+          {!isLoadingEvalRuns && !fetchEvalRunsError && evalRuns.length === 0 && (
              <div className="text-center text-muted-foreground py-8">
               <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <p>No evaluation runs found.</p>
               <p className="text-sm">Click "New Evaluation Run" to get started.</p>
             </div>
-          ) : (
+          )}
+          {!isLoadingEvalRuns && !fetchEvalRunsError && evalRuns.length > 0 && (
             <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Dataset</TableHead>
-                  <TableHead>Model</TableHead>
-                  <TableHead>Prompt</TableHead>
-                  <TableHead>Accuracy</TableHead>
-                  <TableHead>Created At</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
+              <TableHeader><TableRow>
+                  <TableHead>Name</TableHead><TableHead>Status</TableHead><TableHead>Dataset</TableHead>
+                  <TableHead>Model</TableHead><TableHead>Prompt</TableHead><TableHead>Accuracy</TableHead>
+                  <TableHead>Created At</TableHead><TableHead className="text-right">Actions</TableHead>
+              </TableRow></TableHeader>
               <TableBody>
-                {runs.map((run) => (
+                {evalRuns.map((run) => (
                   <TableRow key={run.id} className="hover:bg-muted/50">
                     <TableCell className="font-medium max-w-xs truncate">
                       <Link href={`/runs/${run.id}`} className="hover:underline">{run.name}</Link>
                     </TableCell>
                     <TableCell>{getStatusBadge(run.status)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{run.datasetName} ({run.datasetVersion})</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{run.modelConnector}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{run.promptTemplate} ({run.promptVersion})</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{run.datasetName || run.datasetId}{run.datasetVersionNumber ? ` (v${run.datasetVersionNumber})` : ''}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{run.modelConnectorName || run.modelConnectorId}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell>
                     <TableCell>
-                      {run.status === 'Completed' && run.accuracy !== undefined ? `${run.accuracy.toFixed(1)}%` : 
+                      {run.status === 'Completed' && run.overallAccuracy !== undefined ? `${run.overallAccuracy.toFixed(1)}%` : 
                        run.status === 'Running' && run.progress !== undefined ? <Progress value={run.progress} className="h-2 w-20" /> : 'N/A'}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{run.createdAt}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{formatTimestamp(run.createdAt)}</TableCell>
                     <TableCell className="text-right space-x-1">
-                      <Link href={`/runs/${run.id}`}>
-                        <Button variant="ghost" size="icon" title="View Details">
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                      <Link href={`/runs/${run.id}`} passHref>
+                        <Button variant="ghost" size="icon" title="View Details"><Eye className="h-4 w-4" /></Button>
                       </Link>
-                       <Button variant="ghost" size="icon" title="Re-run with new config (Clone)">
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                       <Button variant="ghost" size="icon" title="Delete Run" className="text-destructive hover:text-destructive/90">
+                      <Button variant="ghost" size="icon" title="Delete Run" className="text-destructive hover:text-destructive/90" onClick={() => handleDeleteRun(run.id)} disabled={deleteEvalRunMutation.isPending && deleteEvalRunMutation.variables === run.id}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
