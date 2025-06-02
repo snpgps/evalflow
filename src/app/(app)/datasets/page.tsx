@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, Link2, SheetIcon, Settings2 } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2 } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { db } from '@/lib/firebase';
 import { 
@@ -40,7 +40,7 @@ interface Dataset {
   name: string;
   description: string;
   versions: DatasetVersion[];
-  productSchemaId: string; 
+  // productSchemaId: string; // Removed
   createdAt?: Timestamp; // Firestore Timestamp
 }
 
@@ -132,7 +132,7 @@ export default function DatasetsPage() {
   
   const [datasetName, setDatasetName] = useState('');
   const [datasetDescription, setDatasetDescription] = useState('');
-  const [datasetProductSchemaName, setDatasetProductSchemaName] = useState('');
+  // const [datasetProductSchemaName, setDatasetProductSchemaName] = useState(''); // Removed
   
   // State for file upload dialog
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -212,8 +212,9 @@ export default function DatasetsPage() {
   }
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    resetUploadDialogState(); // Reset dependent states when file changes
-    setCurrentDatasetIdForUpload(currentDatasetIdForUpload); // Preserve this if it was set
+    const currentDatasetId = currentDatasetIdForUpload; // Preserve before reset
+    resetUploadDialogState(); 
+    setCurrentDatasetIdForUpload(currentDatasetId); 
 
     const file = event.target.files?.[0];
     if (file) {
@@ -227,8 +228,7 @@ export default function DatasetsPage() {
               const workbook = XLSX.read(data, { type: 'array' });
               setAvailableSheetNames(workbook.SheetNames);
               if (workbook.SheetNames.length > 0) {
-                // setSelectedSheet(workbook.SheetNames[0]); // Auto-select first sheet
-                // handleSheetSelection(workbook.SheetNames[0], workbook);
+                // Auto-select first sheet can be done here if desired, or let user choose
               }
             }
           };
@@ -236,7 +236,10 @@ export default function DatasetsPage() {
         } catch (error) {
           console.error("Error parsing XLSX file:", error);
           alert("Failed to parse Excel file. Please ensure it's a valid .xlsx file.");
+          // Call reset again to ensure full cleanup after error
+          const currentDatasetIdOnError = currentDatasetIdForUpload;
           resetUploadDialogState();
+          setCurrentDatasetIdForUpload(currentDatasetIdOnError);
         }
       }
     } else {
@@ -246,8 +249,8 @@ export default function DatasetsPage() {
 
   const handleSheetSelection = (sheetName: string) => {
     setSelectedSheet(sheetName);
-    setSheetColumnHeaders([]); // Reset headers
-    setCurrentColumnMapping({}); // Reset mapping
+    setSheetColumnHeaders([]); 
+    setCurrentColumnMapping({}); 
 
     if (selectedFile && sheetName) {
       const reader = new FileReader();
@@ -257,11 +260,9 @@ export default function DatasetsPage() {
           const workbook = XLSX.read(data, { type: 'array' });
           const worksheet = workbook.Sheets[sheetName];
           if (worksheet) {
-            // Get headers (first row)
             const headers: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as any[];
-            setSheetColumnHeaders(headers.map(String)); // Convert all headers to string
+            setSheetColumnHeaders(headers.map(String)); 
             
-            // Initialize mapping: try to auto-map if schema param name matches a sheet column name
             const initialMapping: Record<string, string> = {};
             productParametersForMapping.forEach(param => {
                 const foundColumn = headers.find(h => String(h).toLowerCase() === param.name.toLowerCase());
@@ -270,7 +271,6 @@ export default function DatasetsPage() {
                 }
             });
             setCurrentColumnMapping(initialMapping);
-
           }
         }
       };
@@ -291,7 +291,6 @@ export default function DatasetsPage() {
       return;
     }
 
-
     const targetDataset = datasets.find(d => d.id === currentDatasetIdForUpload);
     if (!targetDataset) return;
 
@@ -304,7 +303,7 @@ export default function DatasetsPage() {
       fileName: selectedFile.name,
       uploadDate: new Date().toISOString().split('T')[0],
       size: `${(selectedFile.size / (1024 * 1024)).toFixed(2)}MB`,
-      records: 0, // Placeholder
+      records: 0, 
       createdAt: serverTimestamp(),
     };
 
@@ -318,8 +317,8 @@ export default function DatasetsPage() {
   
   const handleDatasetSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUserId || !datasetName.trim() || !datasetProductSchemaName.trim()) {
-      alert("Dataset Name and Associated Product Schema Name are required.");
+    if (!currentUserId || !datasetName.trim()) {
+      alert("Dataset Name is required.");
       return;
     }
 
@@ -328,14 +327,14 @@ export default function DatasetsPage() {
         id: editingDataset.id,
         name: datasetName.trim(),
         description: datasetDescription.trim(),
-        productSchemaId: datasetProductSchemaName.trim(),
+        // productSchemaId: datasetProductSchemaName.trim(), // Removed
       };
       updateDatasetMutation.mutate(payload);
     } else {
       const newDataset: NewDatasetData = {
         name: datasetName.trim(),
         description: datasetDescription.trim(),
-        productSchemaId: datasetProductSchemaName.trim(),
+        // productSchemaId: datasetProductSchemaName.trim(), // Removed
         createdAt: serverTimestamp(),
       };
       addDatasetMutation.mutate(newDataset);
@@ -345,7 +344,7 @@ export default function DatasetsPage() {
   const resetDatasetForm = () => {
     setDatasetName('');
     setDatasetDescription('');
-    setDatasetProductSchemaName('');
+    // setDatasetProductSchemaName(''); // Removed
     setEditingDataset(null);
   };
 
@@ -353,7 +352,7 @@ export default function DatasetsPage() {
     setEditingDataset(dataset);
     setDatasetName(dataset.name);
     setDatasetDescription(dataset.description);
-    setDatasetProductSchemaName(dataset.productSchemaId);
+    // setDatasetProductSchemaName(dataset.productSchemaId); // Removed
     setIsDatasetDialogOpen(true);
   };
   
@@ -365,7 +364,7 @@ export default function DatasetsPage() {
   };
 
   const openUploadDialog = (datasetId: string) => {
-    resetUploadDialogState(); // Ensure dialog is fresh
+    resetUploadDialogState(); 
     setCurrentDatasetIdForUpload(datasetId);
     setIsUploadDialogOpen(true);
   };
@@ -407,7 +406,7 @@ export default function DatasetsPage() {
             <Database className="h-7 w-7 text-primary" />
             <div>
               <CardTitle className="text-2xl font-headline">Dataset Management</CardTitle>
-              <CardDescription>Upload, version, and manage your datasets. Associate them with a Product Parameter Schema name.</CardDescription>
+              <CardDescription>Upload, version, and manage your datasets. Map columns to Product Parameters for Excel files.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -431,15 +430,9 @@ export default function DatasetsPage() {
                   <Input id="dataset-name" value={datasetName} onChange={(e) => setDatasetName(e.target.value)} placeholder="e.g., Customer Service Chat Logs" required />
                 </div>
                 <div>
-                  <Label htmlFor="dataset-schema-name">Associated Product Schema Name</Label>
-                  <Input id="dataset-schema-name" value={datasetProductSchemaName} onChange={(e) => setDatasetProductSchemaName(e.target.value)} placeholder="e.g., Support Chat Schema v1" required />
-                   <p className="text-xs text-muted-foreground mt-1">This name links the dataset to a schema defined in 'Schema Definition'.</p>
-                </div>
-                <div>
                   <Label htmlFor="dataset-desc">Description</Label>
                   <Textarea id="dataset-desc" value={datasetDescription} onChange={(e) => setDatasetDescription(e.target.value)} placeholder="Briefly describe this dataset." />
                 </div>
-                <p className="text-xs text-muted-foreground">Note: Actual data parsing based on schema is not yet implemented. This association is for organizational purposes.</p>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsDatasetDialogOpen(false); resetDatasetForm();}}>Cancel</Button>
                   <Button type="submit" disabled={!currentUserId || addDatasetMutation.isPending || updateDatasetMutation.isPending}>
@@ -468,11 +461,7 @@ export default function DatasetsPage() {
             <CardHeader className="flex flex-row items-start justify-between">
               <div>
                 <CardTitle>{dataset.name}</CardTitle>
-                <CardDescription className="mb-1">{dataset.description}</CardDescription>
-                 <Badge variant="outline" className="mt-1">
-                  <Link2 className="mr-1 h-3 w-3"/>
-                  Schema: {dataset.productSchemaId || "Not Specified"}
-                </Badge>
+                <CardDescription className="mb-1">{dataset.description || "No description."}</CardDescription>
               </div>
               <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
                  <Button variant="outline" size="sm" onClick={() => openEditDatasetDialog(dataset)} disabled={!currentUserId || updateDatasetMutation.isPending}>
