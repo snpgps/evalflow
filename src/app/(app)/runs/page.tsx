@@ -14,15 +14,15 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from '@/components/ui/scroll-area'; // Will use a div for scrolling for now
 import { toast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { 
   collection, addDoc, getDocs, doc, deleteDoc, serverTimestamp, 
-  query, orderBy, Timestamp, type FieldValue 
+  query, orderBy, Timestamp, type FieldValue, getDoc
 } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useRouter } from 'next/navigation';
 
 // Interfaces for dropdown data
 interface SelectableDatasetVersion { id: string; versionNumber: number; fileName?: string; }
@@ -86,22 +86,24 @@ const fetchSelectableDatasets = async (userId: string): Promise<SelectableDatase
   const datasetsData: SelectableDataset[] = [];
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data();
-    const versionsSnapshot = await getDocs(collection(db, 'users', userId, 'datasets', docSnap.id, 'versions'));
-    const versions = versionsSnapshot.docs
-      .map(vDoc => ({ 
-        id: vDoc.id, 
-        versionNumber: vDoc.data().versionNumber as number,
-        fileName: vDoc.data().fileName as string 
-      }))
-      .filter(v => v.versionNumber); // Ensure versionNumber is present
+    const versionsCollectionRef = collection(db, 'users', userId, 'datasets', docSnap.id, 'versions');
+    const versionsQuery = query(versionsCollectionRef, orderBy('versionNumber', 'desc'));
+    const versionsSnapshot = await getDocs(versionsQuery);
     
-    // Only include datasets that have at least one version with mapping configured
-    const hasMappedVersion = versions.some(async (v) => {
-        const versionDoc = await getDoc(doc(db, 'users', userId, 'datasets', docSnap.id, 'versions', v.id));
-        return versionDoc.exists() && versionDoc.data()?.columnMapping && Object.keys(versionDoc.data()?.columnMapping).length > 0;
-    });
-
-    if (versions.length > 0 && hasMappedVersion) { // Ensure there are versions and at least one is mapped
+    const versions: SelectableDatasetVersion[] = [];
+    for (const vDoc of versionsSnapshot.docs) {
+        const versionData = vDoc.data();
+        // Only include versions that have a columnMapping
+        if (versionData.columnMapping && Object.keys(versionData.columnMapping).length > 0) {
+            versions.push({
+                 id: vDoc.id, 
+                 versionNumber: versionData.versionNumber as number,
+                 fileName: versionData.fileName as string 
+            });
+        }
+    }
+    
+    if (versions.length > 0) { // Only include datasets with at least one mapped version
         datasetsData.push({ id: docSnap.id, name: data.name as string, versions });
     }
   }
@@ -122,14 +124,14 @@ const fetchSelectablePromptTemplates = async (userId: string): Promise<Selectabl
   const promptsData: SelectablePromptTemplate[] = [];
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data();
-    const versionsSnapshot = await getDocs(collection(db, 'users', userId, 'promptTemplates', docSnap.id, 'versions'));
+    const versionsSnapshot = await getDocs(query(collection(db, 'users', userId, 'promptTemplates', docSnap.id, 'versions'), orderBy('versionNumber', 'desc')));
     const versions = versionsSnapshot.docs
       .map(vDoc => ({ 
         id: vDoc.id, 
         versionNumber: vDoc.data().versionNumber as number 
       }))
-      .filter(v => v.versionNumber); // Ensure versionNumber is present
-    if (versions.length > 0) { // Only include prompts with versions
+      .filter(v => v.versionNumber); 
+    if (versions.length > 0) { 
         promptsData.push({ id: docSnap.id, name: data.name as string, versions });
     }
   }
@@ -156,6 +158,7 @@ export default function EvalRunsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
+  const router = useRouter();
 
   useEffect(() => {
     const storedUserId = localStorage.getItem('currentUserId');
@@ -169,7 +172,6 @@ export default function EvalRunsPage() {
     enabled: !!currentUserId && !isLoadingUserId,
   });
   
-  // Data for Dialog Dropdowns
   const { data: datasets = [], isLoading: isLoadingDatasets } = useQuery<SelectableDataset[], Error>({
     queryKey: ['selectableDatasets', currentUserId],
     queryFn: () => fetchSelectableDatasets(currentUserId!),
@@ -203,14 +205,23 @@ export default function EvalRunsPage() {
   const [runOnNRows, setRunOnNRows] = useState<number>(0);
 
 
-  const addEvalRunMutation = useMutation<void, Error, NewEvalRunPayload>({
+  const addEvalRunMutation = useMutation<string, Error, NewEvalRunPayload>({
     mutationFn: async (newRunData) => {
       if (!currentUserId) throw new Error("User not identified.");
-      await addDoc(collection(db, 'users', currentUserId, 'evaluationRuns'), newRunData);
+      const docRef = await addDoc(collection(db, 'users', currentUserId, 'evaluationRuns'), newRunData);
+      return docRef.id;
     },
-    onSuccess: () => {
+    onSuccess: (newRunId) => {
       queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
-      toast({ title: "Success", description: "New evaluation run created and set to Pending." });
+      toast({ 
+        title: "Success", 
+        description: "New evaluation run created and set to Pending.",
+        action: (
+          <Button variant="outline" size="sm" onClick={() => router.push(`/runs/${newRunId}`)}>
+            View Run
+          </Button>
+        ),
+      });
       resetNewRunForm();
       setIsNewRunDialogOpen(false);
     },
@@ -276,7 +287,7 @@ export default function EvalRunsPage() {
       promptVersionNumber: promptVersion?.versionNumber,
       selectedEvalParamIds: selectedEvalParamIds,
       selectedEvalParamNames: selEvalParams.map(ep => ep.name),
-      runOnNRows: Number(runOnNRows) || 0, // Defaults to 0 if input is empty or not a number
+      runOnNRows: Number(runOnNRows) || 0, 
     };
     addEvalRunMutation.mutate(newRunData);
   };
@@ -345,12 +356,12 @@ export default function EvalRunsPage() {
                 <div className="py-8 flex justify-center items-center flex-grow"><Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading configuration options...</span></div>
               ) : (
                 <>
-                  <div className="flex-grow overflow-y-auto"> {/* This div handles scrolling */}
+                 <div className="flex-grow overflow-y-auto">
                     <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
                       <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
                       
                       <div>
-                        <Label htmlFor="run-dataset">Dataset (Mapped Only)</Label>
+                        <Label htmlFor="run-dataset">Dataset (Mapped Versions Only)</Label>
                         <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required>
                           <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger>
                           <SelectContent>{datasets.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent>
@@ -358,7 +369,7 @@ export default function EvalRunsPage() {
                       </div>
                       {selectedDatasetId && datasets.find(d => d.id === selectedDatasetId)?.versions.length > 0 && (
                         <div>
-                          <Label htmlFor="run-dataset-version">Dataset Version</Label>
+                          <Label htmlFor="run-dataset-version">Dataset Version (Mapped)</Label>
                           <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required>
                             <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger>
                             <SelectContent>{datasets.find(d => d.id === selectedDatasetId)?.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent>
@@ -391,7 +402,7 @@ export default function EvalRunsPage() {
                       )}
 
                       <div><Label>Evaluation Parameters (Select one or more)</Label>
-                        <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border"> {/* Added border for visibility */}
+                        <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border">
                           <div className="space-y-2">
                             {evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>}
                             {evaluationParameters.map(ep => (
@@ -415,15 +426,19 @@ export default function EvalRunsPage() {
                       <div>
                         <Label htmlFor="run-nrows">Test on first N rows (0 for all)</Label>
                         <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => setRunOnNRows(parseInt(e.target.value, 10))} min="0" />
-                        <p className="text-xs text-muted-foreground mt-1">Enter 1 to test on the first row only. 0 will use all (mock) data.</p>
+                        <p className="text-xs text-muted-foreground mt-1">Enter 1 to test on the first row only. 0 uses all (mock) data or up to default limit.</p>
                       </div>
                     </form>
                   </div>
                   <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
                     <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
-                    <Button type="submit" form="new-eval-run-form" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId || !newRunName.trim()}>
+                    <Button 
+                        type="submit" 
+                        form="new-eval-run-form" 
+                        disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId || !newRunName.trim()}
+                    >
                       {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />}
-                      Start Evaluation
+                      Create Evaluation Run
                     </Button>
                   </DialogFooter>
                 </>
@@ -490,4 +505,6 @@ export default function EvalRunsPage() {
     </div>
   );
 }
+    
+
     
