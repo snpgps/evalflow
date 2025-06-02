@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, type ChangeEvent, type FormEvent, useEffect } from 'react';
@@ -8,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { db } from '@/lib/firebase';
@@ -354,7 +355,7 @@ export default function DatasetsPage() {
                 <Button size="sm" onClick={() => openUploadDialog(dataset.id)} disabled={!currentUserId || addDatasetVersionMutation.isPending}>
                   <FileUp className="mr-2 h-4 w-4" /> Upload New Version
                 </Button>
-                 <Button variant="destructiveOutline" size="sm" onClick={() => handleDeleteDataset(dataset.id)} disabled={!currentUserId || deleteDatasetMutation.isPending && deleteDatasetMutation.variables === dataset.id}>
+                 <Button variant="destructiveOutline" size="sm" onClick={() => handleDeleteDataset(dataset.id)} disabled={!currentUserId || (deleteDatasetMutation.isPending && deleteDatasetMutation.variables === dataset.id)}>
                     <Trash2 className="h-4 w-4 mr-2" /> Delete Dataset
                   </Button>
               </div>
@@ -429,3 +430,4 @@ export default function DatasetsPage() {
     </div>
   );
 }
+
