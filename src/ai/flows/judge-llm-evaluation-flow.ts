@@ -3,10 +3,10 @@
 /**
  * @fileOverview A Genkit flow that uses an LLM to judge an input against evaluation parameters.
  *
- * - judgeLlmEvaluationFlow - A function that takes a full prompt and evaluation parameter details,
+ * - judgeLlmEvaluation - A function that takes a full prompt and evaluation parameter details,
  *   then calls an LLM to get a structured evaluation.
- * - JudgeLlmEvaluationInput - The input type for the judgeLlmEvaluationFlow function.
- * - JudgeLlmEvaluationOutput - The return type (structured evaluation) for the judgeLlmEvaluationFlow function.
+ * - JudgeLlmEvaluationInput - The input type for the judgeLlmEvaluation function.
+ * - JudgeLlmEvaluationOutput - The return type (structured evaluation) for the judgeLlmEvaluation function.
  */
 
 import {ai} from '@/ai/genkit';
@@ -43,12 +43,12 @@ export const JudgeLlmEvaluationOutputSchema = z.record(
 export type JudgeLlmEvaluationOutput = z.infer<typeof JudgeLlmEvaluationOutputSchema>;
 
 
+// This is the ASYNC function that client components will import and call.
 export async function judgeLlmEvaluation(
   input: JudgeLlmEvaluationInput
 ): Promise<JudgeLlmEvaluationOutput> {
-  // Ensure the AI client is configured correctly (e.g., API key for Gemini)
-  // This is typically done in genkit.ts or via environment variables.
-  return judgeLlmEvaluationFlow(input);
+  // This function calls the Genkit flow.
+  return internalJudgeLlmEvaluationFlow(input);
 }
 
 const handlebarsPrompt = `
@@ -64,7 +64,7 @@ This JSON object must map each of the following evaluation parameter IDs to the 
 The evaluation parameter IDs you MUST provide judgments for are:
 {{#each evaluationParameterIds}}
 - {{this}}
-{{/unless}}
+{{/each}}
 
 Your entire response must be ONLY the JSON object, with no other surrounding text or explanations.
 For example, if an evaluation parameter has ID "param1_id" and you choose the label "Correct", your response for that parameter within the JSON object would be: "param1_id": "Correct".
@@ -80,9 +80,11 @@ const judgePrompt = ai.definePrompt({
   }
 });
 
-const judgeLlmEvaluationFlow = ai.defineFlow(
+// This is the Genkit flow definition. It is NOT exported.
+// Renamed to internalJudgeLlmEvaluationFlow to make it distinct.
+const internalJudgeLlmEvaluationFlow = ai.defineFlow(
   {
-    name: 'judgeLlmEvaluationFlow',
+    name: 'judgeLlmEvaluationFlow', // Keep original Genkit flow name for registry
     inputSchema: JudgeLlmEvaluationInputSchema,
     outputSchema: JudgeLlmEvaluationOutputSchema,
   },
@@ -94,11 +96,18 @@ const judgeLlmEvaluationFlow = ai.defineFlow(
 
     if (!output) {
       console.error('LLM did not return a parsable output matching the schema.');
+      // Consider throwing a more specific error or returning a default/error structure
+      // if your application needs to handle this gracefully upstream.
       throw new Error('LLM evaluation failed to return structured output.');
     }
     
     console.log('judgeLlmEvaluationFlow LLM usage:', usage);
     console.log('judgeLlmEvaluationFlow LLM output:', JSON.stringify(output, null, 2));
-    return output;
+    return output; // Output is already validated against JudgeLlmEvaluationOutputSchema by ai.definePrompt
   }
 );
+
+// Ensure ONLY async functions and types/schemas are exported.
+// The constant 'internalJudgeLlmEvaluationFlow' (the Genkit flow object) is not exported.
+
+    
