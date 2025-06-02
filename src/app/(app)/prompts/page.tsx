@@ -697,7 +697,7 @@ export default function PromptsPage() {
             />
           </div>
           <div className="w-1/3 min-w-[300px] border-l p-4 bg-muted/20 flex flex-col">
-            <ScrollArea className="flex-1"> {/* ScrollArea is now flex-1 */}
+            <ScrollArea className="flex-1">
               <div>
                 <h3 className="text-md font-semibold mb-3">Product Parameters</h3>
                 {isLoadingProdParams ? <Skeleton className="h-20 w-full" /> :
@@ -708,16 +708,14 @@ export default function PromptsPage() {
                   <div className="space-y-2">
                     {productParameters.map(param => (
                       <Card key={param.id} className="p-2 shadow-sm bg-background">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Tag className="h-4 w-4 text-primary" />
-                            <span className="text-sm font-medium">{param.name}</span>
-                          </div>
-                          <Button onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion} className="bg-sky-500 hover:bg-sky-600 text-white px-2 py-1 text-xs rounded">
-                            Insert
-                          </Button>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Tag className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-medium">{param.name}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1 pl-6 truncate" title={param.description}>{param.description}</p>
+                        <Button onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1">
+                          Insert Variable
+                        </Button>
+                        <p className="text-xs text-muted-foreground truncate" title={param.description}>{param.description}</p>
                       </Card>
                     ))}
                   </div>
@@ -734,16 +732,14 @@ export default function PromptsPage() {
                   <div className="space-y-2">
                     {evaluationParameters.map(param => (
                       <Card key={param.id} className="p-2 shadow-sm bg-background">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Target className="h-4 w-4 text-green-600" />
-                            <span className="text-sm font-medium">{param.name}</span>
-                          </div>
-                          <Button onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion} className="bg-teal-500 hover:bg-teal-600 text-white px-2 py-1 text-xs rounded">
-                            Insert
-                          </Button>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Target className="h-4 w-4 text-green-600" />
+                          <span className="text-sm font-medium">{param.name}</span>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1 pl-6 truncate" title={param.definition}>{param.definition}</p>
+                        <Button onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1">
+                          Insert Details
+                        </Button>
+                        <p className="text-xs text-muted-foreground truncate" title={param.definition}>{param.definition}</p>
                       </Card>
                     ))}
                   </div>
