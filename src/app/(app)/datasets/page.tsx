@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2, Link2 } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2 } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { db } from '@/lib/firebase';
 import { 
@@ -39,7 +39,6 @@ interface Dataset {
   id: string; // Firestore document ID
   name: string;
   description: string;
-  // productSchemaId: string; // Removed as per previous request
   versions: DatasetVersion[];
   createdAt?: Timestamp; // Firestore Timestamp
 }
@@ -234,6 +233,9 @@ export default function DatasetsPage() {
             if (data) {
               const workbook = XLSX.read(data, { type: 'array' });
               setAvailableSheetNames(workbook.SheetNames);
+              if (workbook.SheetNames.length === 0) {
+                alert("The selected Excel file contains no sheets.");
+              }
             }
           };
           reader.readAsArrayBuffer(file);
@@ -255,12 +257,17 @@ export default function DatasetsPage() {
                 const text = e.target?.result as string;
                 if (text) {
                     const lines = text.split(/\r\n|\n|\r/); 
-                    if (lines.length > 0) {
+                    if (lines.length > 0 && lines[0].trim() !== '') {
                         const headers = lines[0]
                             .split(',')
-                            .map(h => h.trim().replace(/^"|"$/g, '').trim()) // Ensure trim after quote removal
-                            .filter(h => h.length > 0); // Filter out empty strings
+                            .map(h => h.trim().replace(/^"|"$/g, '').trim()) 
+                            .filter(h => h && h.length > 0); 
                         setSheetColumnHeaders(headers);
+                        if (headers.length === 0 && lines[0].trim() !== '') {
+                            alert("CSV file has a header row, but no valid column names could be extracted. Please check for correct comma separation and non-empty header cells.");
+                        } else if (headers.length === 0 && lines[0].trim() === '') {
+                             alert("CSV file's first row (header row) is empty. Please provide headers.");
+                        }
                         setSelectedSheet(file.name); 
                         
                         const initialMapping: Record<string, string> = {};
@@ -273,6 +280,7 @@ export default function DatasetsPage() {
                         setCurrentColumnMapping(initialMapping);
                     } else {
                         alert("CSV file appears to be empty or has no header row.");
+                        setSheetColumnHeaders([]); // Ensure it's empty
                     }
                 }
             };
@@ -303,9 +311,15 @@ export default function DatasetsPage() {
           const workbook = XLSX.read(data, { type: 'array' });
           const worksheet = workbook.Sheets[sheetName];
           if (worksheet) {
-            const rawHeaders: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as any[];
-            const headers = rawHeaders.map(String).map(h => h.trim()).filter(h => h.length > 0); // Filter out empty/whitespace strings
+            const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            const rawHeaders: any[] = jsonData[0] || [];
+            const headers = rawHeaders.map(String).map(h => h.trim()).filter(h => h && h.length > 0); 
             setSheetColumnHeaders(headers); 
+            if (headers.length === 0 && rawHeaders.length > 0) {
+                alert(`The selected sheet '${sheetName}' has a header row, but no valid column names could be extracted. Please check for non-empty header cells.`);
+            } else if (headers.length === 0 && rawHeaders.length === 0) {
+                 alert(`The selected sheet '${sheetName}' appears to be empty or has no header row.`);
+            }
             
             const initialMapping: Record<string, string> = {};
             productParametersForMapping.forEach(param => {
@@ -315,6 +329,9 @@ export default function DatasetsPage() {
                 }
             });
             setCurrentColumnMapping(initialMapping);
+          } else {
+             alert(`Sheet '${sheetName}' could not be found or read from the Excel file.`);
+             setSheetColumnHeaders([]); // Ensure empty if sheet not found
           }
         }
       };
@@ -331,8 +348,13 @@ export default function DatasetsPage() {
     e.preventDefault();
     if (!selectedFile || !currentDatasetIdForUpload || !currentUserId) return;
 
+    // This check is also implicitly handled by the button's disabled state, but good as a safeguard.
     if (selectedFile.name.endsWith('.xlsx') && availableSheetNames.length > 0 && !selectedSheet) {
       alert("Please select a sheet from the Excel file.");
+      return;
+    }
+     if (selectedFile.name.endsWith('.csv') && sheetColumnHeaders.length === 0 && selectedFile.size > 0) {
+      alert("CSV file has content but no headers could be parsed. Cannot proceed with upload.");
       return;
     }
     
@@ -426,9 +448,20 @@ export default function DatasetsPage() {
     selectedFile &&
     sheetColumnHeaders.length > 0 &&
     productParametersForMapping.length > 0 &&
-    ((selectedFile.name.endsWith('.xlsx') && selectedSheet) || selectedFile.name.endsWith('.csv'))
+    ((selectedFile.name.endsWith('.xlsx') && selectedSheet) || 
+     (selectedFile.name.endsWith('.csv') && sheetColumnHeaders.length > 0)) // Ensure CSV headers are present
   );
-
+  
+  const isUploadButtonDisabled =
+    !selectedFile ||
+    !currentUserId ||
+    addDatasetVersionMutation.isPending ||
+    (selectedFile?.name.endsWith('.xlsx') &&
+      availableSheetNames.length > 0 &&
+      !selectedSheet) ||
+    (selectedFile?.name.endsWith('.csv') &&
+      sheetColumnHeaders.length === 0 &&
+      selectedFile.size > 0); // Disable if CSV has content but no headers were parsed
 
   if (isLoadingUserId || (isLoadingDatasets && currentUserId) || (isLoadingProdParams && currentUserId)) {
     return (
@@ -550,7 +583,7 @@ export default function DatasetsPage() {
                         <TableCell>{version.uploadDate}</TableCell>
                         <TableCell>{version.size}</TableCell>
                         <TableCell>{version.records.toLocaleString()}</TableCell>
-                        <TableCell>{version.selectedSheetName || (version.fileName.endsWith('.csv') && !version.selectedSheetName ? 'CSV' : 'N/A')}</TableCell>
+                        <TableCell>{version.fileName.endsWith('.csv') && !version.selectedSheetName ? 'CSV' : version.selectedSheetName || 'N/A'}</TableCell>
                         <TableCell className="text-right">
                            <Button variant="ghost" size="icon" className="mr-2" title="Review Data/Mapping (Not Implemented)">
                             <Eye className="h-4 w-4" />
@@ -574,7 +607,7 @@ export default function DatasetsPage() {
           <DialogHeader>
             <DialogTitle>Upload New Dataset Version</DialogTitle>
             <DialogDescription>
-              Upload an Excel (XLSX) or CSV file. For XLSX, select a sheet. Then, map columns to Product Parameters.
+              Upload an Excel (XLSX) or CSV file. Select a sheet (for XLSX) or ensure CSV has headers, then map columns to Product Parameters.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleUploadSubmit} className="space-y-4 py-4">
@@ -599,6 +632,10 @@ export default function DatasetsPage() {
                   </Select>
                 </div>
               )}
+              {selectedFile?.name.endsWith('.xlsx') && availableSheetNames.length === 0 && selectedFile.size > 0 && (
+                <p className="text-sm text-amber-700 pt-2 border-t">The selected Excel file appears to have no sheets. Please check the file.</p>
+              )}
+
 
               { showMappingUI && (
                 <div className="space-y-3 pt-3 border-t">
@@ -629,16 +666,20 @@ export default function DatasetsPage() {
                   </Card>
                 </div>
               )}
-               {(selectedFile?.name.endsWith('.xlsx') && selectedSheet && productParametersForMapping.length === 0 && !isLoadingProdParams) || (selectedFile?.name.endsWith('.csv') && productParametersForMapping.length === 0 && !isLoadingProdParams && sheetColumnHeaders.length > 0) && (
-                 <p className="text-sm text-amber-700">No product parameters found. Please define some in 'Schema Definition' to enable column mapping.</p>
+               {(selectedFile?.name.endsWith('.xlsx') && selectedSheet && productParametersForMapping.length === 0 && !isLoadingProdParams) || (selectedFile?.name.endsWith('.csv') && sheetColumnHeaders.length > 0 && productParametersForMapping.length === 0 && !isLoadingProdParams) && (
+                 <p className="text-sm text-amber-700 pt-2 border-t">No product parameters found. Please define some in 'Schema Definition' to enable column mapping.</p>
                )}
+               {selectedFile?.name.endsWith('.csv') && sheetColumnHeaders.length === 0 && selectedFile.size > 0 && (
+                <p className="text-sm text-red-600 pt-2 border-t">Could not parse headers from the CSV file. Please ensure it has a valid header row.</p>
+               )}
+
 
               <p className="text-xs text-muted-foreground pt-2">Note: Record count will be set to 0. Actual file content storage/processing is not implemented in this step.</p>
             </div>
             </ScrollArea>
             <DialogFooter className="pt-4 border-t">
               <Button type="button" variant="outline" onClick={() => {setIsUploadDialogOpen(false); resetUploadDialogState();}}>Cancel</Button>
-              <Button type="submit" disabled={!selectedFile || !currentUserId || addDatasetVersionMutation.isPending}>
+              <Button type="submit" disabled={isUploadButtonDisabled}>
                 {addDatasetVersionMutation.isPending ? 'Uploading...' : 'Upload Version'}
               </Button>
             </DialogFooter>
@@ -648,6 +689,3 @@ export default function DatasetsPage() {
     </div>
   );
 }
-
-
-    
