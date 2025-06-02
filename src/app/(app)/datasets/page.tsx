@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2 } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
@@ -261,7 +261,7 @@ export default function DatasetsPage() {
                         const headers = lines[0]
                             .split(',')
                             .map(h => h.trim().replace(/^"|"$/g, '').trim()) 
-                            .filter(h => h && h.length > 0); 
+                            .filter(h => h && h.length > 0 && h.trim() !== ''); 
                         setSheetColumnHeaders(headers);
                         if (headers.length === 0 && lines[0].trim() !== '') {
                             alert("CSV file has a header row, but no valid column names could be extracted. Please check for correct comma separation and non-empty header cells.");
@@ -313,7 +313,7 @@ export default function DatasetsPage() {
           if (worksheet) {
             const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
             const rawHeaders: any[] = jsonData[0] || [];
-            const headers = rawHeaders.map(String).map(h => h.trim()).filter(h => h && h.length > 0); 
+            const headers = rawHeaders.map(String).map(h => h.trim()).filter(h => h && h.length > 0 && h.trim() !== ''); 
             setSheetColumnHeaders(headers); 
             if (headers.length === 0 && rawHeaders.length > 0) {
                 alert(`The selected sheet '${sheetName}' has a header row, but no valid column names could be extracted. Please check for non-empty header cells.`);
@@ -461,7 +461,7 @@ export default function DatasetsPage() {
       !selectedSheet) ||
     (selectedFile?.name.endsWith('.csv') &&
       sheetColumnHeaders.length === 0 &&
-      selectedFile.size > 0); // Disable if CSV has content but no headers were parsed
+      selectedFile.size > 0); 
 
   if (isLoadingUserId || (isLoadingDatasets && currentUserId) || (isLoadingProdParams && currentUserId)) {
     return (
@@ -689,3 +689,4 @@ export default function DatasetsPage() {
     </div>
   );
 }
+
