@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap } from "lucide-react";
-import { BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBarElement, ResponsiveContainer } from 'recharts';
+import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText } from "lucide-react";
+import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBar, ResponsiveContainer } from 'recharts'; // Renamed Bar to RechartsBar
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,7 +27,7 @@ import * as XLSX from 'xlsx';
 // Interfaces
 interface EvalRunResultItem {
   inputData: Record<string, any>; 
-  judgeLlmOutput: JudgeLlmEvaluationOutput; 
+  judgeLlmOutput: JudgeLlmEvaluationOutput; // Updated to handle { chosenLabel: string, rationale?: string }
   fullPromptSent?: string; 
   groundTruth?: Record<string, any>; 
 }
@@ -72,6 +72,7 @@ interface EvalParamDetailForPrompt {
   name: string;
   definition: string;
   labels: Array<{ name: string; definition?: string; example?: string }>;
+  requiresRationale?: boolean; // Added
 }
 
 
@@ -122,6 +123,7 @@ const fetchEvaluationParameterDetailsForPrompt = async (userId: string, paramIds
         name: data.name,
         definition: data.definition,
         labels: (data.categorizationLabels || []).map((l: any) => ({ name: l.name, definition: l.definition, example: l.example})),
+        requiresRationale: data.requiresRationale || false, // Fetch requiresRationale
       });
     } else {
          console.warn(`Evaluation parameter with ID ${paramId} not found for user ${userId}.`);
@@ -166,6 +168,10 @@ export default function RunDetailsPage() {
     queryKey: ['evalRunDetails', currentUserId, runId],
     queryFn: () => fetchEvalRunDetails(currentUserId!, runId),
     enabled: !!currentUserId && !!runId && !isLoadingUserId,
+    refetchInterval: (query) => {
+      const data = query.state.data as EvalRun | null;
+      return (data?.status === 'Running' || data?.status === 'Processing') ? 5000 : false;
+    },
   });
   
   const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & { id: string; updatedAt?: FieldValue } >({
@@ -188,7 +194,7 @@ export default function RunDetailsPage() {
 
   const addLog = (message: string, type: 'info' | 'error' = 'info') => {
     const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
-    console[type === 'error' ? 'error' : 'log'](logEntry); // Also log to console for easier debugging
+    console[type === 'error' ? 'error' : 'log'](logEntry); 
     setCurrentSimulationLog(prev => [...prev, logEntry].slice(-100));
   };
 
@@ -201,13 +207,18 @@ export default function RunDetailsPage() {
       const fetchDetails = async () => {
         setIsLoadingEvalParamDetails(true);
         addLog("Fetching/updating evaluation parameter details for LLM...");
-        const details = await fetchEvaluationParameterDetailsForPrompt(currentUserId, runDetails.selectedEvalParamIds);
-        setEvalParamDetailsForLLM(details);
-        addLog(`Fetched ${details.length} evaluation parameter details.`);
-        if (details.length === 0 && runDetails.selectedEvalParamIds!.length > 0) {
-             addLog("Warning: Selected evaluation parameter IDs were present, but no details were fetched. Check IDs in Firestore and parameter definitions.", "error");
+        try {
+          const details = await fetchEvaluationParameterDetailsForPrompt(currentUserId, runDetails.selectedEvalParamIds);
+          setEvalParamDetailsForLLM(details);
+          addLog(`Fetched ${details.length} evaluation parameter details.`);
+          if (details.length === 0 && runDetails.selectedEvalParamIds!.length > 0) {
+               addLog("Warning: Selected evaluation parameter IDs were present, but no details were fetched. Check IDs in Firestore and parameter definitions.", "error");
+          }
+        } catch (error: any) {
+          addLog(`Error fetching evaluation parameter details: ${error.message}`, "error");
+        } finally {
+          setIsLoadingEvalParamDetails(false);
         }
-        setIsLoadingEvalParamDetails(false);
       };
       fetchDetails();
     } else {
@@ -215,7 +226,7 @@ export default function RunDetailsPage() {
       addLog("No evaluation parameters selected for this run, or selectedEvalParamIds is empty.");
       setIsLoadingEvalParamDetails(false);
     }
-  }, [runDetails, currentUserId]); // Dependency on runDetails ensures it re-runs if runDetails object changes
+  }, [runDetails?.id, runDetails?.selectedEvalParamIds?.join(','), currentUserId]); 
 
 
   const handleFetchAndPreviewData = async () => {
@@ -328,27 +339,29 @@ export default function RunDetailsPage() {
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || evalParamDetailsForLLM.length === 0) {
       const errorMsg = "Missing critical run configuration or evaluation parameter details.";
       toast({ title: "Cannot start LLM Categorization", description: errorMsg, variant: "destructive" });
-      console.error("Pre-simulation check failed:", {
+      console.error("Pre-simulation check failed:", { 
         runDetailsExists: !!runDetails,
         userIdExists: !!currentUserId,
         promptIdExists: !!runDetails?.promptId,
         promptVersionIdExists: !!runDetails?.promptVersionId,
         evalParamDetailsLength: evalParamDetailsForLLM.length,
-        evalParamDetailsActual: evalParamDetailsForLLM,
+        evalParamDetailsActual: JSON.parse(JSON.stringify(evalParamDetailsForLLM)), 
         selectedEvalParamIdsFromRun: runDetails?.selectedEvalParamIds
       });
       addLog(errorMsg, "error");
       return;
     }
+
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) {
         toast({ title: "Cannot start LLM Categorization", description: "No dataset sample available. Please fetch and preview data first.", variant: "destructive"});
+        addLog("Error: Attempted to start LLM categorization without previewed data.", "error");
         return;
     }
 
     setIsSimulating(true);
     setSimulationProgress(0);
     if (currentSimulationLog.length === 0 || !currentSimulationLog.some(log => log.includes("Data Preview"))) {
-      setCurrentSimulationLog([]); // Clear log only if it's a fresh simulation, not if appended from preview
+      setCurrentSimulationLog([]); 
     }
     addLog("LLM Categorization started using previewed data.");
 
@@ -368,6 +381,9 @@ export default function RunDetailsPage() {
       addLog(`Starting LLM categorization for ${rowsToProcess} previewed rows.`);
       
       const collectedResults: EvalRunResultItem[] = [];
+      const parameterIdsRequiringRationale = evalParamDetailsForLLM
+        .filter(ep => ep.requiresRationale)
+        .map(ep => ep.id);
 
       for (let i = 0; i < rowsToProcess; i++) {
         const currentMappedRow = datasetToProcess[i]; 
@@ -381,6 +397,9 @@ export default function RunDetailsPage() {
         let evalCriteriaText = "\n\n--- EVALUATION CRITERIA ---\n";
         evalParamDetailsForLLM.forEach(ep => {
           evalCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`;
+          if (ep.requiresRationale) { // This info is for the LLM to "see" the requirement
+            evalCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST provide a 'rationale' explaining your choice.\n`;
+          }
           if (ep.labels && ep.labels.length > 0) {
             evalCriteriaText += "Labels:\n";
             ep.labels.forEach(label => {
@@ -397,7 +416,8 @@ export default function RunDetailsPage() {
         
         const genkitInput: JudgeLlmEvaluationInput = { 
             fullPromptText: fullPromptForLLM,
-            evaluationParameterIds: evalParamDetailsForLLM.map(ep => ep.id)
+            evaluationParameterIds: evalParamDetailsForLLM.map(ep => ep.id),
+            parameterIdsRequiringRationale: parameterIdsRequiringRationale,
         };
 
         addLog(`Sending prompt for row ${i+1} to Genkit flow... (Prompt length: ${fullPromptForLLM.length} chars)`);
@@ -424,7 +444,7 @@ export default function RunDetailsPage() {
         results: collectedResults, 
         progress: 100, 
         completedAt: serverTimestamp(),
-        overallAccuracy: Math.round(Math.random() * 30 + 70) // Mock accuracy
+        overallAccuracy: Math.round(Math.random() * 30 + 70) 
       });
       toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
 
@@ -604,7 +624,7 @@ export default function RunDetailsPage() {
                 <div><strong>Evaluation Parameters Used:</strong> 
                   {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? (
                     <ul className="list-disc list-inside ml-4 mt-1">
-                      {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id})</li>)}
+                      {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)}
                     </ul>
                   ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? (
                      <ul className="list-disc list-inside ml-4 mt-1">
@@ -639,7 +659,20 @@ export default function RunDetailsPage() {
                         </TableCell>
                         {evalParamDetailsForLLM?.map(paramDetail => {
                             const paramId = paramDetail.id;
-                            return <TableCell key={paramId} className="text-xs align-top">{item.judgeLlmOutput[paramId] || 'N/A'}</TableCell>;
+                            const output = item.judgeLlmOutput[paramId];
+                            return (
+                              <TableCell key={paramId} className="text-xs align-top">
+                                <div>{output?.chosenLabel || 'N/A'}</div>
+                                {output?.rationale && (
+                                  <details className="mt-1">
+                                    <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center">
+                                      <MessageSquareText className="h-3 w-3 mr-1"/> Rationale
+                                    </summary>
+                                    <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{output.rationale}</p>
+                                  </details>
+                                )}
+                              </TableCell>
+                            );
                         })}
                         <TableCell className="max-w-md text-xs align-top">
                            <details>
@@ -663,13 +696,13 @@ export default function RunDetailsPage() {
             <CardContent>
               <ChartContainer config={{ Accuracy: { label: "Accuracy", color: "hsl(var(--primary))" } }} className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={perParameterChartData} layout="vertical" margin={{ right: 30, left: 30 }}>
+                  <RechartsBarChartElement data={perParameterChartData} layout="vertical" margin={{ right: 30, left: 30 }}>
                     <CartesianGrid strokeDasharray="3 3" /><XAxis type="number" domain={[0, 100]} unit="%" />
                     <YAxis dataKey="name" type="category" width={150} tick={{fontSize: 12}}/>
                     <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} />
                     <Legend />
-                    <RechartsBarElement dataKey="Accuracy" fill="var(--primary)" radius={[0, 4, 4, 0]} barSize={30} />
-                  </BarChart>
+                    <RechartsBar dataKey="Accuracy" fill="var(--primary)" radius={[0, 4, 4, 0]} barSize={30} />
+                  </RechartsBarChartElement>
                 </ResponsiveContainer>
               </ChartContainer>
             </CardContent>
@@ -679,5 +712,4 @@ export default function RunDetailsPage() {
     </div>
   );
 }
-
     
