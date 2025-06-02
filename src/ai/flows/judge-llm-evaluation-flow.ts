@@ -13,9 +13,10 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 // Defines the structure of individual evaluation parameters passed to the flow
+// This schema is internal and not exported directly.
 const EvaluationParameterSchema = z.object({
   id: z.string().describe("The unique ID of the evaluation parameter."),
-  name: z.string().describe("The human-readable name of the evaluation parameter."),
+  name: z.string().describe("The human-readable name of unequivocameter."),
   definition: z.string().describe("The detailed definition of what this parameter measures."),
   labels: z.array(z.object({
     name: z.string().describe("The name of a possible label for this parameter."),
@@ -24,7 +25,8 @@ const EvaluationParameterSchema = z.object({
   })).describe("A list of possible labels that can be chosen for this parameter.")
 });
 
-export const JudgeLlmEvaluationInputSchema = z.object({
+// Zod schema for input - kept as a local constant
+const JudgeLlmEvaluationInputSchema = z.object({
   fullPromptText: z.string().describe(
     "The complete text provided to the LLM, which includes the content to be evaluated and detailed descriptions of the evaluation parameters and their labels."
   ),
@@ -34,9 +36,10 @@ export const JudgeLlmEvaluationInputSchema = z.object({
 });
 export type JudgeLlmEvaluationInput = z.infer<typeof JudgeLlmEvaluationInputSchema>;
 
+// Zod schema for output - kept as a local constant
 // The output is a record (object) where keys are evaluation parameter IDs
 // and values are the chosen label names for those parameters.
-export const JudgeLlmEvaluationOutputSchema = z.record(
+const JudgeLlmEvaluationOutputSchema = z.record(
     z.string().describe("The ID of an evaluation parameter."),
     z.string().describe("The name of the label chosen by the LLM for this parameter.")
 ).describe("A JSON object mapping evaluation parameter IDs to their chosen label names.");
@@ -72,42 +75,38 @@ For example, if an evaluation parameter has ID "param1_id" and you choose the la
 
 const judgePrompt = ai.definePrompt({
   name: 'judgeLlmEvaluationPrompt',
-  input: { schema: JudgeLlmEvaluationInputSchema },
-  output: { schema: JudgeLlmEvaluationOutputSchema },
+  input: { schema: JudgeLlmEvaluationInputSchema }, // Uses local constant
+  output: { schema: JudgeLlmEvaluationOutputSchema }, // Uses local constant
   prompt: handlebarsPrompt,
-  config: { // Example configuration, adjust as needed
-    temperature: 0.3, // Lower temperature for more deterministic evaluation
+  config: {
+    temperature: 0.3, 
   }
 });
 
 // This is the Genkit flow definition. It is NOT exported.
-// Renamed to internalJudgeLlmEvaluationFlow to make it distinct.
 const internalJudgeLlmEvaluationFlow = ai.defineFlow(
   {
-    name: 'judgeLlmEvaluationFlow', // Keep original Genkit flow name for registry
-    inputSchema: JudgeLlmEvaluationInputSchema,
-    outputSchema: JudgeLlmEvaluationOutputSchema,
+    name: 'judgeLlmEvaluationFlow', 
+    inputSchema: JudgeLlmEvaluationInputSchema, // Uses local constant
+    outputSchema: JudgeLlmEvaluationOutputSchema, // Uses local constant
   },
   async (input) => {
-    // Log the input to the flow for debugging (optional)
     console.log('judgeLlmEvaluationFlow received input:', JSON.stringify(input, null, 2));
 
     const { output, usage } = await judgePrompt(input);
 
     if (!output) {
       console.error('LLM did not return a parsable output matching the schema.');
-      // Consider throwing a more specific error or returning a default/error structure
-      // if your application needs to handle this gracefully upstream.
       throw new Error('LLM evaluation failed to return structured output.');
     }
     
     console.log('judgeLlmEvaluationFlow LLM usage:', usage);
     console.log('judgeLlmEvaluationFlow LLM output:', JSON.stringify(output, null, 2));
-    return output; // Output is already validated against JudgeLlmEvaluationOutputSchema by ai.definePrompt
+    return output;
   }
 );
 
-// Ensure ONLY async functions and types/schemas are exported.
-// The constant 'internalJudgeLlmEvaluationFlow' (the Genkit flow object) is not exported.
-
+// Ensure ONLY async functions and types are exported.
+// The Zod schema objects (JudgeLlmEvaluationInputSchema, JudgeLlmEvaluationOutputSchema) are now local constants.
+// The Genkit flow object (internalJudgeLlmEvaluationFlow) is not exported.
     
