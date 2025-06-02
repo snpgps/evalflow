@@ -715,7 +715,7 @@ export default function PromptsPage() {
                               <Tag className="h-4 w-4 text-primary" />
                               <span className="text-sm font-medium">{param.name}</span>
                             </div>
-                            <Button size="xs" variant="outline" onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion}>
+                            <Button size="sm" variant="outline" onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion}>
                               Insert
                             </Button>
                           </div>
@@ -741,7 +741,7 @@ export default function PromptsPage() {
                               <Target className="h-4 w-4 text-green-600" />
                               <span className="text-sm font-medium">{param.name}</span>
                             </div>
-                            <Button size="xs" variant="outline" onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion}>
+                            <Button size="sm" variant="outline" onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion}>
                               Insert
                             </Button>
                           </div>
