@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PlusCircle, Edit2, Trash2, Settings2, AlertTriangle } from "lucide-react";
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp, deleteField, type FieldValue } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -22,9 +22,13 @@ interface ProductParameter {
   type: 'text' | 'dropdown' | 'textarea';
   definition: string;
   options?: string[];
-  createdAt?: Timestamp; // Added for ordering or tracking
-  order?: number; // For future reordering
+  createdAt?: Timestamp; 
+  order?: number; 
 }
+
+// Type for update payload, allowing options to be FieldValue for deletion
+type ProductParameterUpdatePayload = { id: string } & Partial<Omit<ProductParameter, 'id' | 'createdAt' | 'order'> & { options?: string[] | FieldValue }>;
+
 
 const fetchProductParameters = async (userId: string | null): Promise<ProductParameter[]> => {
   if (!userId) return [];
@@ -44,7 +48,7 @@ export default function SchemaDefinitionPage() {
     if (storedUserId && storedUserId.trim() !== "") {
       setCurrentUserId(storedUserId.trim());
     } else {
-      setCurrentUserId(null); // Explicitly set to null if not found or empty
+      setCurrentUserId(null); 
     }
     setIsLoadingUserId(false);
   }, []);
@@ -52,7 +56,7 @@ export default function SchemaDefinitionPage() {
   const { data: parameters = [], isLoading: isLoadingParameters, error: fetchError } = useQuery<ProductParameter[], Error>({
     queryKey: ['productParameters', currentUserId],
     queryFn: () => fetchProductParameters(currentUserId),
-    enabled: !!currentUserId && !isLoadingUserId, // Only run if currentUserId is truthy (not null, not empty string)
+    enabled: !!currentUserId && !isLoadingUserId, 
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -63,13 +67,23 @@ export default function SchemaDefinitionPage() {
   const [parameterDefinition, setParameterDefinition] = useState('');
   const [dropdownOptions, setDropdownOptions] = useState('');
 
-  const addMutation = useMutation<void, Error, Omit<ProductParameter, 'id' | 'createdAt'>>({
-    mutationFn: async (newParameterData) => {
+  const addMutation = useMutation<void, Error, Omit<ProductParameter, 'id' | 'createdAt' | 'order'>>({
+    mutationFn: async (newParameterDataFromMutate) => {
       if (!currentUserId) throw new Error("User not identified for add operation.");
-      await addDoc(collection(db, 'users', currentUserId, 'productParameters'), {
-        ...newParameterData,
+      
+      const dataForDoc: any = { 
+        name: newParameterDataFromMutate.name,
+        type: newParameterDataFromMutate.type,
+        definition: newParameterDataFromMutate.definition,
         createdAt: serverTimestamp(),
-      });
+      };
+
+      if (newParameterDataFromMutate.type === 'dropdown') {
+        dataForDoc.options = newParameterDataFromMutate.options || []; // Ensure options is an array, even if empty
+      }
+      // If type is not 'dropdown', 'options' field is not added to dataForDoc.
+      
+      await addDoc(collection(db, 'users', currentUserId, 'productParameters'), dataForDoc);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productParameters', currentUserId] });
@@ -82,10 +96,10 @@ export default function SchemaDefinitionPage() {
     }
   });
 
-  const updateMutation = useMutation<void, Error, ProductParameter>({
-    mutationFn: async (parameterToUpdate) => {
+  const updateMutation = useMutation<void, Error, ProductParameterUpdatePayload>({
+    mutationFn: async (parameterUpdatePayload) => {
       if (!currentUserId) throw new Error("User not identified for update operation.");
-      const { id, ...dataToUpdate } = parameterToUpdate;
+      const { id, ...dataToUpdate } = parameterUpdatePayload;
       const docRef = doc(db, 'users', currentUserId, 'productParameters', id);
       await updateDoc(docRef, dataToUpdate);
     },
@@ -114,7 +128,7 @@ export default function SchemaDefinitionPage() {
     }
   });
 
-  const handleSubmit = (e: FormEvent) => {
+ const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     console.log('handleSubmit called');
     console.log('Current User ID:', currentUserId);
@@ -134,20 +148,33 @@ export default function SchemaDefinitionPage() {
         return; 
     }
 
-    const paramData = {
-      name: parameterName.trim(),
-      type: parameterType,
-      definition: parameterDefinition.trim(),
-      options: parameterType === 'dropdown' ? dropdownOptions.split(',').map(opt => opt.trim()).filter(Boolean) : undefined,
-    };
-    console.log('Submitting paramData:', paramData);
-
     if (editingParameter) {
       console.log('Calling updateMutation');
-      updateMutation.mutate({ ...editingParameter, ...paramData });
+      const payloadForUpdate: ProductParameterUpdatePayload = {
+            id: editingParameter.id,
+            name: parameterName.trim(),
+            type: parameterType,
+            definition: parameterDefinition.trim(),
+        };
+        if (parameterType === 'dropdown') {
+            payloadForUpdate.options = dropdownOptions.split(',').map(opt => opt.trim()).filter(Boolean);
+            if (!payloadForUpdate.options) payloadForUpdate.options = []; 
+        } else {
+            payloadForUpdate.options = deleteField();
+        }
+        updateMutation.mutate(payloadForUpdate);
     } else {
       console.log('Calling addMutation');
-      addMutation.mutate(paramData);
+      const newParamData: Omit<ProductParameter, 'id' | 'createdAt' | 'order'> = {
+        name: parameterName.trim(),
+        type: parameterType,
+        definition: parameterDefinition.trim(),
+      };
+      if (parameterType === 'dropdown') {
+        (newParamData as any).options = dropdownOptions.split(',').map(opt => opt.trim()).filter(Boolean);
+         if (!(newParamData as any).options) (newParamData as any).options = []; 
+      }
+      addMutation.mutate(newParamData);
     }
   };
 
@@ -294,11 +321,11 @@ export default function SchemaDefinitionPage() {
           {!currentUserId && !isLoadingUserId ? (
              <div className="text-center text-muted-foreground py-8">
                 <p>Please log in to see your parameters.</p>
-                <p className="text-sm">Click "Add New Parameter" on the card above once logged in.</p>
+                {/* Removed the potentially confusing instruction about clicking Add New Parameter here */}
               </div>
           ) : parameters.length === 0 && !isLoadingParameters ? (
             <div className="text-center text-muted-foreground py-8">
-              <p>No product parameters defined yet for User ID: {currentUserId || 'Unknown'}.</p>
+              <p>No product parameters defined yet {currentUserId ? `for User ID: ${currentUserId}` : ''}.</p>
               <p className="text-sm">Click "Add New Parameter" to get started.</p>
             </div>
           ) : (
@@ -335,3 +362,4 @@ export default function SchemaDefinitionPage() {
     </div>
   );
 }
+
