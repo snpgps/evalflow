@@ -9,11 +9,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Download, Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap } from "lucide-react";
-import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBar } from 'recharts';
+import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBarElement } from 'recharts'; // Renamed Bar to RechartsBarElement
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { db, storage } from '@/lib/firebase';
 import { doc, getDoc, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { ref as storageRef, getBlob } from 'firebase/storage';
@@ -139,7 +141,7 @@ export default function RunDetailsPage() {
 
   const [isPreviewDataLoading, setIsPreviewDataLoading] = useState(false);
   const [previewDataError, setPreviewDataError] = useState<string | null>(null);
-  // previewData will now be sourced from runDetails.previewedDatasetSample after fetching
+  const [evalParamDetailsForSimulation, setEvalParamDetailsForSimulation] = useState<EvalParamDetailForSim[]>([]);
 
 
   useEffect(() => {
@@ -152,6 +154,12 @@ export default function RunDetailsPage() {
     queryKey: ['evalRunDetails', currentUserId, runId],
     queryFn: () => fetchEvalRunDetails(currentUserId!, runId),
     enabled: !!currentUserId && !!runId && !isLoadingUserId,
+    onSuccess: async (data) => {
+        if (data && data.selectedEvalParamIds && currentUserId) {
+            const details = await fetchEvaluationParameterDetails(currentUserId, data.selectedEvalParamIds);
+            setEvalParamDetailsForSimulation(details);
+        }
+    }
   });
   
   const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & { id: string }>({
@@ -184,7 +192,7 @@ export default function RunDetailsPage() {
     }
     setIsPreviewDataLoading(true);
     setPreviewDataError(null);
-    setCurrentSimulationLog([]); // Reset log for this action
+    setCurrentSimulationLog([]); 
 
     try {
         addLog("Fetching dataset version configuration...");
@@ -234,20 +242,20 @@ export default function RunDetailsPage() {
         
         if (parsedRows.length === 0) {
             addLog("No data rows found after parsing.");
-            updateRunMutation.mutate({ id: runId, previewedDatasetSample: [], status: 'DataPreviewed' });
+            updateRunMutation.mutate({ id: runId, previewedDatasetSample: [], status: 'DataPreviewed', errorMessage: null });
             toast({ title: "No Data", description: "The dataset file was parsed but contained no data rows." });
             setIsPreviewDataLoading(false);
             return;
         }
 
-        const numRowsToProcess = runDetails.runOnNRows > 0 ? Math.min(runDetails.runOnNRows, 10) : 10;
-        const limitedRows = parsedRows.slice(0, numRowsToProcess);
-        addLog(`Taking first ${limitedRows.length} rows for preview (max 10 or N=${runDetails.runOnNRows}).`);
+        const numRowsToFetch = runDetails.runOnNRows > 0 ? Math.min(runDetails.runOnNRows, 10) : 10;
+        const actualRowsToPreview = parsedRows.slice(0, Math.min(numRowsToFetch, parsedRows.length));
+        addLog(`Taking first ${actualRowsToPreview.length} rows for preview.`);
 
         const mappedSampleData: Array<Record<string, any>> = [];
-        const productParamToOriginalColMap = versionConfig.columnMapping; // ProductParamName -> OriginalColumnName
+        const productParamToOriginalColMap = versionConfig.columnMapping; 
 
-        limitedRows.forEach((originalRow, index) => {
+        actualRowsToPreview.forEach((originalRow, index) => {
             const mappedRow: Record<string, any> = {};
             let rowHasMappedData = false;
             for (const productParamName in productParamToOriginalColMap) {
@@ -256,7 +264,7 @@ export default function RunDetailsPage() {
                     mappedRow[productParamName] = originalRow[originalColName];
                     rowHasMappedData = true;
                 } else {
-                    mappedRow[productParamName] = undefined; // or some placeholder like 'N/A'
+                    mappedRow[productParamName] = undefined; 
                     addLog(`Warning: Row ${index+1} missing original column "${originalColName}" for product parameter "${productParamName}".`);
                 }
             }
@@ -266,7 +274,7 @@ export default function RunDetailsPage() {
         
         addLog(`Successfully mapped ${mappedSampleData.length} rows for preview.`);
         
-        updateRunMutation.mutate({ id: runId, previewedDatasetSample: mappedSampleData, status: 'DataPreviewed' });
+        updateRunMutation.mutate({ id: runId, previewedDatasetSample: mappedSampleData, status: 'DataPreviewed', errorMessage: null });
         toast({ title: "Data Preview Ready", description: `${mappedSampleData.length} rows fetched and mapped.`});
 
     } catch (error: any) {
@@ -281,7 +289,7 @@ export default function RunDetailsPage() {
 
 
   const simulateRunExecution = async () => {
-    if (!runDetails || !currentUserId || !runDetails.promptVersionId || runDetails.selectedEvalParamIds.length === 0) {
+    if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || runDetails.selectedEvalParamIds.length === 0) {
       toast({ title: "Cannot start simulation", description: "Missing critical run configuration.", variant: "destructive" });
       return;
     }
@@ -292,11 +300,10 @@ export default function RunDetailsPage() {
 
     setIsSimulating(true);
     setSimulationProgress(0);
-    // setCurrentSimulationLog([]); // Keep existing logs if any, or reset if preferred
     addLog("LLM Categorization Simulation started using previewed data.");
 
     try {
-      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0 });
+      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null });
       addLog("Status set to Processing.");
 
       const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
@@ -305,29 +312,29 @@ export default function RunDetailsPage() {
       }
       addLog(`Fetched prompt template (v${runDetails.promptVersionNumber}).`);
 
-      const evalParamDetails = await fetchEvaluationParameterDetails(currentUserId, runDetails.selectedEvalParamIds);
-      if (evalParamDetails.length !== runDetails.selectedEvalParamIds.length) {
-        addLog(`Warning: Could only fetch ${evalParamDetails.length} of ${runDetails.selectedEvalParamIds.length} evaluation parameter details.`);
+      // evalParamDetailsForSimulation should be populated by useQuery's onSuccess
+      if (evalParamDetailsForSimulation.length !== runDetails.selectedEvalParamIds.length) {
+        addLog(`Warning: Could only fetch ${evalParamDetailsForSimulation.length} of ${runDetails.selectedEvalParamIds.length} evaluation parameter details. Using what's available.`);
       }
-      addLog("Fetched evaluation parameter details.");
+      addLog("Using fetched evaluation parameter details for simulation.");
       
-      const datasetToProcess = runDetails.previewedDatasetSample; // Use the already fetched and mapped sample
+      const datasetToProcess = runDetails.previewedDatasetSample; 
       const rowsToProcess = datasetToProcess.length;
       addLog(`Simulating LLM categorization for ${rowsToProcess} previewed rows.`);
       
       const collectedResults: EvalRunResultItem[] = [];
 
       for (let i = 0; i < rowsToProcess; i++) {
-        const currentMappedRow = datasetToProcess[i]; // This row's keys are Product Parameter names
+        const currentMappedRow = datasetToProcess[i]; 
         addLog(`Processing row ${i + 1}/${rowsToProcess}: ${JSON.stringify(currentMappedRow)}`);
 
         let finalPrompt = promptTemplateText;
         for (const productParamName in currentMappedRow) {
-          finalPrompt = finalPrompt.replace(new RegExp(`{{${productParamName}}}`, 'g'), currentMappedRow[productParamName] || "");
+          finalPrompt = finalPrompt.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(currentMappedRow[productParamName] || ""));
         }
 
         finalPrompt += "\n\n--- EVALUATION CRITERIA ---\n";
-        evalParamDetails.forEach(ep => {
+        evalParamDetailsForSimulation.forEach(ep => {
           finalPrompt += `Parameter: ${ep.name}\nDefinition: ${ep.definition}\n`;
           finalPrompt += "Labels:\n";
           ep.labels.forEach(label => {
@@ -336,21 +343,21 @@ export default function RunDetailsPage() {
           finalPrompt += "\n";
         });
         finalPrompt += "--- END EVALUATION CRITERIA ---\n";
-        finalPrompt += "Please provide your evaluation as a structured JSON object where keys are parameter names (or IDs) and values are the chosen label names.\n";
+        finalPrompt += "Please provide your evaluation as a structured JSON object where keys are parameter IDs and values are the chosen label names.\n";
         
-        const judgeInput: JudgeEvaluationInput = { fullPrompt: finalPrompt, evaluationParameterDetails: evalParamDetails };
-        const judgeOutput = await judgeEvaluationFlow(judgeInput); // MOCK LLM CALL
+        const judgeInput: JudgeEvaluationInput = { fullPrompt: finalPrompt, evaluationParameterDetails: evalParamDetailsForSimulation };
+        const judgeOutput = await judgeEvaluationFlow(judgeInput); 
         addLog(`Mock Judge LLM for row ${i+1} responded: ${JSON.stringify(judgeOutput)}`);
         
         collectedResults.push({
-          inputData: currentMappedRow, // Store the mapped input data
+          inputData: currentMappedRow, 
           judgeLlmOutput: judgeOutput,
-          fullPromptSent: finalPrompt.substring(0, 500) + (finalPrompt.length > 500 ? "..." : "") 
+          fullPromptSent: finalPrompt.substring(0, 1000) + (finalPrompt.length > 1000 ? "..." : "") 
         });
 
         const currentProgress = Math.round(((i + 1) / rowsToProcess) * 100);
         setSimulationProgress(currentProgress);
-        if ((i + 1) % 2 === 0 || (i + 1) === rowsToProcess) {
+        if ((i + 1) % Math.max(1, Math.floor(rowsToProcess / 10)) === 0 || (i + 1) === rowsToProcess) { // Update Firestore less frequently for larger datasets
             updateRunMutation.mutate({ id: runId, progress: currentProgress, results: collectedResults, status: (i + 1) === rowsToProcess ? 'Completed' : 'Processing' });
         }
       }
@@ -376,9 +383,8 @@ export default function RunDetailsPage() {
   };
 
   useEffect(() => {
-    // This effect now only logs or perhaps shows a toast, actual simulation start is manual after data preview.
     if (runDetails && runDetails.status === 'Pending' && !isPreviewDataLoading && !isSimulating) {
-      addLog("Run is 'Pending'. Please Fetch & Preview Dataset Sample, then Start LLM Categorization if desired.");
+      addLog("Run is 'Pending'. Please Fetch & Preview Dataset Sample. Then Start LLM Categorization if desired.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runDetails, isSimulating, isPreviewDataLoading]);
@@ -440,6 +446,8 @@ export default function RunDetailsPage() {
   };
 
   const isRunTerminal = runDetails.status === 'Completed' || runDetails.status === 'Failed';
+  const canStartSimulation = runDetails.status === 'DataPreviewed' || (runDetails.status === 'Failed' && runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
+  const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed';
 
   return (
     <div className="space-y-6">
@@ -459,7 +467,7 @@ export default function RunDetailsPage() {
              <Button 
                 variant="outline" 
                 onClick={handleFetchAndPreviewData} 
-                disabled={isPreviewDataLoading || isSimulating || runDetails.status !== 'Pending'}
+                disabled={isPreviewDataLoading || isSimulating || !canFetchData}
              >
                 {isPreviewDataLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <DatabaseZap className="mr-2 h-4 w-4" />}
                 {runDetails.previewedDatasetSample ? 'Refetch Sample' : 'Fetch & Preview Dataset Sample'}
@@ -467,7 +475,7 @@ export default function RunDetailsPage() {
              <Button 
                 variant="default" 
                 onClick={simulateRunExecution} 
-                disabled={isSimulating || !runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0 || isRunTerminal || runDetails.status === 'Processing' || runDetails.status === 'Running'}
+                disabled={isSimulating || !canStartSimulation || isRunTerminal }
              >
                 {isSimulating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
                 {isSimulating ? 'Simulating LLM...' : (runDetails.status === 'Failed' ? 'Retry LLM Sim' : 'Start LLM Categorization')}
@@ -488,14 +496,17 @@ export default function RunDetailsPage() {
                 </Card>
             </CardContent>
         )}
-        {previewDataError && (
+        {previewDataError && !isPreviewDataLoading && (
              <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Data Preview Error</AlertTitle><AlertDescription>{previewDataError}</AlertDescription></Alert></CardContent>
+        )}
+         {runDetails.errorMessage && runDetails.status === 'Failed' && !isSimulating && !isPreviewDataLoading && (
+             <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Run Failed</AlertTitle><AlertDescription>{runDetails.errorMessage}</AlertDescription></Alert></CardContent>
         )}
       </Card>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card><CardHeader className="pb-2"><CardDescription>Overall Accuracy</CardDescription><CardTitle className="text-4xl">{runDetails.overallAccuracy ? `${runDetails.overallAccuracy.toFixed(1)}%` : 'N/A'}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.results?.length || 0} records processed</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardDescription>Status</CardDescription><CardTitle className="text-3xl">{getStatusBadge(runDetails.status)}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.progress !== undefined && (runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress}% complete` : `Test on: ${runDetails.runOnNRows === 0 ? 'Configured default' : `First ${runDetails.runOnNRows} rows`}`}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardDescription>Status</CardDescription><CardTitle className="text-3xl">{getStatusBadge(runDetails.status)}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.progress !== undefined && (runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress}% complete` : `Test on: ${runDetails.runOnNRows === 0 ? 'Default (10 max)' : `First ${runDetails.runOnNRows} rows`}`}</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardDescription>Duration</CardDescription><CardTitle className="text-3xl">{runDetails.summaryMetrics?.duration || (runDetails.status === 'Completed' && runDetails.createdAt && runDetails.completedAt ? `${((runDetails.completedAt.toMillis() - runDetails.createdAt.toMillis()) / 1000).toFixed(1)}s (sim)` : 'N/A')}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">&nbsp;</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardDescription>Estimated Cost</CardDescription><CardTitle className="text-3xl">{runDetails.summaryMetrics?.cost || 'N/A'}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">&nbsp;</div></CardContent></Card>
       </div>
@@ -539,7 +550,7 @@ export default function RunDetailsPage() {
                 <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p>
                 <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId}</p>
                 <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p>
-                <p><strong>Test on Rows Config:</strong> {runDetails.runOnNRows === 0 ? 'All available (default limit for preview)' : `First ${runDetails.runOnNRows} rows (preview limit applies)`}</p>
+                <p><strong>Test on Rows Config:</strong> {runDetails.runOnNRows === 0 ? 'All available (up to 10 for preview)' : `First ${runDetails.runOnNRows} rows (up to 10 for preview)`}</p>
                 <div><strong>Evaluation Parameters Used:</strong> 
                   {runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? (
                     <ul className="list-disc list-inside ml-4 mt-1">
@@ -548,12 +559,6 @@ export default function RunDetailsPage() {
                   ) : "None selected"}
                 </div>
               </div>
-              {runDetails.errorMessage && (
-                <div className="mt-4">
-                    <h4 className="font-semibold text-destructive">Error Message:</h4>
-                    <p className="text-destructive bg-destructive/10 p-2 rounded-md">{runDetails.errorMessage}</p>
-                </div>
-              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -563,12 +568,12 @@ export default function RunDetailsPage() {
             <CardHeader><CardTitle>Detailed LLM Categorization Results</CardTitle><CardDescription>Row-by-row results from the Judge LLM simulation on the previewed data.</CardDescription></CardHeader>
             <CardContent>
               {actualResultsToDisplay.length === 0 ? (
-                <p className="text-muted-foreground">No LLM categorization results available. {runDetails.status === 'Pending' || runDetails.status === 'DataPreviewed' ? 'Fetch data sample and then start LLM categorization.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Simulation in progress...' : 'Run may have failed or has no results.')}</p>
+                <p className="text-muted-foreground">No LLM categorization results available. {runDetails.status === 'Pending' ? 'Fetch data sample and then start LLM categorization.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Simulation in progress...' : 'Run may have failed or has no results.')}</p>
               ) : (
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead>Input Data (Mapped)</TableHead>
-                    {runDetails.selectedEvalParamNames?.map(paramName => <TableHead key={paramName}>{paramName}</TableHead>)}
+                    {evalParamDetailsForSimulation?.map(paramDetail => <TableHead key={paramDetail.id}>{paramDetail.name}</TableHead>)}
                     <TableHead>Full Prompt (Truncated)</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
@@ -577,11 +582,9 @@ export default function RunDetailsPage() {
                         <TableCell className="max-w-xs truncate text-xs align-top">
                           <pre className="whitespace-pre-wrap">{JSON.stringify(item.inputData, null, 2)}</pre>
                         </TableCell>
-                        {runDetails.selectedEvalParamIds?.map(paramId => {
-                            // Find the name for this id to use as key in judgeLlmOutput, or use id if name not found
-                            const paramDetail = evalParamDetails.find(epd => epd.id === paramId);
-                            const keyForOutput = paramDetail ? paramDetail.id : paramId; // Use ID as key in judgeLlmOutput consistently
-                            return <TableCell key={paramId} className="text-xs align-top">{item.judgeLlmOutput[keyForOutput] || 'N/A'}</TableCell>;
+                        {evalParamDetailsForSimulation?.map(paramDetail => {
+                            const paramId = paramDetail.id;
+                            return <TableCell key={paramId} className="text-xs align-top">{item.judgeLlmOutput[paramId] || 'N/A'}</TableCell>;
                         })}
                         <TableCell className="max-w-md truncate text-xs align-top">
                            <details>
@@ -604,13 +607,13 @@ export default function RunDetailsPage() {
             <CardContent>
               <ChartContainer config={{ Accuracy: { label: "Accuracy", color: "hsl(var(--primary))" } }} className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RechartsBarChart data={perParameterChartData} layout="vertical" margin={{ right: 30, left: 30 }}>
+                  <BarChart data={perParameterChartData} layout="vertical" margin={{ right: 30, left: 30 }}>
                     <CartesianGrid strokeDasharray="3 3" /><XAxis type="number" domain={[0, 100]} unit="%" />
                     <YAxis dataKey="name" type="category" width={150} />
                     <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} />
                     <Legend />
-                    <RechartsBar dataKey="Accuracy" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={30} />
-                  </RechartsBarChart>
+                    <RechartsBarElement dataKey="Accuracy" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={30} />
+                  </BarChart>
                 </ResponsiveContainer>
               </ChartContainer>
             </CardContent>
@@ -620,6 +623,6 @@ export default function RunDetailsPage() {
     </div>
   );
 }
-
+    
 
     
