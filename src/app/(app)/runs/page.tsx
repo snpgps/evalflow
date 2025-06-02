@@ -35,7 +35,7 @@ interface SelectableEvalParameter { id: string; name: string; }
 interface EvalRun {
   id: string; // Firestore document ID
   name: string;
-  status: 'Completed' | 'Running' | 'Pending' | 'Failed';
+  status: 'Completed' | 'Running' | 'Pending' | 'Failed' | 'Processing';
   createdAt: Timestamp;
   updatedAt?: Timestamp;
   completedAt?: Timestamp;
@@ -68,9 +68,11 @@ interface EvalRun {
   userId?: string; // To ensure user-specific data
 }
 
-type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'overallAccuracy' | 'errorMessage'> & {
+type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'overallAccuracy' | 'errorMessage' | 'status' | 'userId'> & {
   createdAt: FieldValue;
   updatedAt: FieldValue;
+  status: 'Pending';
+  userId: string;
 };
 
 
@@ -83,8 +85,10 @@ const fetchSelectableDatasets = async (userId: string): Promise<SelectableDatase
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data();
     const versionsSnapshot = await getDocs(collection(db, 'users', userId, 'datasets', docSnap.id, 'versions'));
-    const versions = versionsSnapshot.docs.map(vDoc => ({ id: vDoc.id, versionNumber: vDoc.data().versionNumber as number }));
-    datasetsData.push({ id: docSnap.id, name: data.name as string, versions });
+    const versions = versionsSnapshot.docs.map(vDoc => ({ id: vDoc.id, versionNumber: vDoc.data().versionNumber as number, fileName: vDoc.data().fileName as string })).filter(v => v.versionNumber);
+    if (versions.length > 0) { // Only include datasets with versions
+        datasetsData.push({ id: docSnap.id, name: data.name as string, versions });
+    }
   }
   return datasetsData;
 };
@@ -104,8 +108,10 @@ const fetchSelectablePromptTemplates = async (userId: string): Promise<Selectabl
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data();
     const versionsSnapshot = await getDocs(collection(db, 'users', userId, 'promptTemplates', docSnap.id, 'versions'));
-    const versions = versionsSnapshot.docs.map(vDoc => ({ id: vDoc.id, versionNumber: vDoc.data().versionNumber as number }));
-    promptsData.push({ id: docSnap.id, name: data.name as string, versions });
+    const versions = versionsSnapshot.docs.map(vDoc => ({ id: vDoc.id, versionNumber: vDoc.data().versionNumber as number })).filter(v => v.versionNumber);
+    if (versions.length > 0) { // Only include prompts with versions
+        promptsData.push({ id: docSnap.id, name: data.name as string, versions });
+    }
   }
   return promptsData;
 };
@@ -218,6 +224,11 @@ export default function EvalRunsPage() {
     const promptVersion = prompt?.versions.find(v => v.id === selectedPromptVersionId);
     const selEvalParams = evaluationParameters.filter(ep => selectedEvalParamIds.includes(ep.id));
 
+    if (!dataset || !datasetVersion || !connector || !prompt || !promptVersion || selEvalParams.length === 0) {
+        toast({ title: "Configuration Incomplete", description: "Please ensure all fields are selected, including at least one evaluation parameter.", variant: "destructive"});
+        return;
+    }
+
     const newRunData: NewEvalRunPayload = {
       name: newRunName.trim() || `Eval Run - ${new Date().toLocaleString()}`,
       status: 'Pending',
@@ -262,6 +273,7 @@ export default function EvalRunsPage() {
     switch (status) {
       case 'Completed': return <Badge variant="default" className="bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1 h-3 w-3" />Completed</Badge>;
       case 'Running': return <Badge variant="default" className="bg-blue-500 hover:bg-blue-600"><Clock className="mr-1 h-3 w-3 animate-spin" />Running</Badge>;
+      case 'Processing': return <Badge variant="default" className="bg-purple-500 hover:bg-purple-600"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Processing</Badge>;
       case 'Pending': return <Badge variant="secondary"><Clock className="mr-1 h-3 w-3" />Pending</Badge>;
       case 'Failed': return <Badge variant="destructive"><XCircle className="mr-1 h-3 w-3" />Failed</Badge>;
       default: return <Badge variant="outline">{status}</Badge>;
@@ -293,22 +305,22 @@ export default function EvalRunsPage() {
                 <PlusCircle className="mr-2 h-5 w-5" /> New Evaluation Run
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
+            <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh]">
+              <DialogHeader className="flex-shrink-0">
                 <DialogTitle>Configure New Evaluation Run</DialogTitle>
                 <DialogDescription>Select components and parameters for your new eval run.</DialogDescription>
               </DialogHeader>
-              {isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams ? (
-                <div className="py-8 flex justify-center items-center"><Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading configuration options...</span></div>
+              {(isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams) && !isNewRunDialogOpen ? (
+                <div className="py-8 flex justify-center items-center flex-grow"><Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading configuration options...</span></div>
               ) : (
-                <form onSubmit={handleNewRunSubmit} className="space-y-4 py-4">
-                  <ScrollArea className="max-h-[60vh] p-1">
-                    <div className="space-y-4 pr-3">
+                <form onSubmit={handleNewRunSubmit} className="flex-grow overflow-y-hidden flex flex-col space-y-0">
+                  <ScrollArea className="flex-grow p-1">
+                    <div className="space-y-4 p-3"> {/* Added p-3 here for content padding */}
                       <div><Label htmlFor="run-name">Run Name (Optional)</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July"/></div>
                       
                       <div>
                         <Label htmlFor="run-dataset">Dataset</Label>
-                        <Select value={selectedDatasetId} onValueChange={setSelectedDatasetId} required>
+                        <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required>
                           <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger>
                           <SelectContent>{datasets.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent>
                         </Select>
@@ -318,7 +330,7 @@ export default function EvalRunsPage() {
                           <Label htmlFor="run-dataset-version">Dataset Version</Label>
                           <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required>
                             <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger>
-                            <SelectContent>{datasets.find(d => d.id === selectedDatasetId)?.versions.map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)}</SelectContent>
+                            <SelectContent>{datasets.find(d => d.id === selectedDatasetId)?.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                       )}
@@ -332,7 +344,7 @@ export default function EvalRunsPage() {
 
                       <div>
                         <Label htmlFor="run-prompt">Prompt Template</Label>
-                        <Select value={selectedPromptId} onValueChange={setSelectedPromptId} required>
+                        <Select value={selectedPromptId} onValueChange={(value) => {setSelectedPromptId(value); setSelectedPromptVersionId('');}} required>
                           <SelectTrigger id="run-prompt"><SelectValue placeholder="Select prompt" /></SelectTrigger>
                           <SelectContent>{promptTemplates.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
                         </Select>
@@ -342,7 +354,7 @@ export default function EvalRunsPage() {
                           <Label htmlFor="run-prompt-version">Prompt Version</Label>
                           <Select value={selectedPromptVersionId} onValueChange={setSelectedPromptVersionId} required>
                             <SelectTrigger id="run-prompt-version"><SelectValue placeholder="Select version" /></SelectTrigger>
-                            <SelectContent>{promptTemplates.find(p => p.id === selectedPromptId)?.versions.map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)}</SelectContent>
+                            <SelectContent>{promptTemplates.find(p => p.id === selectedPromptId)?.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                       )}
@@ -375,9 +387,9 @@ export default function EvalRunsPage() {
                       </div>
                     </div>
                   </ScrollArea>
-                  <DialogFooter className="pt-4 border-t">
+                  <DialogFooter className="pt-4 border-t flex-shrink-0">
                     <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
-                    <Button type="submit" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0}>
+                    <Button type="submit" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId}>
                       {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />}
                       Start Evaluation
                     </Button>
@@ -425,7 +437,7 @@ export default function EvalRunsPage() {
                     <TableCell className="text-sm text-muted-foreground">{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell>
                     <TableCell>
                       {run.status === 'Completed' && run.overallAccuracy !== undefined ? `${run.overallAccuracy.toFixed(1)}%` : 
-                       run.status === 'Running' && run.progress !== undefined ? <Progress value={run.progress} className="h-2 w-20" /> : 'N/A'}
+                       (run.status === 'Running' || run.status === 'Processing') && run.progress !== undefined ? <Progress value={run.progress} className="h-2 w-20" /> : 'N/A'}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatTimestamp(run.createdAt)}</TableCell>
                     <TableCell className="text-right space-x-1">
@@ -446,3 +458,5 @@ export default function EvalRunsPage() {
     </div>
   );
 }
+
+    
