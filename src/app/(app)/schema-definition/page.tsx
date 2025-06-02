@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, type FormEvent, useEffect } from 'react';
@@ -11,7 +10,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { PlusCircle, Edit2, Trash2, Settings2, AlertTriangle } from "lucide-react";
-import { useUserEmail } from '@/contexts/UserEmailContext';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -27,28 +25,36 @@ interface ProductParameter {
   order?: number; // For future reordering
 }
 
-const fetchProductParameters = async (userId: string): Promise<ProductParameter[]> => {
+const fetchProductParameters = async (userId: string | null): Promise<ProductParameter[]> => {
   if (!userId) return [];
   const parametersCollection = collection(db, 'users', userId, 'productParameters');
-  const q = query(parametersCollection, orderBy('createdAt', 'asc')); // Or orderBy 'order' if implemented
+  const q = query(parametersCollection, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProductParameter));
 };
 
 export default function SchemaDefinitionPage() {
-  const { userEmail, isLoading: isLoadingUser } = useUserEmail();
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
 
+  useEffect(() => {
+    const storedUserId = localStorage.getItem('currentUserId');
+    if (storedUserId) {
+      setCurrentUserId(storedUserId);
+    }
+    setIsLoadingUserId(false);
+  }, []);
+
   const { data: parameters = [], isLoading: isLoadingParameters, error: fetchError } = useQuery<ProductParameter[], Error>({
-    queryKey: ['productParameters', userEmail],
-    queryFn: () => userEmail ? fetchProductParameters(userEmail) : Promise.resolve([]),
-    enabled: !!userEmail && !isLoadingUser,
+    queryKey: ['productParameters', currentUserId],
+    queryFn: () => fetchProductParameters(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingParameter, setEditingParameter] = useState<ProductParameter | null>(null);
   
-  // Form state
   const [parameterName, setParameterName] = useState('');
   const [parameterType, setParameterType] = useState<'text' | 'dropdown' | 'textarea'>('text');
   const [parameterDefinition, setParameterDefinition] = useState('');
@@ -56,14 +62,14 @@ export default function SchemaDefinitionPage() {
 
   const addMutation = useMutation<void, Error, Omit<ProductParameter, 'id' | 'createdAt'>>({
     mutationFn: async (newParameterData) => {
-      if (!userEmail) throw new Error("User not identified.");
-      await addDoc(collection(db, 'users', userEmail, 'productParameters'), {
+      if (!currentUserId) throw new Error("User not identified.");
+      await addDoc(collection(db, 'users', currentUserId, 'productParameters'), {
         ...newParameterData,
         createdAt: serverTimestamp(),
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['productParameters', userEmail] });
+      queryClient.invalidateQueries({ queryKey: ['productParameters', currentUserId] });
       resetForm();
       setIsDialogOpen(false);
     },
@@ -74,14 +80,13 @@ export default function SchemaDefinitionPage() {
 
   const updateMutation = useMutation<void, Error, ProductParameter>({
     mutationFn: async (parameterToUpdate) => {
-      if (!userEmail) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("User not identified.");
       const { id, ...dataToUpdate } = parameterToUpdate;
-      // Ensure createdAt is not overwritten if it exists, or handle as needed
-      const docRef = doc(db, 'users', userEmail, 'productParameters', id);
+      const docRef = doc(db, 'users', currentUserId, 'productParameters', id);
       await updateDoc(docRef, dataToUpdate);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['productParameters', userEmail] });
+      queryClient.invalidateQueries({ queryKey: ['productParameters', currentUserId] });
       resetForm();
       setIsDialogOpen(false);
     },
@@ -92,11 +97,11 @@ export default function SchemaDefinitionPage() {
 
   const deleteMutation = useMutation<void, Error, string>({
     mutationFn: async (parameterId) => {
-      if (!userEmail) throw new Error("User not identified.");
-      await deleteDoc(doc(db, 'users', userEmail, 'productParameters', parameterId));
+      if (!currentUserId) throw new Error("User not identified.");
+      await deleteDoc(doc(db, 'users', currentUserId, 'productParameters', parameterId));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['productParameters', userEmail] });
+      queryClient.invalidateQueries({ queryKey: ['productParameters', currentUserId] });
     },
     onError: (error) => {
       alert(`Error deleting parameter: ${error.message}`);
@@ -105,6 +110,10 @@ export default function SchemaDefinitionPage() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (!currentUserId) {
+        alert("No User ID found. Please log in again.");
+        return;
+    }
     const paramData = {
       name: parameterName,
       type: parameterType,
@@ -137,12 +146,16 @@ export default function SchemaDefinitionPage() {
   };
 
   const handleDelete = (id: string) => {
+    if (!currentUserId) {
+        alert("No User ID found. Please log in again.");
+        return;
+    }
     if (confirm('Are you sure you want to delete this parameter?')) {
       deleteMutation.mutate(id);
     }
   };
 
-  if (isLoadingUser || (isLoadingParameters && userEmail)) {
+  if (isLoadingUserId || (isLoadingParameters && currentUserId)) {
     return (
       <div className="space-y-6">
         <Card className="shadow-lg">
@@ -169,7 +182,7 @@ export default function SchemaDefinitionPage() {
         </CardHeader>
         <CardContent>
           <p>Could not fetch product parameters: {fetchError.message}</p>
-           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered an email on the login page and have a stable internet connection. Check Firebase console for potential issues.</p>
+           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered a User ID on the login page and have a stable internet connection. Check Firebase console for potential issues.</p>
         </CardContent>
       </Card>
     )
@@ -190,7 +203,7 @@ export default function SchemaDefinitionPage() {
         <CardContent>
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={() => { setEditingParameter(null); resetForm(); setIsDialogOpen(true); }} disabled={!userEmail || addMutation.isPending || updateMutation.isPending}>
+              <Button onClick={() => { setEditingParameter(null); resetForm(); setIsDialogOpen(true); }} disabled={!currentUserId || addMutation.isPending || updateMutation.isPending}>
                 <PlusCircle className="mr-2 h-5 w-5" /> Add New Parameter
               </Button>
             </DialogTrigger>
@@ -231,7 +244,7 @@ export default function SchemaDefinitionPage() {
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
-                  <Button type="submit" disabled={addMutation.isPending || updateMutation.isPending}>
+                  <Button type="submit" disabled={addMutation.isPending || updateMutation.isPending || !currentUserId}>
                     {addMutation.isPending || updateMutation.isPending ? 'Saving...' : (editingParameter ? 'Save Changes' : 'Add Parameter')}
                   </Button>
                 </DialogFooter>
@@ -244,16 +257,16 @@ export default function SchemaDefinitionPage() {
       <Card>
         <CardHeader>
           <CardTitle>Defined Parameters</CardTitle>
-          <CardDescription>Manage your existing product parameters.</CardDescription>
+          <CardDescription>Manage your existing product parameters. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription>
         </CardHeader>
         <CardContent>
-          {!userEmail ? (
+          {!currentUserId && !isLoadingUserId ? (
              <div className="text-center text-muted-foreground py-8">
                 <p>Please log in to see your parameters.</p>
               </div>
           ) : parameters.length === 0 && !isLoadingParameters ? (
             <div className="text-center text-muted-foreground py-8">
-              <p>No product parameters defined yet for {userEmail}.</p>
+              <p>No product parameters defined yet for User ID: {currentUserId}.</p>
               <p className="text-sm">Click "Add New Parameter" to get started.</p>
             </div>
           ) : (
@@ -273,10 +286,10 @@ export default function SchemaDefinitionPage() {
                     <TableCell className="capitalize">{param.type}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{param.definition}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-2" disabled={updateMutation.isPending || deleteMutation.isPending}>
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-2" disabled={updateMutation.isPending || deleteMutation.isPending || !currentUserId}>
                         <Edit2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || updateMutation.isPending && editingParameter?.id === param.id}>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || (updateMutation.isPending && editingParameter?.id === param.id) || !currentUserId}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>

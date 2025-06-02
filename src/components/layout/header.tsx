@@ -1,4 +1,3 @@
-
 'use client';
 
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -15,7 +14,6 @@ import {
 import { Bell, LogOut, User, Settings, Sun, Moon, LogIn } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { useUserEmail } from '@/contexts/UserEmailContext';
 
 // Helper function to generate title from pathname
 const generateTitle = (pathname: string): string => {
@@ -37,11 +35,10 @@ const generateTitle = (pathname: string): string => {
 };
 
 
-export function Header({ title }: { title?: string }) {
+export function Header({ userId }: { userId: string | null }) {
   const pathname = usePathname();
-  const pageTitle = title || generateTitle(pathname);
+  const pageTitle = generateTitle(pathname);
   const [isDarkTheme, setIsDarkTheme] = useState(false);
-  const { userEmail, setUserEmail, isLoading: isUserLoading } = useUserEmail();
   const router = useRouter();
 
   useEffect(() => {
@@ -55,17 +52,14 @@ export function Header({ title }: { title?: string }) {
   };
 
   const handleLogout = () => {
-    setUserEmail(null); // This will clear localStorage
+    localStorage.removeItem('currentUserId');
     router.push('/auth/login');
   };
   
-  const getAvatarFallback = (email: string | null) => {
-    if (!email) return '??';
-    const parts = email.split('@')[0].split(/[._-]/);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return email.substring(0, 2).toUpperCase();
+  const getAvatarFallback = (id: string | null) => {
+    if (!id) return '??';
+    // Simple fallback for User ID
+    return id.substring(0, 2).toUpperCase();
   }
 
   return (
@@ -89,16 +83,16 @@ export function Header({ title }: { title?: string }) {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                   <Avatar className="h-9 w-9">
-                    <AvatarImage src={`https://placehold.co/100x100.png?text=${getAvatarFallback(userEmail)}`} alt="User Avatar" data-ai-hint="person avatar" />
-                    <AvatarFallback>{getAvatarFallback(userEmail)}</AvatarFallback>
+                    <AvatarImage src={`https://placehold.co/100x100.png?text=${getAvatarFallback(userId)}`} alt="User Avatar" data-ai-hint="person avatar" />
+                    <AvatarFallback>{getAvatarFallback(userId)}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                {userEmail && !isUserLoading ? (
+                {userId ? (
                   <>
                     <DropdownMenuLabel>
-                      <p className="font-medium truncate">{userEmail}</p>
+                      <p className="font-medium truncate">User ID: {userId}</p>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => router.push('/settings')}>
@@ -115,8 +109,6 @@ export function Header({ title }: { title?: string }) {
                       <span>Log out</span>
                     </DropdownMenuItem>
                   </>
-                ) : isUserLoading ? (
-                   <DropdownMenuLabel>Loading...</DropdownMenuLabel>
                 ) : (
                   <DropdownMenuItem onClick={() => router.push('/auth/login')}>
                     <LogIn className="mr-2 h-4 w-4" />

@@ -1,33 +1,37 @@
-
-'use client'; // This layout now needs to be a client component for UserEmailProvider & Tanstack Query
+'use client';
 
 import { SidebarProvider, Sidebar, SidebarInset, SidebarContent } from '@/components/ui/sidebar';
 import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
-import { UserEmailProvider, useUserEmail } from '@/contexts/UserEmailContext';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
-
 
 const queryClient = new QueryClient();
 
 function AppContent({ children }: { children: React.ReactNode }) {
-  const { userEmail, isLoading } = useUserEmail();
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const router = useRouter();
-  // const pathname = usePathname(); // Pathname is not strictly needed for guard logic if AppLayout is correctly scoped
 
   useEffect(() => {
     // This effect handles redirection for protected (app) routes.
-    // If user data has loaded, and there's no user email, redirect to login.
-    if (!isLoading && !userEmail) {
+    const storedUserId = localStorage.getItem('currentUserId');
+    if (storedUserId) {
+      setCurrentUserId(storedUserId);
+    }
+    setIsLoadingUserId(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoadingUserId && !currentUserId) {
       router.push('/auth/login');
     }
-  }, [userEmail, isLoading, router]);
+  }, [currentUserId, isLoadingUserId, router]);
 
   // Show skeleton loader for (app) pages while user data is loading.
-  if (isLoading) {
+  if (isLoadingUserId) {
     return (
        <div className="flex flex-col flex-1 min-h-screen">
         <Skeleton className="h-16 w-full" />
@@ -42,11 +46,9 @@ function AppContent({ children }: { children: React.ReactNode }) {
     );
   }
   
-  // If loading is finished, but there's no userEmail,
+  // If loading is finished, but there's no currentUserId,
   // it means the redirect from useEffect is in progress or has just been initiated.
-  // Show a loading/redirecting message.
-  if (!userEmail) {
-     // This state implies redirection is about to happen or has happened.
+  if (!currentUserId) {
     return (
        <div className="flex flex-col flex-1 min-h-screen items-center justify-center bg-background">
           <p>Redirecting to login...</p>
@@ -54,7 +56,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // If userEmail is set (and isLoading is false), render the main app content.
+  // If currentUserId is set (and isLoadingUserId is false), render the main app content.
   return (
     <SidebarProvider defaultOpen={true}>
       <Sidebar collapsible="icon" variant="sidebar" side="left" className="border-r">
@@ -63,7 +65,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
         </SidebarContent>
       </Sidebar>
       <div className="flex flex-col flex-1 min-h-screen">
-        <Header />
+        <Header userId={currentUserId} />
         <SidebarInset>
           <main className="flex-1 p-6 bg-background">
             {children}
@@ -74,7 +76,6 @@ function AppContent({ children }: { children: React.ReactNode }) {
   );
 }
 
-
 export default function AppLayout({
   children,
 }: {
@@ -82,9 +83,7 @@ export default function AppLayout({
 }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <UserEmailProvider>
-        <AppContent>{children}</AppContent>
-      </UserEmailProvider>
+      <AppContent>{children}</AppContent>
     </QueryClientProvider>
   );
 }
