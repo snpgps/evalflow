@@ -8,9 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2 } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2, Link2 } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { db } from '@/lib/firebase';
 import { 
@@ -39,6 +39,7 @@ interface Dataset {
   id: string; // Firestore document ID
   name: string;
   description: string;
+  // productSchemaId: string; // Removed as per previous request
   versions: DatasetVersion[];
   createdAt?: Timestamp; // Firestore Timestamp
 }
@@ -222,7 +223,7 @@ export default function DatasetsPage() {
     if (file) {
       setSelectedFile(file);
       if (file.name.endsWith('.xlsx')) {
-        setAvailableSheetNames([]); // Reset for XLSX before parsing
+        setAvailableSheetNames([]); 
         setSelectedSheet(''); 
         setSheetColumnHeaders([]);
         setCurrentColumnMapping({});
@@ -245,7 +246,7 @@ export default function DatasetsPage() {
         }
       } else if (file.name.endsWith('.csv')) {
         setAvailableSheetNames([]);
-        setSelectedSheet(''); // Will be set to filename after parsing
+        setSelectedSheet(''); 
         setSheetColumnHeaders([]);
         setCurrentColumnMapping({});
         try {
@@ -253,11 +254,14 @@ export default function DatasetsPage() {
             reader.onload = (e) => {
                 const text = e.target?.result as string;
                 if (text) {
-                    const lines = text.split(/\r\n|\n|\r/); // More robust line break handling
+                    const lines = text.split(/\r\n|\n|\r/); 
                     if (lines.length > 0) {
-                        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+                        const headers = lines[0]
+                            .split(',')
+                            .map(h => h.trim().replace(/^"|"$/g, '').trim()) // Ensure trim after quote removal
+                            .filter(h => h.length > 0); // Filter out empty strings
                         setSheetColumnHeaders(headers);
-                        setSelectedSheet(file.name); // Indicate CSV is "selected" for mapping UI
+                        setSelectedSheet(file.name); 
                         
                         const initialMapping: Record<string, string> = {};
                         productParametersForMapping.forEach(param => {
@@ -299,8 +303,9 @@ export default function DatasetsPage() {
           const workbook = XLSX.read(data, { type: 'array' });
           const worksheet = workbook.Sheets[sheetName];
           if (worksheet) {
-            const headers: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as any[];
-            setSheetColumnHeaders(headers.map(String)); 
+            const rawHeaders: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as any[];
+            const headers = rawHeaders.map(String).map(h => h.trim()).filter(h => h.length > 0); // Filter out empty/whitespace strings
+            setSheetColumnHeaders(headers); 
             
             const initialMapping: Record<string, string> = {};
             productParametersForMapping.forEach(param => {
@@ -326,12 +331,11 @@ export default function DatasetsPage() {
     e.preventDefault();
     if (!selectedFile || !currentDatasetIdForUpload || !currentUserId) return;
 
-    if (selectedFile.name.endsWith('.xlsx') && !selectedSheet && availableSheetNames.length > 0) {
+    if (selectedFile.name.endsWith('.xlsx') && availableSheetNames.length > 0 && !selectedSheet) {
       alert("Please select a sheet from the Excel file.");
       return;
     }
-    // For CSV, sheet selection is skipped, mapping should ideally be checked if parameters exist, but not blocking submission for now.
-
+    
     const targetDataset = datasets.find(d => d.id === currentDatasetIdForUpload);
     if (!targetDataset) return;
 
@@ -346,13 +350,13 @@ export default function DatasetsPage() {
       size: `${(selectedFile.size / (1024 * 1024)).toFixed(2)}MB`,
       records: 0, // Placeholder
       createdAt: serverTimestamp(),
-      columnMapping: currentColumnMapping, // Always include mapping
+      columnMapping: currentColumnMapping,
     };
 
     if (selectedFile.name.endsWith('.xlsx') && selectedSheet) {
       newVersionData.selectedSheetName = selectedSheet;
     } else if (selectedFile.name.endsWith('.csv')) {
-      newVersionData.selectedSheetName = null; // Explicitly null for CSVs or a marker like 'CSV_FILE' if preferred
+      newVersionData.selectedSheetName = null; 
     }
     
     addDatasetVersionMutation.mutate({ datasetId: currentDatasetIdForUpload, versionData: newVersionData });
@@ -459,6 +463,11 @@ export default function DatasetsPage() {
         </CardHeader>
         <CardContent>
            <Dialog open={isDatasetDialogOpen} onOpenChange={(isOpen) => { setIsDatasetDialogOpen(isOpen); if(!isOpen) resetDatasetForm();}}>
+             <DialogTrigger asChild>
+                <Button onClick={handleCreateNewDatasetClick} disabled={!currentUserId || addDatasetMutation.isPending || updateDatasetMutation.isPending}>
+                    <PlusCircle className="mr-2 h-5 w-5" /> Create New Dataset
+                </Button>
+              </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>{editingDataset ? 'Edit' : 'Create New'} Dataset</DialogTitle>
@@ -483,9 +492,6 @@ export default function DatasetsPage() {
                 </DialogFooter>
               </form>
             </DialogContent>
-            <Button onClick={handleCreateNewDatasetClick} disabled={!currentUserId || addDatasetMutation.isPending || updateDatasetMutation.isPending}>
-                <PlusCircle className="mr-2 h-5 w-5" /> Create New Dataset
-            </Button>
           </Dialog>
         </CardContent>
       </Card>
@@ -544,7 +550,7 @@ export default function DatasetsPage() {
                         <TableCell>{version.uploadDate}</TableCell>
                         <TableCell>{version.size}</TableCell>
                         <TableCell>{version.records.toLocaleString()}</TableCell>
-                        <TableCell>{version.selectedSheetName || (version.fileName.endsWith('.csv') ? 'CSV' : 'N/A')}</TableCell>
+                        <TableCell>{version.selectedSheetName || (version.fileName.endsWith('.csv') && !version.selectedSheetName ? 'CSV' : 'N/A')}</TableCell>
                         <TableCell className="text-right">
                            <Button variant="ghost" size="icon" className="mr-2" title="Review Data/Mapping (Not Implemented)">
                             <Eye className="h-4 w-4" />
@@ -585,7 +591,7 @@ export default function DatasetsPage() {
               {selectedFile?.name.endsWith('.xlsx') && availableSheetNames.length > 0 && (
                 <div className="space-y-2 pt-2 border-t">
                    <Label htmlFor="sheet-select" className="flex items-center"><SheetIcon className="mr-2 h-4 w-4 text-green-600"/>Select Sheet (for .xlsx)</Label>
-                  <Select value={selectedSheet} onValueChange={handleSheetSelection} required>
+                  <Select value={selectedSheet} onValueChange={handleSheetSelection} required={availableSheetNames.length > 0}>
                     <SelectTrigger id="sheet-select"><SelectValue placeholder="Select a sheet" /></SelectTrigger>
                     <SelectContent>
                       {availableSheetNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
@@ -642,3 +648,6 @@ export default function DatasetsPage() {
     </div>
   );
 }
+
+
+    
