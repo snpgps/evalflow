@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"; // Removed DialogTrigger
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PlusCircle, Edit2, Trash2, Settings2, AlertTriangle } from "lucide-react";
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp } from 'firebase/firestore';
@@ -41,8 +41,10 @@ export default function SchemaDefinitionPage() {
 
   useEffect(() => {
     const storedUserId = localStorage.getItem('currentUserId');
-    if (storedUserId) {
-      setCurrentUserId(storedUserId);
+    if (storedUserId && storedUserId.trim() !== "") {
+      setCurrentUserId(storedUserId.trim());
+    } else {
+      setCurrentUserId(null); // Explicitly set to null if not found or empty
     }
     setIsLoadingUserId(false);
   }, []);
@@ -50,7 +52,7 @@ export default function SchemaDefinitionPage() {
   const { data: parameters = [], isLoading: isLoadingParameters, error: fetchError } = useQuery<ProductParameter[], Error>({
     queryKey: ['productParameters', currentUserId],
     queryFn: () => fetchProductParameters(currentUserId),
-    enabled: !!currentUserId && !isLoadingUserId,
+    enabled: !!currentUserId && !isLoadingUserId, // Only run if currentUserId is truthy (not null, not empty string)
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -63,7 +65,7 @@ export default function SchemaDefinitionPage() {
 
   const addMutation = useMutation<void, Error, Omit<ProductParameter, 'id' | 'createdAt'>>({
     mutationFn: async (newParameterData) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("User not identified for add operation.");
       await addDoc(collection(db, 'users', currentUserId, 'productParameters'), {
         ...newParameterData,
         createdAt: serverTimestamp(),
@@ -75,13 +77,14 @@ export default function SchemaDefinitionPage() {
       setIsDialogOpen(false);
     },
     onError: (error) => {
+      console.error("Error adding parameter:", error);
       alert(`Error adding parameter: ${error.message}`);
     }
   });
 
   const updateMutation = useMutation<void, Error, ProductParameter>({
     mutationFn: async (parameterToUpdate) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("User not identified for update operation.");
       const { id, ...dataToUpdate } = parameterToUpdate;
       const docRef = doc(db, 'users', currentUserId, 'productParameters', id);
       await updateDoc(docRef, dataToUpdate);
@@ -92,39 +95,58 @@ export default function SchemaDefinitionPage() {
       setIsDialogOpen(false);
     },
      onError: (error) => {
+      console.error("Error updating parameter:", error);
       alert(`Error updating parameter: ${error.message}`);
     }
   });
 
   const deleteMutation = useMutation<void, Error, string>({
     mutationFn: async (parameterId) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("User not identified for delete operation.");
       await deleteDoc(doc(db, 'users', currentUserId, 'productParameters', parameterId));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['productParameters', currentUserId] });
     },
     onError: (error) => {
+      console.error("Error deleting parameter:", error);
       alert(`Error deleting parameter: ${error.message}`);
     }
   });
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    console.log('handleSubmit called');
+    console.log('Current User ID:', currentUserId);
+    console.log('Parameter Name:', parameterName);
+    console.log('Parameter Definition:', parameterDefinition);
+    console.log('Is addMutation pending?', addMutation.isPending);
+    console.log('Is updateMutation pending?', updateMutation.isPending);
+
     if (!currentUserId) {
         alert("No User ID found. Please log in again.");
+        console.error("Attempted to submit with no User ID.");
         return;
     }
+    if (!parameterName.trim() || !parameterDefinition.trim()) {
+        alert("Parameter Name and Definition are required.");
+        console.warn("Form validation failed: Name or Definition is empty. Name: '"+parameterName+"', Definition: '"+parameterDefinition+"'");
+        return; 
+    }
+
     const paramData = {
-      name: parameterName,
+      name: parameterName.trim(),
       type: parameterType,
-      definition: parameterDefinition,
+      definition: parameterDefinition.trim(),
       options: parameterType === 'dropdown' ? dropdownOptions.split(',').map(opt => opt.trim()).filter(Boolean) : undefined,
     };
+    console.log('Submitting paramData:', paramData);
 
     if (editingParameter) {
+      console.log('Calling updateMutation');
       updateMutation.mutate({ ...editingParameter, ...paramData });
     } else {
+      console.log('Calling addMutation');
       addMutation.mutate(paramData);
     }
   };
@@ -157,6 +179,10 @@ export default function SchemaDefinitionPage() {
   };
 
   const handleAddNewParameterClick = () => {
+    if (!currentUserId) {
+      alert("Please log in first to add parameters.");
+      return;
+    }
     setEditingParameter(null);
     resetForm();
     setIsDialogOpen(true);
@@ -189,7 +215,7 @@ export default function SchemaDefinitionPage() {
         </CardHeader>
         <CardContent>
           <p>Could not fetch product parameters: {fetchError.message}</p>
-           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered a User ID on the login page and have a stable internet connection. Check Firebase console for potential issues.</p>
+           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered a User ID on the login page and have a stable internet connection. Check Firebase console for potential issues with Firestore rules or connectivity for project evalflow-d19ab.</p>
         </CardContent>
       </Card>
     )
@@ -268,10 +294,11 @@ export default function SchemaDefinitionPage() {
           {!currentUserId && !isLoadingUserId ? (
              <div className="text-center text-muted-foreground py-8">
                 <p>Please log in to see your parameters.</p>
+                <p className="text-sm">Click "Add New Parameter" on the card above once logged in.</p>
               </div>
           ) : parameters.length === 0 && !isLoadingParameters ? (
             <div className="text-center text-muted-foreground py-8">
-              <p>No product parameters defined yet for User ID: {currentUserId}.</p>
+              <p>No product parameters defined yet for User ID: {currentUserId || 'Unknown'}.</p>
               <p className="text-sm">Click "Add New Parameter" to get started.</p>
             </div>
           ) : (
@@ -308,5 +335,3 @@ export default function SchemaDefinitionPage() {
     </div>
   );
 }
-
-    
