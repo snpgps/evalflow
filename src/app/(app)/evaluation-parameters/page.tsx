@@ -9,11 +9,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, Target, GripVertical, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, Target, GripVertical, CheckCircle, XCircle, AlertTriangle, MinusCircle } from "lucide-react";
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp, type FieldValue, deleteField } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+interface CategorizationLabelToStore {
+  name: string;
+  definition: string;
+}
+
+interface UICategorizationLabel extends CategorizationLabelToStore {
+  tempId: string; // For React key during editing
+}
 
 interface EvalParameter {
   id: string; // Firestore document ID
@@ -21,8 +31,12 @@ interface EvalParameter {
   definition: string;
   goodExample: string;
   badExample: string;
+  categorizationLabels?: CategorizationLabelToStore[];
   createdAt?: Timestamp;
 }
+
+type EvalParameterUpdatePayload = { id: string } & Partial<Omit<EvalParameter, 'id' | 'createdAt' | 'categorizationLabels'> & { categorizationLabels?: CategorizationLabelToStore[] | FieldValue }>;
+
 
 const fetchEvaluationParameters = async (userId: string | null): Promise<EvalParameter[]> => {
   if (!userId) return [];
@@ -60,6 +74,8 @@ export default function EvaluationParametersPage() {
   const [paramDefinition, setParamDefinition] = useState('');
   const [goodExample, setGoodExample] = useState('');
   const [badExample, setBadExample] = useState('');
+  const [currentCategorizationLabels, setCurrentCategorizationLabels] = useState<UICategorizationLabel[]>([]);
+
 
   const addMutation = useMutation<void, Error, Omit<EvalParameter, 'id' | 'createdAt'>>({
     mutationFn: async (newParameterData) => {
@@ -80,10 +96,10 @@ export default function EvaluationParametersPage() {
     }
   });
 
-  const updateMutation = useMutation<void, Error, EvalParameter>({
+  const updateMutation = useMutation<void, Error, EvalParameterUpdatePayload>({
     mutationFn: async (parameterToUpdate) => {
       if (!currentUserId) throw new Error("User not identified for update operation.");
-      const { id, createdAt, ...dataToUpdate } = parameterToUpdate; // Exclude createdAt from update
+      const { id, ...dataToUpdate } = parameterToUpdate;
       const docRef = doc(db, 'users', currentUserId, 'evaluationParameters', id);
       await updateDoc(docRef, dataToUpdate);
     },
@@ -112,6 +128,25 @@ export default function EvaluationParametersPage() {
     }
   });
 
+  const handleAddNewCategorizationLabel = () => {
+    setCurrentCategorizationLabels(prev => [
+      ...prev,
+      { tempId: `new-cl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, name: '', definition: '' }
+    ]);
+  };
+
+  const handleCategorizationLabelChange = (tempId: string, field: 'name' | 'definition', value: string) => {
+    setCurrentCategorizationLabels(prev =>
+      prev.map(label =>
+        label.tempId === tempId ? { ...label, [field]: value } : label
+      )
+    );
+  };
+
+  const handleRemoveCategorizationLabel = (tempId: string) => {
+    setCurrentCategorizationLabels(prev => prev.filter(label => label.tempId !== tempId));
+  };
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!currentUserId) {
@@ -119,21 +154,33 @@ export default function EvaluationParametersPage() {
       return;
     }
     if (!paramName.trim() || !paramDefinition.trim() || !goodExample.trim() || !badExample.trim()) {
-      alert("All fields are required.");
+      alert("Parameter Name, Definition, Good and Bad Examples are required.");
       return;
     }
 
-    const evalParamData = {
-      name: paramName.trim(),
-      definition: paramDefinition.trim(),
-      goodExample: goodExample.trim(),
-      badExample: badExample.trim(),
-    };
+    const labelsToSave: CategorizationLabelToStore[] = currentCategorizationLabels
+      .map(({ tempId, ...restOfLabel }) => restOfLabel) // Strip tempId
+      .filter(cl => cl.name.trim() && cl.definition.trim()); // Save only valid labels
 
     if (editingEvalParam) {
-      updateMutation.mutate({ ...evalParamData, id: editingEvalParam.id });
+      const payloadForUpdate: EvalParameterUpdatePayload = {
+        id: editingEvalParam.id,
+        name: paramName.trim(),
+        definition: paramDefinition.trim(),
+        goodExample: goodExample.trim(),
+        badExample: badExample.trim(),
+        categorizationLabels: labelsToSave,
+      };
+      updateMutation.mutate(payloadForUpdate);
     } else {
-      addMutation.mutate(evalParamData);
+      const newParamData: Omit<EvalParameter, 'id' | 'createdAt'> = {
+        name: paramName.trim(),
+        definition: paramDefinition.trim(),
+        goodExample: goodExample.trim(),
+        badExample: badExample.trim(),
+        categorizationLabels: labelsToSave,
+      };
+      addMutation.mutate(newParamData);
     }
   };
 
@@ -142,6 +189,7 @@ export default function EvaluationParametersPage() {
     setParamDefinition('');
     setGoodExample('');
     setBadExample('');
+    setCurrentCategorizationLabels([]);
     setEditingEvalParam(null);
   };
 
@@ -151,6 +199,12 @@ export default function EvaluationParametersPage() {
     setParamDefinition(param.definition);
     setGoodExample(param.goodExample);
     setBadExample(param.badExample);
+    setCurrentCategorizationLabels(
+      param.categorizationLabels?.map((cl, index) => ({ 
+        ...cl, 
+        tempId: `cl-${param.id}-${index}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` 
+      })) || []
+    );
     setIsDialogOpen(true);
   };
 
@@ -169,10 +223,11 @@ export default function EvaluationParametersPage() {
       alert("Please log in first to add parameters.");
       return;
     }
-    setEditingEvalParam(null);
-    resetForm();
+    setEditingEvalParam(null); // Ensure we are in "add new" mode
+    resetForm(); // Resets all fields including categorization labels
     setIsDialogOpen(true);
   };
+
 
   if (isLoadingUserId || (isLoadingParameters && currentUserId)) {
     return (
@@ -215,23 +270,28 @@ export default function EvaluationParametersPage() {
             <Target className="h-7 w-7 text-primary" />
             <div>
               <CardTitle className="text-2xl font-headline">Evaluation Parameters</CardTitle>
-              <CardDescription>Define the metrics and criteria for evaluating your AI model's performance. Each parameter should include a clear definition and examples.</CardDescription>
+              <CardDescription>Define the metrics and criteria for evaluating your AI model's performance. Each parameter should include a clear definition, examples, and optional categorization labels.</CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <Button onClick={handleAddNewParameterClick} disabled={!currentUserId || addMutation.isPending || updateMutation.isPending}>
+           <Button onClick={handleAddNewParameterClick} disabled={!currentUserId || addMutation.isPending || updateMutation.isPending}>
             <PlusCircle className="mr-2 h-5 w-5" /> Add New Evaluation Parameter
           </Button>
-          <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle>{editingEvalParam ? 'Edit' : 'Add New'} Evaluation Parameter</DialogTitle>
-                <DialogDescription>
-                  Define a criterion for evaluating model outputs. Include examples of good and bad responses.
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4 py-4">
+        </CardContent>
+      </Card>
+      
+      <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
+        <DialogContent className="sm:max-w-2xl"> {/* Increased width for more content */}
+          <DialogHeader>
+            <DialogTitle>{editingEvalParam ? 'Edit' : 'Add New'} Evaluation Parameter</DialogTitle>
+            <DialogDescription>
+              Define a criterion for evaluating model outputs. Include examples and optional categorization labels.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit}>
+            <ScrollArea className="max-h-[70vh] p-1 pr-6"> {/* Added ScrollArea */}
+              <div className="space-y-4 py-4 pr-1">
                 <div>
                   <Label htmlFor="eval-name">Parameter Name</Label>
                   <Input id="eval-name" value={paramName} onChange={(e) => setParamName(e.target.value)} placeholder="e.g., Completeness" required />
@@ -248,17 +308,48 @@ export default function EvaluationParametersPage() {
                   <Label htmlFor="eval-bad-example">Bad Example</Label>
                   <Textarea id="eval-bad-example" value={badExample} onChange={(e) => setBadExample(e.target.value)} placeholder="Provide an example of a bad response for this parameter." required />
                 </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
-                  <Button type="submit" disabled={addMutation.isPending || updateMutation.isPending || !currentUserId}>
-                     {addMutation.isPending || updateMutation.isPending ? 'Saving...' : (editingEvalParam ? 'Save Changes' : 'Add Parameter')}
+
+                <div className="space-y-3 pt-4 border-t">
+                  <h4 className="text-md font-medium">Categorization Labels (Optional)</h4>
+                  {currentCategorizationLabels.map((label, index) => (
+                    <Card key={label.tempId} className="p-3 space-y-2 bg-muted/50">
+                      <div className="flex justify-between items-center">
+                        <Label htmlFor={`cl-name-${label.tempId}`}>Label Name #{index + 1}</Label>
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRemoveCategorizationLabel(label.tempId)}>
+                          <MinusCircle className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <Input
+                        id={`cl-name-${label.tempId}`}
+                        value={label.name}
+                        onChange={(e) => handleCategorizationLabelChange(label.tempId, 'name', e.target.value)}
+                        placeholder="e.g., directly_relevant"
+                      />
+                      <Label htmlFor={`cl-def-${label.tempId}`}>Label Definition</Label>
+                      <Textarea
+                        id={`cl-def-${label.tempId}`}
+                        value={label.definition}
+                        onChange={(e) => handleCategorizationLabelChange(label.tempId, 'definition', e.target.value)}
+                        placeholder="Define this specific label..."
+                        rows={2}
+                      />
+                    </Card>
+                  ))}
+                  <Button type="button" variant="outline" size="sm" onClick={handleAddNewCategorizationLabel}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Add Categorization Label
                   </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </CardContent>
-      </Card>
+                </div>
+              </div>
+            </ScrollArea>
+            <DialogFooter className="pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
+              <Button type="submit" disabled={addMutation.isPending || updateMutation.isPending || !currentUserId}>
+                  {addMutation.isPending || updateMutation.isPending ? 'Saving...' : (editingEvalParam ? 'Save Changes' : 'Add Parameter')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader>
@@ -284,6 +375,7 @@ export default function EvaluationParametersPage() {
                   <TableHead>Definition</TableHead>
                   <TableHead>Good Example</TableHead>
                   <TableHead>Bad Example</TableHead>
+                  {/* Column for categorization labels could be added here if direct display is needed */}
                   <TableHead className="text-right w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -316,5 +408,6 @@ export default function EvaluationParametersPage() {
     </div>
   );
 }
+    
 
     
