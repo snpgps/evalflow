@@ -40,7 +40,6 @@ interface Dataset {
   name: string;
   description: string;
   versions: DatasetVersion[];
-  // productSchemaId: string; // Removed
   createdAt?: Timestamp; // Firestore Timestamp
 }
 
@@ -132,7 +131,6 @@ export default function DatasetsPage() {
   
   const [datasetName, setDatasetName] = useState('');
   const [datasetDescription, setDatasetDescription] = useState('');
-  // const [datasetProductSchemaName, setDatasetProductSchemaName] = useState(''); // Removed
   
   // State for file upload dialog
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -188,6 +186,10 @@ export default function DatasetsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['datasets', currentUserId] });
     },
+    onError: (error, variables) => {
+      console.error(`Error deleting dataset ${variables}:`, error);
+      alert(`Failed to delete dataset: ${error.message}. Check console for details.`);
+    }
   });
 
   const addDatasetVersionMutation = useMutation<void, Error, { datasetId: string; versionData: NewDatasetVersionData }>({
@@ -212,7 +214,7 @@ export default function DatasetsPage() {
   }
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const currentDatasetId = currentDatasetIdForUpload; // Preserve before reset
+    const currentDatasetId = currentDatasetIdForUpload; 
     resetUploadDialogState(); 
     setCurrentDatasetIdForUpload(currentDatasetId); 
 
@@ -236,7 +238,6 @@ export default function DatasetsPage() {
         } catch (error) {
           console.error("Error parsing XLSX file:", error);
           alert("Failed to parse Excel file. Please ensure it's a valid .xlsx file.");
-          // Call reset again to ensure full cleanup after error
           const currentDatasetIdOnError = currentDatasetIdForUpload;
           resetUploadDialogState();
           setCurrentDatasetIdForUpload(currentDatasetIdOnError);
@@ -327,14 +328,12 @@ export default function DatasetsPage() {
         id: editingDataset.id,
         name: datasetName.trim(),
         description: datasetDescription.trim(),
-        // productSchemaId: datasetProductSchemaName.trim(), // Removed
       };
       updateDatasetMutation.mutate(payload);
     } else {
       const newDataset: NewDatasetData = {
         name: datasetName.trim(),
         description: datasetDescription.trim(),
-        // productSchemaId: datasetProductSchemaName.trim(), // Removed
         createdAt: serverTimestamp(),
       };
       addDatasetMutation.mutate(newDataset);
@@ -344,7 +343,6 @@ export default function DatasetsPage() {
   const resetDatasetForm = () => {
     setDatasetName('');
     setDatasetDescription('');
-    // setDatasetProductSchemaName(''); // Removed
     setEditingDataset(null);
   };
 
@@ -352,7 +350,6 @@ export default function DatasetsPage() {
     setEditingDataset(dataset);
     setDatasetName(dataset.name);
     setDatasetDescription(dataset.description);
-    // setDatasetProductSchemaName(dataset.productSchemaId); // Removed
     setIsDatasetDialogOpen(true);
   };
   
@@ -597,3 +594,6 @@ export default function DatasetsPage() {
     </div>
   );
 }
+
+
+    
