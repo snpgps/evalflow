@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, type ChangeEvent, type FormEvent, useEffect } from 'react';
@@ -10,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogTrigger, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, Link2 } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { db } from '@/lib/firebase';
 import { 
@@ -106,6 +105,7 @@ export default function DatasetsPage() {
   
   const [datasetName, setDatasetName] = useState('');
   const [datasetDescription, setDatasetDescription] = useState('');
+  const [datasetProductSchemaName, setDatasetProductSchemaName] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [currentDatasetIdForUpload, setCurrentDatasetIdForUpload] = useState<string | null>(null);
 
@@ -141,7 +141,6 @@ export default function DatasetsPage() {
     mutationFn: async (datasetIdToDelete) => {
       if (!currentUserId) throw new Error("User not identified for delete operation.");
       
-      // Delete all versions in the subcollection first
       const versionsCollectionRef = collection(db, 'users', currentUserId, 'datasets', datasetIdToDelete, 'versions');
       const versionsSnapshot = await getDocs(versionsCollectionRef);
       const batch = writeBatch(db);
@@ -150,7 +149,6 @@ export default function DatasetsPage() {
       });
       await batch.commit();
 
-      // Then delete the dataset document
       const datasetDocRef = doc(db, 'users', currentUserId, 'datasets', datasetIdToDelete);
       await deleteDoc(datasetDocRef);
     },
@@ -195,7 +193,7 @@ export default function DatasetsPage() {
       fileName: selectedFile.name,
       uploadDate: new Date().toISOString().split('T')[0],
       size: `${(selectedFile.size / (1024 * 1024)).toFixed(2)}MB`,
-      records: 0, // Placeholder, actual parsing not implemented here
+      records: 0, // Placeholder for actual record count from file
       createdAt: serverTimestamp(),
     };
     
@@ -204,8 +202,8 @@ export default function DatasetsPage() {
   
   const handleDatasetSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUserId || !datasetName.trim()) {
-      alert("Dataset name is required.");
+    if (!currentUserId || !datasetName.trim() || !datasetProductSchemaName.trim()) {
+      alert("Dataset Name and Associated Product Schema Name are required.");
       return;
     }
 
@@ -214,14 +212,14 @@ export default function DatasetsPage() {
         id: editingDataset.id,
         name: datasetName.trim(),
         description: datasetDescription.trim(),
-        // productSchemaId is not editable in this dialog for simplicity
+        productSchemaId: datasetProductSchemaName.trim(),
       };
       updateDatasetMutation.mutate(payload);
     } else {
       const newDataset: NewDatasetData = {
         name: datasetName.trim(),
         description: datasetDescription.trim(),
-        productSchemaId: 'temp-schema-id', // Placeholder
+        productSchemaId: datasetProductSchemaName.trim(),
         createdAt: serverTimestamp(),
       };
       addDatasetMutation.mutate(newDataset);
@@ -231,6 +229,7 @@ export default function DatasetsPage() {
   const resetDatasetForm = () => {
     setDatasetName('');
     setDatasetDescription('');
+    setDatasetProductSchemaName('');
     setEditingDataset(null);
   };
 
@@ -238,6 +237,7 @@ export default function DatasetsPage() {
     setEditingDataset(dataset);
     setDatasetName(dataset.name);
     setDatasetDescription(dataset.description);
+    setDatasetProductSchemaName(dataset.productSchemaId);
     setIsDatasetDialogOpen(true);
   };
   
@@ -290,7 +290,7 @@ export default function DatasetsPage() {
             <Database className="h-7 w-7 text-primary" />
             <div>
               <CardTitle className="text-2xl font-headline">Dataset Management</CardTitle>
-              <CardDescription>Upload, version, and manage your datasets. Ensure columns map to your defined product parameters.</CardDescription>
+              <CardDescription>Upload, version, and manage your datasets. Associate them with a Product Parameter Schema name.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -314,10 +314,15 @@ export default function DatasetsPage() {
                   <Input id="dataset-name" value={datasetName} onChange={(e) => setDatasetName(e.target.value)} placeholder="e.g., Customer Service Chat Logs" required />
                 </div>
                 <div>
+                  <Label htmlFor="dataset-schema-name">Associated Product Schema Name</Label>
+                  <Input id="dataset-schema-name" value={datasetProductSchemaName} onChange={(e) => setDatasetProductSchemaName(e.target.value)} placeholder="e.g., Support Chat Schema v1" required />
+                   <p className="text-xs text-muted-foreground mt-1">This name links the dataset to a schema defined in 'Schema Definition'.</p>
+                </div>
+                <div>
                   <Label htmlFor="dataset-desc">Description</Label>
                   <Textarea id="dataset-desc" value={datasetDescription} onChange={(e) => setDatasetDescription(e.target.value)} placeholder="Briefly describe this dataset." />
                 </div>
-                {/* Future: Select Product Parameter Schema */}
+                <p className="text-xs text-muted-foreground">Note: Actual data parsing based on schema is not yet implemented. This association is for organizational purposes.</p>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsDatasetDialogOpen(false); resetDatasetForm();}}>Cancel</Button>
                   <Button type="submit" disabled={!currentUserId || addDatasetMutation.isPending || updateDatasetMutation.isPending}>
@@ -343,12 +348,16 @@ export default function DatasetsPage() {
       ) : (
         datasets.map((dataset) => (
           <Card key={dataset.id}>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-row items-start justify-between">
               <div>
                 <CardTitle>{dataset.name}</CardTitle>
-                <CardDescription>{dataset.description}</CardDescription>
+                <CardDescription className="mb-1">{dataset.description}</CardDescription>
+                 <Badge variant="outline" className="mt-1">
+                  <Link2 className="mr-1 h-3 w-3"/>
+                  Schema: {dataset.productSchemaId || "Not Specified"}
+                </Badge>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
                  <Button variant="outline" size="sm" onClick={() => openEditDatasetDialog(dataset)} disabled={!currentUserId || updateDatasetMutation.isPending}>
                     <Edit2 className="h-4 w-4 mr-2" /> Edit Info
                   </Button>
@@ -417,7 +426,7 @@ export default function DatasetsPage() {
             {selectedFile && (
               <p className="text-sm text-muted-foreground">Selected: {selectedFile.name} ({(selectedFile.size / (1024*1024)).toFixed(2)} MB)</p>
             )}
-            <p className="text-xs text-muted-foreground">Note: Record count will be set to 0. Actual file parsing is not implemented.</p>
+            <p className="text-xs text-muted-foreground">Note: Record count will be set to 0. Actual file parsing/content storage is not implemented.</p>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setIsUploadDialogOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={!selectedFile || !currentUserId || addDatasetVersionMutation.isPending}>
