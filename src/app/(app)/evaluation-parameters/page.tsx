@@ -70,8 +70,8 @@ export default function EvaluationParametersPage() {
   const [isParamDialogOpen, setIsParamDialogOpen] = useState(false);
   const [isLabelsDialogOpen, setIsLabelsDialogOpen] = useState(false);
   
-  const [editingEvalParam, setEditingEvalParam] = useState<EvalParameter | null>(null); // For editing parameter name/definition
-  const [editingLabelsForParam, setEditingLabelsForParam] = useState<EvalParameter | null>(null); // For managing labels of a specific param
+  const [editingEvalParam, setEditingEvalParam] = useState<EvalParameter | null>(null); 
+  const [editingLabelsForParam, setEditingLabelsForParam] = useState<EvalParameter | null>(null); 
 
   const [paramName, setParamName] = useState('');
   const [paramDefinition, setParamDefinition] = useState('');
@@ -134,7 +134,6 @@ export default function EvaluationParametersPage() {
     onError: (error) => console.error("Error deleting evaluation parameter:", error)
   });
 
-  // --- Functions for Main Parameter Dialog (Name/Definition) ---
   const resetParamForm = () => {
     setParamName('');
     setParamDefinition('');
@@ -174,7 +173,6 @@ export default function EvaluationParametersPage() {
         id: editingEvalParam.id,
         name: paramName.trim(),
         definition: paramDefinition.trim(),
-        // categorizationLabels will be managed separately or initialized if new
         categorizationLabels: editingEvalParam.categorizationLabels || [],
       };
       updateParamMutation.mutate(payloadForUpdate);
@@ -182,13 +180,12 @@ export default function EvaluationParametersPage() {
       const newParamData: Omit<EvalParameter, 'id' | 'createdAt'> = {
         name: paramName.trim(),
         definition: paramDefinition.trim(),
-        categorizationLabels: [], // Initialize with empty labels
+        categorizationLabels: [], 
       };
       addMutation.mutate(newParamData);
     }
   };
 
-  // --- Functions for "Manage Labels" Dialog ---
   const resetLabelsDialogForm = () => {
     setCurrentCategorizationLabelsInLabelsDialog([]);
     setEditingLabelsForParam(null);
@@ -241,7 +238,7 @@ export default function EvaluationParametersPage() {
     
     const labelsToSave: CategorizationLabelToStore[] = currentCategorizationLabelsInLabelsDialog
       .map(({ tempId, ...restOfLabel }) => restOfLabel) 
-      .filter(cl => cl.name.trim() && cl.definition.trim()); // Example is optional
+      .filter(cl => cl.name.trim() && cl.definition.trim()); 
 
     updateLabelsMutation.mutate({ parameterId: editingLabelsForParam.id, labels: labelsToSave });
   };
@@ -290,7 +287,6 @@ export default function EvaluationParametersPage() {
         </CardContent>
       </Card>
       
-      {/* Dialog for Adding/Editing Evaluation Parameter (Name/Definition) */}
       <Dialog open={isParamDialogOpen} onOpenChange={(isOpen) => { setIsParamDialogOpen(isOpen); if(!isOpen) resetParamForm();}}>
         <DialogContent className="sm:max-w-lg"> 
           <DialogHeader>
@@ -312,56 +308,69 @@ export default function EvaluationParametersPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog for Managing Categorization Labels */}
       <Dialog open={isLabelsDialogOpen} onOpenChange={(isOpen) => { setIsLabelsDialogOpen(isOpen); if(!isOpen) resetLabelsDialogForm();}}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-2xl flex flex-col max-h-[90vh]">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Manage Categorization Labels for: {editingLabelsForParam?.name}</DialogTitle>
             <DialogDescription>Add, edit, or remove specific labels with definitions and examples for this evaluation parameter.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmitLabelsDialog}>
-            <ScrollArea className="max-h-[60vh]"> {/* Simplified padding */}
-              <div className="p-4 space-y-4"> {/* Simplified padding */}
-                {currentCategorizationLabelsInLabelsDialog.length === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">No categorization labels defined yet for this parameter.</p>
-                )}
-                {currentCategorizationLabelsInLabelsDialog.map((label, index) => {
-                  console.log('Rendering label in dialog:', label, 'at index:', index);
-                  return (
-                    <Card key={label.tempId} className="p-4 space-y-3 bg-muted/50">
-                      <div className="flex justify-between items-center">
-                        <Label className="font-semibold">Label #{index + 1}</Label>
-                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRemoveCategorizationLabelInLabelsDialog(label.tempId)}>
-                          <MinusCircle className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div>
-                        <Label htmlFor={`cl-name-${label.tempId}`}>Label Name</Label>
-                        <Input id={`cl-name-${label.tempId}`} value={label.name} onChange={(e) => handleCategorizationLabelChangeInLabelsDialog(label.tempId, 'name', e.target.value)} placeholder="e.g., directly_relevant" required/>
-                      </div>
-                      <div>
-                        <Label htmlFor={`cl-def-${label.tempId}`}>Label Definition</Label>
-                        <Textarea id={`cl-def-${label.tempId}`} value={label.definition} onChange={(e) => handleCategorizationLabelChangeInLabelsDialog(label.tempId, 'definition', e.target.value)} placeholder="Define this specific label..." rows={2} required/>
-                      </div>
-                       <div>
-                        <Label htmlFor={`cl-ex-${label.tempId}`}>Example (Optional)</Label>
-                        <Textarea id={`cl-ex-${label.tempId}`} value={label.example || ''} onChange={(e) => handleCategorizationLabelChangeInLabelsDialog(label.tempId, 'example', e.target.value)} placeholder="Provide an illustrative example for this label..." rows={2}/>
-                      </div>
-                    </Card>
-                  );
-                })}
-                <Button type="button" variant="outline" size="sm" onClick={handleAddNewCategorizationLabelInLabelsDialog}>
-                  <PlusCircle className="mr-2 h-4 w-4" /> Add New Label
-                </Button>
-              </div>
-            </ScrollArea>
-            <DialogFooter className="pt-4 border-t">
-              <Button type="button" variant="outline" onClick={() => {setIsLabelsDialogOpen(false); resetLabelsDialogForm();}}>Cancel</Button>
-              <Button type="submit" disabled={updateLabelsMutation.isPending || !editingLabelsForParam}>
-                {updateLabelsMutation.isPending ? 'Saving Labels...' : 'Save Labels'}
-              </Button>
-            </DialogFooter>
-          </form>
+          <div className="flex-grow overflow-y-auto pr-2"> {/* Form content area that scrolls */}
+            <form onSubmit={handleSubmitLabelsDialog} className="h-full"> {/* Form takes full height of this area */}
+                <div className="space-y-4 py-4">
+                  {currentCategorizationLabelsInLabelsDialog.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">No categorization labels defined yet for this parameter.</p>
+                  )}
+                  {currentCategorizationLabelsInLabelsDialog.map((label, index) => {
+                    console.log('Rendering label in dialog:', label, 'at index:', index);
+                    return (
+                      <Card key={label.tempId} className="p-4 space-y-3 bg-muted/50">
+                        <div className="flex justify-between items-center">
+                          <Label className="font-semibold">Label #{index + 1}</Label>
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleRemoveCategorizationLabelInLabelsDialog(label.tempId)}>
+                            <MinusCircle className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div>
+                          <Label htmlFor={`cl-name-${label.tempId}`}>Label Name</Label>
+                          <Input id={`cl-name-${label.tempId}`} value={label.name} onChange={(e) => handleCategorizationLabelChangeInLabelsDialog(label.tempId, 'name', e.target.value)} placeholder="e.g., directly_relevant" required/>
+                        </div>
+                        <div>
+                          <Label htmlFor={`cl-def-${label.tempId}`}>Label Definition</Label>
+                          <Textarea id={`cl-def-${label.tempId}`} value={label.definition} onChange={(e) => handleCategorizationLabelChangeInLabelsDialog(label.tempId, 'definition', e.target.value)} placeholder="Define this specific label..." rows={2} required/>
+                        </div>
+                         <div>
+                          <Label htmlFor={`cl-ex-${label.tempId}`}>Example (Optional)</Label>
+                          <Textarea id={`cl-ex-${label.tempId}`} value={label.example || ''} onChange={(e) => handleCategorizationLabelChangeInLabelsDialog(label.tempId, 'example', e.target.value)} placeholder="Provide an illustrative example for this label..." rows={2}/>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                  <Button type="button" variant="outline" size="sm" onClick={handleAddNewCategorizationLabelInLabelsDialog}>
+                    <PlusCircle className="mr-2 h-4 w-4" /> Add New Label
+                  </Button>
+                </div>
+            </form>
+          </div>
+          <DialogFooter className="pt-4 border-t flex-shrink-0">
+            <Button type="button" variant="outline" onClick={() => {setIsLabelsDialogOpen(false); resetLabelsDialogForm();}}>Cancel</Button>
+            {/* The submit button for the form is implicitly handled by the form's onSubmit,
+                but if we want an explicit button in the footer that triggers the form submission: */}
+            <Button 
+              type="button" 
+              onClick={(e) => {
+                // Create a synthetic event or directly call the handler
+                const form = e.currentTarget.closest('dialog')?.querySelector('form');
+                if (form) {
+                  // Create a synthetic submit event
+                  const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+                  form.dispatchEvent(submitEvent);
+                }
+              }}
+              disabled={updateLabelsMutation.isPending || !editingLabelsForParam}
+            >
+              {updateLabelsMutation.isPending ? 'Saving Labels...' : 'Save Labels'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -413,6 +422,8 @@ export default function EvaluationParametersPage() {
     </div>
   );
 }
+    
+
     
 
     
