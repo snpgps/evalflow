@@ -12,46 +12,52 @@
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
-// Defines the structure of individual evaluation parameters passed to the flow
-// This schema is internal and not exported directly.
-const EvaluationParameterSchema = z.object({
-  id: z.string().describe("The unique ID of the evaluation parameter."),
-  name: z.string().describe("The human-readable name of unequivocameter."),
-  definition: z.string().describe("The detailed definition of what this parameter measures."),
-  labels: z.array(z.object({
-    name: z.string().describe("The name of a possible label for this parameter."),
-    definition: z.string().optional().describe("The definition of this specific label."),
-    example: z.string().optional().describe("An example illustrating this label."),
-  })).describe("A list of possible labels that can be chosen for this parameter.")
-});
-
-// Zod schema for input - kept as a local constant
+// Zod schema for the input to the flow and prompt
 const JudgeLlmEvaluationInputSchema = z.object({
   fullPromptText: z.string().describe(
     "The complete text provided to the LLM, which includes the content to be evaluated and detailed descriptions of the evaluation parameters and their labels."
   ),
   evaluationParameterIds: z.array(z.string()).describe(
-    "An array of the IDs of the evaluation parameters that the LLM should provide judgments for. This helps the LLM focus on the required output keys."
+    "An array of the IDs of the evaluation parameters that the LLM should provide judgments for. This helps the LLM focus on the required output."
   ),
 });
 export type JudgeLlmEvaluationInput = z.infer<typeof JudgeLlmEvaluationInputSchema>;
 
-// Zod schema for output - kept as a local constant
-// The output is a record (object) where keys are evaluation parameter IDs
-// and values are the chosen label names for those parameters.
-const JudgeLlmEvaluationOutputSchema = z.record(
-    z.string().describe("The ID of an evaluation parameter."),
-    z.string().describe("The name of the label chosen by the LLM for this parameter.")
-).describe("A JSON object mapping evaluation parameter IDs to their chosen label names.");
-export type JudgeLlmEvaluationOutput = z.infer<typeof JudgeLlmEvaluationOutputSchema>;
+// This is the TypeScript type for the FINAL output of the exported async function.
+// The client component expects this Record<string, string> structure.
+export type JudgeLlmEvaluationOutput = Record<string, string>;
+
+// This is the Zod schema for what the LLM is specifically asked to output.
+// It's an array of objects, which is easier for Gemini to handle with response_schema.
+const LlmOutputArrayItemSchema = z.object({
+  parameterId: z.string().describe("The ID of an evaluation parameter."),
+  chosenLabel: z.string().describe("The name of the label chosen by the LLM for this parameter.")
+});
+const LlmOutputArraySchema = z.array(LlmOutputArrayItemSchema)
+  .describe("An array of objects, where each object contains an evaluation_parameter_id and the chosen_label_name for it.");
 
 
 // This is the ASYNC function that client components will import and call.
 export async function judgeLlmEvaluation(
   input: JudgeLlmEvaluationInput
 ): Promise<JudgeLlmEvaluationOutput> {
-  // This function calls the Genkit flow.
-  return internalJudgeLlmEvaluationFlow(input);
+  // This function calls the Genkit flow, which will return an array.
+  const llmOutputArray = await internalJudgeLlmEvaluationFlow(input);
+
+  // Transform the array into the Record<string, string> format expected by the client.
+  const finalOutput: JudgeLlmEvaluationOutput = {};
+  if (llmOutputArray) {
+    for (const item of llmOutputArray) {
+      if (item && typeof item.parameterId === 'string' && typeof item.chosenLabel === 'string') {
+        finalOutput[item.parameterId] = item.chosenLabel;
+      } else {
+        console.warn('judgeLlmEvaluation: Received an invalid item in LlmOutputArray:', item);
+      }
+    }
+  } else {
+     console.warn('judgeLlmEvaluation: LlmOutputArray was null or undefined.');
+  }
+  return finalOutput;
 }
 
 const handlebarsPrompt = `
@@ -61,52 +67,60 @@ The text to evaluate is:
 {{{fullPromptText}}}
 \`\`\`
 
-After your analysis, provide a JSON object as your response.
-This JSON object must map each of the following evaluation parameter IDs to the name of the single most appropriate label you have chosen for it, based on your analysis of the text against the criteria for that parameter.
+After your analysis, provide a JSON array as your response. Each object in the array must have exactly two keys: "parameterId" and "chosenLabel".
+- "parameterId" must be one of the evaluation parameter IDs listed below.
+- "chosenLabel" must be the name of the single most appropriate label you have chosen for that parameter, based on your analysis of the text against the criteria for that parameter.
 
 The evaluation parameter IDs you MUST provide judgments for are:
 {{#each evaluationParameterIds}}
 - {{this}}
 {{/each}}
 
-Your entire response must be ONLY the JSON object, with no other surrounding text or explanations.
-For example, if an evaluation parameter has ID "param1_id" and you choose the label "Correct", your response for that parameter within the JSON object would be: "param1_id": "Correct".
+Your entire response must be ONLY the JSON array, with no other surrounding text or explanations.
+Example of the expected JSON array format:
+[
+  { "parameterId": "param1_id", "chosenLabel": "Correct" },
+  { "parameterId": "param2_id", "chosenLabel": "Partially_Incorrect" }
+]
 `;
 
 const judgePrompt = ai.definePrompt({
   name: 'judgeLlmEvaluationPrompt',
-  input: { schema: JudgeLlmEvaluationInputSchema }, // Uses local constant
-  output: { schema: JudgeLlmEvaluationOutputSchema }, // Uses local constant
+  input: { schema: JudgeLlmEvaluationInputSchema },
+  output: { schema: LlmOutputArraySchema }, // LLM is asked to output this array structure
   prompt: handlebarsPrompt,
   config: {
-    temperature: 0.3, 
+    temperature: 0.3,
   }
 });
 
 // This is the Genkit flow definition. It is NOT exported.
+// It now returns an array of objects.
 const internalJudgeLlmEvaluationFlow = ai.defineFlow(
   {
-    name: 'judgeLlmEvaluationFlow', 
-    inputSchema: JudgeLlmEvaluationInputSchema, // Uses local constant
-    outputSchema: JudgeLlmEvaluationOutputSchema, // Uses local constant
+    name: 'internalJudgeLlmEvaluationFlow',
+    inputSchema: JudgeLlmEvaluationInputSchema,
+    outputSchema: LlmOutputArraySchema, // Flow's output schema matches the LLM's output
   },
   async (input) => {
-    console.log('judgeLlmEvaluationFlow received input:', JSON.stringify(input, null, 2));
+    console.log('internalJudgeLlmEvaluationFlow received input:', JSON.stringify(input, null, 2));
 
     const { output, usage } = await judgePrompt(input);
 
     if (!output) {
-      console.error('LLM did not return a parsable output matching the schema.');
-      throw new Error('LLM evaluation failed to return structured output.');
+      console.error('LLM did not return a parsable output matching the LlmOutputArraySchema.');
+      // Return empty array or throw, depending on desired error handling.
+      // For now, let's allow it to proceed and the transformation step will handle a null/undefined output.
+      return [];
     }
     
-    console.log('judgeLlmEvaluationFlow LLM usage:', usage);
-    console.log('judgeLlmEvaluationFlow LLM output:', JSON.stringify(output, null, 2));
-    return output;
+    console.log('internalJudgeLlmEvaluationFlow LLM usage:', usage);
+    console.log('internalJudgeLlmEvaluationFlow LLM output (array):', JSON.stringify(output, null, 2));
+    return output; // This is an array e.g. [{parameterId: 'id1', chosenLabel: 'labelA'}]
   }
 );
 
 // Ensure ONLY async functions and types are exported.
-// The Zod schema objects (JudgeLlmEvaluationInputSchema, JudgeLlmEvaluationOutputSchema) are now local constants.
+// The Zod schema objects (JudgeLlmEvaluationInputSchema, LlmOutputArraySchema) are local constants.
 // The Genkit flow object (internalJudgeLlmEvaluationFlow) is not exported.
     
