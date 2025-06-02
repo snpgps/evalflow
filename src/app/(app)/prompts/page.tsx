@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, type FormEvent, useRef, useEffect } from 'react';
@@ -8,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, FileText, Versions, Save, Copy, ListFilter, Tag } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, ListFilter, Tag } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -304,7 +305,7 @@ export default function PromptsPage() {
                   </SelectContent>
                 </Select>
                 <Button size="sm" variant="outline" onClick={handleCreateNewVersion} disabled={!selectedPrompt}>
-                  <Versions className="mr-2 h-4 w-4" /> New Version
+                  <GitBranchPlus className="mr-2 h-4 w-4" /> New Version
                 </Button>
               </div>
             </div>
