@@ -232,9 +232,10 @@ export default function DatasetsPage() {
             const data = e.target?.result;
             if (data) {
               const workbook = XLSX.read(data, { type: 'array' });
-              setAvailableSheetNames(workbook.SheetNames);
-              if (workbook.SheetNames.length === 0) {
-                alert("The selected Excel file contains no sheets.");
+              const filteredSheetNames = workbook.SheetNames.map(name => String(name).trim()).filter(name => name !== '');
+              setAvailableSheetNames(filteredSheetNames);
+              if (filteredSheetNames.length === 0) {
+                alert("The selected Excel file contains no valid sheet names or no sheets.");
               }
             }
           };
@@ -258,10 +259,14 @@ export default function DatasetsPage() {
                 if (text) {
                     const lines = text.split(/\r\n|\n|\r/); 
                     if (lines.length > 0 && lines[0].trim() !== '') {
-                        const headers = lines[0]
-                            .split(',')
-                            .map(h => h.trim().replace(/^"|"$/g, '').trim()) 
-                            .filter(h => h && h.length > 0 && h.trim() !== ''); 
+                        const csvRawHeaders = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+                        const headers = csvRawHeaders
+                          .map(header => {
+                            if (header === null || typeof header === 'undefined') return '';
+                            return String(header).trim();
+                          })
+                          .filter(trimmedHeader => trimmedHeader !== '');
+                        
                         setSheetColumnHeaders(headers);
                         if (headers.length === 0 && lines[0].trim() !== '') {
                             alert("CSV file has a header row, but no valid column names could be extracted. Please check for correct comma separation and non-empty header cells.");
@@ -280,7 +285,7 @@ export default function DatasetsPage() {
                         setCurrentColumnMapping(initialMapping);
                     } else {
                         alert("CSV file appears to be empty or has no header row.");
-                        setSheetColumnHeaders([]); // Ensure it's empty
+                        setSheetColumnHeaders([]); 
                     }
                 }
             };
@@ -311,13 +316,20 @@ export default function DatasetsPage() {
           const workbook = XLSX.read(data, { type: 'array' });
           const worksheet = workbook.Sheets[sheetName];
           if (worksheet) {
-            const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            const rawHeaders: any[] = jsonData[0] || [];
-            const headers = rawHeaders.map(String).map(h => h.trim()).filter(h => h && h.length > 0 && h.trim() !== ''); 
+            const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
+            const rawHeadersFromSheet: any[] = jsonData[0] || [];
+            
+            const headers = rawHeadersFromSheet
+              .map(header => {
+                if (header === null || typeof header === 'undefined') return '';
+                return String(header).trim();
+              })
+              .filter(trimmedHeader => trimmedHeader !== '');
+
             setSheetColumnHeaders(headers); 
-            if (headers.length === 0 && rawHeaders.length > 0) {
+            if (headers.length === 0 && rawHeadersFromSheet.length > 0) {
                 alert(`The selected sheet '${sheetName}' has a header row, but no valid column names could be extracted. Please check for non-empty header cells.`);
-            } else if (headers.length === 0 && rawHeaders.length === 0) {
+            } else if (headers.length === 0 && rawHeadersFromSheet.length === 0) {
                  alert(`The selected sheet '${sheetName}' appears to be empty or has no header row.`);
             }
             
@@ -331,7 +343,7 @@ export default function DatasetsPage() {
             setCurrentColumnMapping(initialMapping);
           } else {
              alert(`Sheet '${sheetName}' could not be found or read from the Excel file.`);
-             setSheetColumnHeaders([]); // Ensure empty if sheet not found
+             setSheetColumnHeaders([]); 
           }
         }
       };
@@ -348,7 +360,6 @@ export default function DatasetsPage() {
     e.preventDefault();
     if (!selectedFile || !currentDatasetIdForUpload || !currentUserId) return;
 
-    // This check is also implicitly handled by the button's disabled state, but good as a safeguard.
     if (selectedFile.name.endsWith('.xlsx') && availableSheetNames.length > 0 && !selectedSheet) {
       alert("Please select a sheet from the Excel file.");
       return;
@@ -449,7 +460,7 @@ export default function DatasetsPage() {
     sheetColumnHeaders.length > 0 &&
     productParametersForMapping.length > 0 &&
     ((selectedFile.name.endsWith('.xlsx') && selectedSheet) || 
-     (selectedFile.name.endsWith('.csv') && sheetColumnHeaders.length > 0)) // Ensure CSV headers are present
+     (selectedFile.name.endsWith('.csv') && sheetColumnHeaders.length > 0)) 
   );
   
   const isUploadButtonDisabled =
@@ -633,7 +644,7 @@ export default function DatasetsPage() {
                 </div>
               )}
               {selectedFile?.name.endsWith('.xlsx') && availableSheetNames.length === 0 && selectedFile.size > 0 && (
-                <p className="text-sm text-amber-700 pt-2 border-t">The selected Excel file appears to have no sheets. Please check the file.</p>
+                <p className="text-sm text-amber-700 pt-2 border-t">The selected Excel file appears to have no sheets or no valid sheet names. Please check the file.</p>
               )}
 
 
@@ -670,7 +681,7 @@ export default function DatasetsPage() {
                  <p className="text-sm text-amber-700 pt-2 border-t">No product parameters found. Please define some in 'Schema Definition' to enable column mapping.</p>
                )}
                {selectedFile?.name.endsWith('.csv') && sheetColumnHeaders.length === 0 && selectedFile.size > 0 && (
-                <p className="text-sm text-red-600 pt-2 border-t">Could not parse headers from the CSV file. Please ensure it has a valid header row.</p>
+                <p className="text-sm text-red-600 pt-2 border-t">Could not parse headers from the CSV file. Please ensure it has a valid header row with non-empty column names.</p>
                )}
 
 
