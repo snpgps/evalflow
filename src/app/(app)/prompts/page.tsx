@@ -9,30 +9,47 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, ListFilter, Tag } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, Tag, Loader2, AlertTriangle } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { db } from '@/lib/firebase';
+import { 
+  collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, 
+  query, orderBy, writeBatch, Timestamp, type FieldValue 
+} from 'firebase/firestore';
+import { useQuery, useMutation, useQueryClient, QueryClient } from '@tanstack/react-query';
+import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from '@/hooks/use-toast';
 
-interface PromptVariable {
+// Firestore-aligned interfaces
+interface ProductParameterForPrompts {
   id: string;
   name: string;
   description: string;
 }
 
-// Mock product parameters, these would come from Schema Definition
-const availableProductParameters: PromptVariable[] = [
-  { id: '1', name: 'reference_metadata', description: 'Contextual information' },
-  { id: '2', name: 'user_conversation', description: 'Chatbot-user conversation' },
-  { id: '3', name: 'product_details', description: 'Specific product information' },
-  { id: '4', name: 'user_query', description: 'The last query from the user' },
-];
+interface PromptVersionFirestore { // Raw from Firestore
+  versionNumber: number;
+  template: string;
+  notes: string;
+  createdAt: Timestamp;
+}
 
+interface PromptTemplateFirestore { // Raw from Firestore
+  name: string;
+  description: string;
+  currentVersionId: string | null;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// Interfaces for client-side state and display
 interface PromptVersion {
   id: string;
   versionNumber: number;
   template: string;
   notes: string;
-  createdAt: string;
+  createdAt: string; // ISO String
 }
 
 interface PromptTemplate {
@@ -41,65 +58,331 @@ interface PromptTemplate {
   description: string;
   versions: PromptVersion[];
   currentVersionId: string | null;
+  createdAt?: string; // ISO String for display
+  updatedAt?: string; // ISO String for display
 }
 
-const initialPrompts: PromptTemplate[] = [
-  {
-    id: 'prompt1',
-    name: 'Product Support Judge Prompt',
-    description: 'Prompt for evaluating chatbot responses in product support scenarios.',
-    versions: [
-      { id: 'v1a', versionNumber: 1, template: "Evaluate the following conversation based on accuracy and helpfulness:\n\nContext:\n{{reference_metadata}}\n\nConversation:\n{{user_conversation}}\n\nIs the chatbot's last response accurate and helpful?", notes: 'Initial version', createdAt: '2024-07-20' },
-      { id: 'v2a', versionNumber: 2, template: "Analyze the chatbot's final response in the context of the user's query and provided product details.\n\nProduct Details:\n{{product_details}}\n\nUser Query:\n{{user_query}}\n\nConversation History:\n{{user_conversation}}\n\nEvaluate for: {{evaluation_criteria}}.", notes: 'Added evaluation criteria placeholder', createdAt: '2024-07-21' },
-    ],
-    currentVersionId: 'v2a',
+
+// Fetch Product Parameters
+const fetchProductParametersForPrompts = async (userId: string | null): Promise<ProductParameterForPrompts[]> => {
+  if (!userId) return [];
+  const paramsCollectionRef = collection(db, 'users', userId, 'productParameters');
+  const paramsQuery = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
+  const snapshot = await getDocs(paramsQuery);
+  return snapshot.docs.map(docSnap => ({
+    id: docSnap.id,
+    name: docSnap.data().name as string || 'Unnamed Parameter',
+    description: docSnap.data().description as string || '',
+  }));
+};
+
+// Fetch Prompt Templates with Versions
+export const fetchPromptTemplates = async (userId: string | null): Promise<PromptTemplate[]> => {
+  if (!userId) return [];
+  try {
+    const promptTemplatesCollectionRef = collection(db, 'users', userId, 'promptTemplates');
+    const q = query(promptTemplatesCollectionRef, orderBy('createdAt', 'desc'));
+    const promptTemplatesSnapshot = await getDocs(q);
+
+    if (promptTemplatesSnapshot.empty) {
+        return [];
+    }
+
+    const promptTemplatesData: PromptTemplate[] = [];
+
+    for (const promptDoc of promptTemplatesSnapshot.docs) {
+      const promptData = promptDoc.data() as PromptTemplateFirestore;
+      const versionsCollectionRef = collection(db, 'users', userId, 'promptTemplates', promptDoc.id, 'versions');
+      const versionsQuery = query(versionsCollectionRef, orderBy('versionNumber', 'desc'));
+      const versionsSnapshot = await getDocs(versionsQuery);
+      
+      const versions: PromptVersion[] = [];
+      versionsSnapshot.forEach(versionDocSnap => {
+        const versionData = versionDocSnap.data() as PromptVersionFirestore;
+        const versionCreatedAtTimestamp = versionData.createdAt as Timestamp | undefined;
+        versions.push({
+          id: versionDocSnap.id,
+          versionNumber: versionData.versionNumber || 0,
+          template: versionData.template || '',
+          notes: versionData.notes || '',
+          createdAt: versionCreatedAtTimestamp?.toDate().toISOString() || new Date(0).toISOString(), 
+        });
+      });
+
+      const createdAtTimestamp = promptData.createdAt as Timestamp | undefined;
+      const updatedAtTimestamp = promptData.updatedAt as Timestamp | undefined;
+
+      promptTemplatesData.push({
+        id: promptDoc.id,
+        name: promptData.name || 'Untitled Prompt',
+        description: promptData.description || '',
+        versions: versions,
+        currentVersionId: promptData.currentVersionId || null,
+        createdAt: createdAtTimestamp?.toDate().toISOString(),
+        updatedAt: updatedAtTimestamp?.toDate().toISOString(),
+      });
+    }
+    return promptTemplatesData;
+  } catch (error) {
+    console.error("Error fetching prompt templates:", error);
+    toast({ title: "Error", description: "Could not fetch prompt templates.", variant: "destructive" });
+    return []; 
   }
-];
+};
+
 
 export default function PromptsPage() {
-  const [prompts, setPrompts] = useState<PromptTemplate[]>(initialPrompts);
-  const [selectedPrompt, setSelectedPrompt] = useState<PromptTemplate | null>(prompts[0] || null);
-  const [selectedVersion, setSelectedVersion] = useState<PromptVersion | null>(selectedPrompt?.versions.find(v => v.id === selectedPrompt.currentVersionId) || null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isLoadingUserId, setIsLoadingUserId] = useState(true);
+  const queryClient = useQueryClient();
+
+  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   
+  // Local state for the selected prompt and version objects for easier access
+  const [selectedPrompt, setSelectedPrompt] = useState<PromptTemplate | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<PromptVersion | null>(null);
+
   const [isPromptDialogOpen, setIsPromptDialogOpen] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState<PromptTemplate | null>(null);
+  const [editingPromptData, setEditingPromptData] = useState<PromptTemplate | null>(null); // For editing existing prompt metadata
   const [promptName, setPromptName] = useState('');
   const [promptDescription, setPromptDescription] = useState('');
 
-  const [promptTemplateContent, setPromptTemplateContent] = useState(selectedVersion?.template || '');
-  const [versionNotes, setVersionNotes] = useState(selectedVersion?.notes || '');
+  const [promptTemplateContent, setPromptTemplateContent] = useState('');
+  const [versionNotes, setVersionNotes] = useState('');
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (selectedPrompt && selectedPrompt.currentVersionId) {
-      const currentVer = selectedPrompt.versions.find(v => v.id === selectedPrompt.currentVersionId);
-      setSelectedVersion(currentVer || null);
-      setPromptTemplateContent(currentVer?.template || '');
-      setVersionNotes(currentVer?.notes || '');
-    } else if (selectedPrompt && selectedPrompt.versions.length > 0) {
-      // Default to latest version if currentVersionId is not set
-      const latestVersion = selectedPrompt.versions.sort((a,b) => b.versionNumber - a.versionNumber)[0];
-      setSelectedVersion(latestVersion);
-      setPromptTemplateContent(latestVersion.template);
-      setVersionNotes(latestVersion.notes);
+    const storedUserId = localStorage.getItem('currentUserId');
+    if (storedUserId && storedUserId.trim() !== "") {
+      setCurrentUserId(storedUserId.trim());
+    } else {
+      setCurrentUserId(null);
+    }
+    setIsLoadingUserId(false);
+  }, []);
+
+  const { data: promptsData = [], isLoading: isLoadingPrompts, error: fetchPromptsError } = useQuery<PromptTemplate[], Error>({
+    queryKey: ['promptTemplates', currentUserId],
+    queryFn: () => fetchPromptTemplates(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
+  });
+
+  const { data: productParameters = [], isLoading: isLoadingParams, error: fetchParamsError } = useQuery<ProductParameterForPrompts[], Error>({
+    queryKey: ['productParametersForPrompts', currentUserId],
+    queryFn: () => fetchProductParametersForPrompts(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
+  });
+
+  // Effect to handle initial selection or changes in promptsData
+  useEffect(() => {
+    if (!currentUserId || isLoadingPrompts || fetchPromptsError) return;
+
+    if (promptsData && promptsData.length > 0) {
+      if (!selectedPromptId || !promptsData.find(p => p.id === selectedPromptId)) {
+        // If no prompt is selected, or selected one is not in the new list, select the first one
+        const firstPrompt = promptsData[0];
+        setSelectedPromptId(firstPrompt.id);
+        if (firstPrompt.currentVersionId && firstPrompt.versions.find(v => v.id === firstPrompt.currentVersionId)) {
+          setSelectedVersionId(firstPrompt.currentVersionId);
+        } else if (firstPrompt.versions.length > 0) {
+          const latestVersion = [...firstPrompt.versions].sort((a, b) => b.versionNumber - a.versionNumber)[0];
+          setSelectedVersionId(latestVersion.id);
+        } else {
+          setSelectedVersionId(null); // No versions for the first prompt
+        }
+      }
+      // If a prompt ID is selected, ensure version ID is valid for it or pick latest
+      else if (selectedPromptId) {
+        const currentPromptInList = promptsData.find(p => p.id === selectedPromptId);
+        if (currentPromptInList && (!selectedVersionId || !currentPromptInList.versions.find(v => v.id === selectedVersionId))) {
+            if (currentPromptInList.currentVersionId && currentPromptInList.versions.find(v => v.id === currentPromptInList.currentVersionId)) {
+                setSelectedVersionId(currentPromptInList.currentVersionId);
+            } else if (currentPromptInList.versions.length > 0) {
+                const latestVersion = [...currentPromptInList.versions].sort((a,b) => b.versionNumber - a.versionNumber)[0];
+                setSelectedVersionId(latestVersion.id);
+            } else {
+                setSelectedVersionId(null);
+            }
+        }
+      }
+    } else if (promptsData && promptsData.length === 0) {
+      setSelectedPromptId(null);
+      setSelectedVersionId(null);
+    }
+  }, [promptsData, selectedPromptId, currentUserId, isLoadingPrompts, fetchPromptsError]);
+
+
+  // Effect to update editor content and selected objects when IDs or data change
+  useEffect(() => {
+    if (!promptsData) {
+        setSelectedPrompt(null);
+        setSelectedVersion(null);
+        setPromptTemplateContent('');
+        setVersionNotes('');
+        return;
+    }
+    const currentPromptObj = promptsData.find(p => p.id === selectedPromptId);
+    setSelectedPrompt(currentPromptObj || null);
+
+    if (currentPromptObj) {
+      const currentVersionObj = currentPromptObj.versions.find(v => v.id === selectedVersionId);
+      setSelectedVersion(currentVersionObj || null);
+      if (currentVersionObj) {
+        setPromptTemplateContent(currentVersionObj.template);
+        setVersionNotes(currentVersionObj.notes);
+      } else {
+        setPromptTemplateContent('');
+        setVersionNotes('');
+      }
     } else {
       setSelectedVersion(null);
       setPromptTemplateContent('');
       setVersionNotes('');
     }
-  }, [selectedPrompt]);
+  }, [promptsData, selectedPromptId, selectedVersionId]);
+
+
+  // Mutations
+  const addPromptTemplateMutation = useMutation<string, Error, { name: string; description: string }>({
+    mutationFn: async ({ name, description }) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      
+      const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
+        name,
+        description,
+        currentVersionId: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      const initialVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', newPromptRef.id, 'versions'), {
+        versionNumber: 1,
+        template: "Your initial prompt template here. Use {{variable_name}} for parameters.",
+        notes: 'Initial version',
+        createdAt: serverTimestamp(),
+      });
+
+      await updateDoc(newPromptRef, { currentVersionId: initialVersionRef.id, updatedAt: serverTimestamp() });
+      return newPromptRef.id;
+    },
+    onSuccess: (newPromptId) => {
+      queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
+      setSelectedPromptId(newPromptId); // Automatically select the new prompt
+      toast({ title: "Success", description: "Prompt template created." });
+      setIsPromptDialogOpen(false);
+      resetPromptDialogForm();
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to create prompt: ${error.message}`, variant: "destructive" });
+    }
+  });
+
+  const updatePromptTemplateMutation = useMutation<void, Error, { id: string; name: string; description: string }>({
+    mutationFn: async ({ id, name, description }) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      const promptRef = doc(db, 'users', currentUserId, 'promptTemplates', id);
+      await updateDoc(promptRef, { name, description, updatedAt: serverTimestamp() });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
+      toast({ title: "Success", description: "Prompt template updated." });
+      setIsPromptDialogOpen(false);
+      resetPromptDialogForm();
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to update prompt: ${error.message}`, variant: "destructive" });
+    }
+  });
+
+  const deletePromptTemplateMutation = useMutation<void, Error, string>({
+    mutationFn: async (promptId) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      
+      const versionsRef = collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions');
+      const versionsSnapshot = await getDocs(versionsRef);
+      const batch = writeBatch(db);
+      versionsSnapshot.forEach(vDoc => batch.delete(vDoc.ref));
+      await batch.commit();
+
+      await deleteDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
+      toast({ title: "Success", description: "Prompt template deleted." });
+      if (selectedPromptId === deletePromptTemplateMutation.variables) {
+        setSelectedPromptId(null); // Clear selection if deleted prompt was selected
+        setSelectedVersionId(null);
+      }
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to delete prompt: ${error.message}`, variant: "destructive" });
+    }
+  });
+
+  const addPromptVersionMutation = useMutation<string, Error, { promptId: string; template: string; notes: string }>({
+    mutationFn: async ({ promptId, template, notes }) => {
+      if (!currentUserId || !selectedPrompt) throw new Error("User or prompt not identified.");
+      
+      const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
+      const newVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions'), {
+        versionNumber: latestVersionNum + 1,
+        template,
+        notes: notes || `New version based on v${latestVersionNum}`,
+        createdAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), { 
+        currentVersionId: newVersionRef.id,
+        updatedAt: serverTimestamp() 
+      });
+      return newVersionRef.id;
+    },
+    onSuccess: (newVersionId) => {
+      queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
+      setSelectedVersionId(newVersionId); // Select new version
+      toast({ title: "Success", description: "New prompt version created." });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to create version: ${error.message}`, variant: "destructive" });
+    }
+  });
+
+  const updatePromptVersionMutation = useMutation<void, Error, { promptId: string; versionId: string; template: string; notes: string }>({
+    mutationFn: async ({ promptId, versionId, template, notes }) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      const versionRef = doc(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions', versionId);
+      await updateDoc(versionRef, { template, notes });
+      // Optionally update parent prompt's updatedAt
+      await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), { updatedAt: serverTimestamp() });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
+      toast({ title: "Success", description: "Prompt version saved." });
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: `Failed to save version: ${error.message}`, variant: "destructive" });
+    }
+  });
+
 
   const handleSelectPrompt = (promptId: string) => {
-    const prompt = prompts.find(p => p.id === promptId);
-    setSelectedPrompt(prompt || null);
+    setSelectedPromptId(promptId);
+    const prompt = promptsData?.find(p => p.id === promptId);
+    if (prompt) {
+      if (prompt.currentVersionId && prompt.versions.find(v => v.id === prompt.currentVersionId)) {
+        setSelectedVersionId(prompt.currentVersionId);
+      } else if (prompt.versions.length > 0) {
+        // Fallback to latest if currentVersionId is invalid or not set
+        const latestVersion = [...prompt.versions].sort((a,b) => b.versionNumber - a.versionNumber)[0];
+        setSelectedVersionId(latestVersion.id);
+      } else {
+        setSelectedVersionId(null); // No versions
+      }
+    }
   };
 
   const handleSelectVersion = (versionId: string) => {
-    if (!selectedPrompt) return;
-    const version = selectedPrompt.versions.find(v => v.id === versionId);
-    setSelectedVersion(version || null);
-    setPromptTemplateContent(version?.template || '');
-    setVersionNotes(version?.notes || '');
+    setSelectedVersionId(versionId);
   };
 
   const insertVariable = (variableName: string) => {
@@ -113,7 +396,6 @@ export default function PromptsPage() {
       const variableToInsert = `{{${variableName}}}`;
       setPromptTemplateContent(before + variableToInsert + after);
       textarea.focus();
-      // Move cursor to after the inserted variable
       setTimeout(() => {
         textarea.selectionStart = textarea.selectionEnd = start + variableToInsert.length;
       }, 0);
@@ -121,114 +403,290 @@ export default function PromptsPage() {
   };
 
   const handleSaveVersion = () => {
-    if (!selectedPrompt || !selectedVersion) return; // Or create new if no version selected
-    
-    const updatedVersion: PromptVersion = {
-      ...selectedVersion,
-      template: promptTemplateContent,
-      notes: versionNotes,
-    };
-    
-    const updatedPrompt: PromptTemplate = {
-      ...selectedPrompt,
-      versions: selectedPrompt.versions.map(v => v.id === selectedVersion.id ? updatedVersion : v),
-    };
-    
-    setPrompts(prompts.map(p => p.id === selectedPrompt.id ? updatedPrompt : p));
-    setSelectedPrompt(updatedPrompt); // Refresh selected prompt state
-    alert('Version saved!');
+    if (!selectedPrompt || !selectedVersion || !currentUserId) {
+      toast({ title: "Error", description: "No prompt or version selected to save.", variant: "destructive" });
+      return;
+    }
+    updatePromptVersionMutation.mutate({ 
+      promptId: selectedPrompt.id, 
+      versionId: selectedVersion.id, 
+      template: promptTemplateContent, 
+      notes: versionNotes 
+    });
   };
 
   const handleCreateNewVersion = () => {
-    if (!selectedPrompt) return;
-    const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
-    const newVersion: PromptVersion = {
-      id: `v_new_${Date.now()}`,
-      versionNumber: latestVersionNum + 1,
-      template: promptTemplateContent, // Or a base template
-      notes: 'New version created from v' + (selectedVersion?.versionNumber || latestVersionNum),
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-
-    const updatedPrompt: PromptTemplate = {
-      ...selectedPrompt,
-      versions: [...selectedPrompt.versions, newVersion],
-      currentVersionId: newVersion.id,
-    };
-
-    setPrompts(prompts.map(p => p.id === selectedPrompt.id ? updatedPrompt : p));
-    setSelectedPrompt(updatedPrompt);
-    setSelectedVersion(newVersion); // Switch to new version
-    setPromptTemplateContent(newVersion.template);
-    setVersionNotes(newVersion.notes);
+    if (!selectedPrompt || !currentUserId) {
+      toast({ title: "Error", description: "Select a prompt to create a new version for.", variant: "destructive" });
+      return;
+    }
+    // Use current editor content for the new version
+    addPromptVersionMutation.mutate({
+      promptId: selectedPrompt.id,
+      template: promptTemplateContent, 
+      notes: `New version from v${selectedVersion?.versionNumber || 'current editor'}`,
+    });
   };
   
   const handlePromptDialogSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const baseTemplate = "Your prompt template here. Use {{variable_name}} for parameters.";
-    const initialVersion: PromptVersion = {
-      id: `v_init_${Date.now()}`,
-      versionNumber: 1,
-      template: baseTemplate,
-      notes: 'Initial version',
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-
-    const newPrompt: PromptTemplate = {
-      id: editingPrompt ? editingPrompt.id : `prompt_${Date.now()}`,
-      name: promptName,
-      description: promptDescription,
-      versions: editingPrompt ? editingPrompt.versions : [initialVersion],
-      currentVersionId: editingPrompt ? editingPrompt.currentVersionId : initialVersion.id,
-    };
-
-    if (editingPrompt) {
-      setPrompts(prompts.map(p => p.id === editingPrompt.id ? newPrompt : p));
-    } else {
-      setPrompts([newPrompt, ...prompts]);
-      setSelectedPrompt(newPrompt); // Select the new prompt
+    if (!promptName.trim()) {
+      toast({ title: "Validation Error", description: "Prompt name is required.", variant: "destructive" });
+      return;
     }
-    resetPromptDialogForm();
-    setIsPromptDialogOpen(false);
+    if (editingPromptData) {
+      updatePromptTemplateMutation.mutate({ id: editingPromptData.id, name: promptName, description: promptDescription });
+    } else {
+      addPromptTemplateMutation.mutate({ name: promptName, description: promptDescription });
+    }
   };
 
   const resetPromptDialogForm = () => {
     setPromptName('');
     setPromptDescription('');
-    setEditingPrompt(null);
+    setEditingPromptData(null);
   };
 
   const openEditPromptDialog = (prompt: PromptTemplate) => {
-    setEditingPrompt(prompt);
+    setEditingPromptData(prompt);
     setPromptName(prompt.name);
     setPromptDescription(prompt.description);
     setIsPromptDialogOpen(true);
   };
+  
+  const handleOpenNewPromptDialog = () => {
+    if (!currentUserId) {
+        toast({ title: "Login Required", description: "Please log in to create prompts.", variant: "destructive" });
+        return;
+    }
+    resetPromptDialogForm();
+    setIsPromptDialogOpen(true);
+  };
 
   const handleDeletePrompt = (promptId: string) => {
-    setPrompts(prompts.filter(p => p.id !== promptId));
-    if (selectedPrompt?.id === promptId) {
-      setSelectedPrompt(prompts.length > 1 ? prompts.filter(p=>p.id !== promptId)[0] : null);
+    if (!currentUserId) return;
+    if (confirm('Are you sure you want to delete this prompt template and all its versions? This action cannot be undone.')) {
+      deletePromptTemplateMutation.mutate(promptId);
     }
+  };
+  
+  const formatDate = (isoString?: string) => {
+    if (!isoString) return 'N/A';
+    try {
+      return new Date(isoString).toLocaleDateString();
+    } catch (e) {
+      return 'Invalid Date';
+    }
+  };
+
+  // UI Rendering Logic
+  const renderPromptList = () => {
+    if (isLoadingUserId || (isLoadingPrompts && !!currentUserId)) {
+      return Array.from({ length: 3 }).map((_, i) => (
+        <div key={`skel-prompt-${i}`} className="p-3 border-b">
+          <Skeleton className="h-5 w-3/4 mb-1" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      ));
+    }
+    if (fetchPromptsError) {
+      return <div className="p-4 text-destructive">Error: {fetchPromptsError.message}</div>;
+    }
+    if (!currentUserId && !isLoadingUserId) {
+        return <div className="p-6 text-center text-muted-foreground">Please log in to manage prompts.</div>;
+    }
+    if (promptsData.length === 0) {
+      return (
+        <div className="p-6 text-center text-muted-foreground">
+          <FileText className="mx-auto h-10 w-10 mb-2" />
+          <p>No prompts created yet.</p>
+        </div>
+      );
+    }
+    return promptsData.map(p => (
+      <div
+        key={p.id}
+        className={`p-3 border-b cursor-pointer hover:bg-muted/50 ${selectedPromptId === p.id ? 'bg-muted' : ''}`}
+        onClick={() => handleSelectPrompt(p.id)}
+      >
+        <div className="flex justify-between items-center">
+          <span className={selectedPromptId === p.id ? 'font-semibold text-primary': ''}>{p.name}</span>
+          <div className="flex gap-1">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openEditPromptDialog(p);}} disabled={updatePromptTemplateMutation.isPending || deletePromptTemplateMutation.isPending}>
+              <Edit2 className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/90" onClick={(e) => {e.stopPropagation(); handleDeletePrompt(p.id)}} disabled={deletePromptTemplateMutation.isPending || deletePromptTemplateMutation.variables === p.id}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground truncate">{p.description}</p>
+      </div>
+    ));
+  };
+
+  const renderEditorArea = () => {
+    if (!selectedPrompt && !isLoadingPrompts && promptsData.length > 0 && currentUserId) {
+      return (
+        <Card className="flex-1 flex items-center justify-center shadow-lg">
+          <div className="text-center text-muted-foreground p-8">
+            <FileText className="mx-auto h-16 w-16 mb-4" />
+            <h2 className="text-xl font-semibold">Select a Prompt</h2>
+            <p>Choose a prompt from the list to start editing or view its versions.</p>
+          </div>
+        </Card>
+      );
+    }
+     if (!selectedPrompt && promptsData.length === 0 && !isLoadingPrompts && currentUserId) {
+         return (
+            <Card className="flex-1 flex items-center justify-center shadow-lg">
+              <div className="text-center text-muted-foreground p-8">
+                <FileText className="mx-auto h-16 w-16 mb-4" />
+                <h2 className="text-xl font-semibold">No Prompts Available</h2>
+                <p>Create a new prompt template to begin.</p>
+              </div>
+            </Card>
+         );
+     }
+    if (!selectedPrompt && (isLoadingPrompts || isLoadingUserId)) {
+         return (
+            <Card className="flex-1 flex flex-col shadow-lg">
+                <CardHeader className="border-b">
+                    <Skeleton className="h-6 w-3/4 mb-1"/>
+                    <Skeleton className="h-4 w-1/2"/>
+                </CardHeader>
+                <CardContent className="flex-1 p-4">
+                    <Skeleton className="h-full w-full"/>
+                </CardContent>
+                <CardFooter className="border-t pt-4">
+                    <Skeleton className="h-9 w-24"/> <Skeleton className="h-9 w-32 ml-2"/>
+                </CardFooter>
+            </Card>
+         );
+    }
+    if (!selectedPrompt) { // Catch all for no selected prompt after loading
+        return (
+            <Card className="flex-1 flex items-center justify-center shadow-lg">
+                 <div className="text-center text-muted-foreground p-8">
+                    <FileText className="mx-auto h-16 w-16 mb-4" />
+                    <p>Select or create a prompt.</p>
+                 </div>
+            </Card>
+        );
+    }
+
+    return (
+      <Card className="flex-1 flex flex-col shadow-lg">
+        <CardHeader className="border-b">
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle className="text-xl font-headline">{selectedPrompt.name}</CardTitle>
+              <CardDescription>{selectedPrompt.description || "No description."}</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                  value={selectedVersionId || ''}
+                  onValueChange={(versionId) => handleSelectVersion(versionId)}
+                  disabled={selectedPrompt.versions.length === 0}
+                >
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Select version" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedPrompt.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => (
+                    <SelectItem key={v.id} value={v.id}>
+                      Version {v.versionNumber} ({formatDate(v.createdAt)})
+                      {selectedPrompt.currentVersionId === v.id && <Badge variant="secondary" className="ml-2">Active</Badge>}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="outline" onClick={handleCreateNewVersion} disabled={!selectedPrompt || addPromptVersionMutation.isPending}>
+                {addPromptVersionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <GitBranchPlus className="mr-2 h-4 w-4" />} New Version
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="flex-1 p-0 flex min-h-0"> {/* Ensure CardContent can shrink */}
+          <div className="flex-1 p-4 flex flex-col">
+            <Label htmlFor="prompt-template-area" className="mb-2 font-medium">
+              Prompt Template (Version {selectedVersion?.versionNumber || 'N/A'})
+              {selectedPrompt.currentVersionId === selectedVersionId && <Badge variant="outline" className="ml-2 border-green-500 text-green-600">Active</Badge>}
+            </Label>
+            <Textarea
+              ref={promptTextareaRef}
+              id="prompt-template-area"
+              value={promptTemplateContent}
+              onChange={(e) => setPromptTemplateContent(e.target.value)}
+              placeholder={!selectedVersion && selectedPrompt.versions.length === 0 ? "Create a version to start editing." : "Enter your prompt template here..."}
+              className="flex-1 resize-none font-mono text-sm min-h-[200px]" // Ensure textarea can grow
+              disabled={!selectedVersion || updatePromptVersionMutation.isPending}
+            />
+            <Label htmlFor="version-notes" className="mt-4 mb-2 font-medium">Version Notes</Label>
+            <Input 
+              id="version-notes" 
+              value={versionNotes} 
+              onChange={(e) => setVersionNotes(e.target.value)} 
+              placeholder="Notes for this version (e.g., 'Improved clarity on instructions')" 
+              disabled={!selectedVersion || updatePromptVersionMutation.isPending}
+            />
+          </div>
+          <div className="w-1/3 min-w-[250px] border-l p-4 bg-muted/20">
+            <h3 className="text-md font-semibold mb-3">Available Parameters</h3>
+            <ScrollArea className="h-[calc(100%-40px)]"> 
+            {isLoadingParams ? <Skeleton className="h-20 w-full" /> :
+             fetchParamsError ? <p className="text-xs text-destructive">Error loading parameters.</p> :
+             productParameters.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No product parameters defined. Go to Schema Definition.</p>
+            ) : (
+              <div className="space-y-2">
+                {productParameters.map(param => (
+                  <Card key={param.id} className="p-2 shadow-sm bg-background">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Tag className="h-4 w-4 text-primary" />
+                        <span className="text-sm font-medium">{param.name}</span>
+                      </div>
+                      <Button size="xs" variant="outline" onClick={() => insertVariable(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion}>
+                        Insert
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 pl-6">{param.description}</p>
+                  </Card>
+                ))}
+              </div>
+            )}
+            </ScrollArea>
+          </div>
+        </CardContent>
+        <CardFooter className="border-t pt-4 flex justify-end gap-2">
+          <Button variant="outline" onClick={() => navigator.clipboard.writeText(promptTemplateContent)} disabled={!selectedVersion || !promptTemplateContent}>
+            <Copy className="mr-2 h-4 w-4" /> Copy Template
+          </Button>
+          <Button onClick={handleSaveVersion} disabled={!selectedVersion || updatePromptVersionMutation.isPending}>
+            {updatePromptVersionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Current Version
+          </Button>
+        </CardFooter>
+      </Card>
+    );
   };
 
 
   return (
     <div className="flex h-[calc(100vh-theme(spacing.28))] gap-6"> {/* Adjust height based on header */}
-      {/* Prompt List Sidebar */}
       <Card className="w-1/4 min-w-[300px] flex flex-col shadow-lg">
         <CardHeader className="border-b">
           <CardTitle>Prompt Templates</CardTitle>
           <CardDescription>Manage your Judge LLM prompts.</CardDescription>
            <Dialog open={isPromptDialogOpen} onOpenChange={(isOpen) => { setIsPromptDialogOpen(isOpen); if(!isOpen) resetPromptDialogForm();}}>
             <DialogTrigger asChild>
-              <Button size="sm" className="mt-2 w-full" onClick={() => { setEditingPrompt(null); resetPromptDialogForm(); setIsPromptDialogOpen(true); }}>
-                <PlusCircle className="mr-2 h-4 w-4" /> New Prompt
+              <Button size="sm" className="mt-2 w-full" onClick={handleOpenNewPromptDialog} disabled={addPromptTemplateMutation.isPending || updatePromptTemplateMutation.isPending || !currentUserId}>
+                <PlusCircle className="mr-2 h-4 w-4" /> New Prompt Template
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>{editingPrompt ? 'Edit' : 'Create New'} Prompt Template</DialogTitle>
+                <DialogTitle>{editingPromptData ? 'Edit' : 'Create New'} Prompt Template</DialogTitle>
               </DialogHeader>
               <form onSubmit={handlePromptDialogSubmit} className="space-y-4 py-4">
                 <div>
@@ -241,7 +699,10 @@ export default function PromptsPage() {
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsPromptDialogOpen(false); resetPromptDialogForm();}}>Cancel</Button>
-                  <Button type="submit">{editingPrompt ? 'Save Changes' : 'Create Prompt'}</Button>
+                  <Button type="submit" disabled={addPromptTemplateMutation.isPending || updatePromptTemplateMutation.isPending}>
+                    {(addPromptTemplateMutation.isPending || updatePromptTemplateMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                    {editingPromptData ? 'Save Changes' : 'Create Prompt'}
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -249,134 +710,13 @@ export default function PromptsPage() {
         </CardHeader>
         <ScrollArea className="flex-1">
           <CardContent className="p-0">
-            {prompts.length === 0 ? (
-              <div className="p-6 text-center text-muted-foreground">
-                <FileText className="mx-auto h-10 w-10 mb-2" />
-                <p>No prompts created yet.</p>
-              </div>
-            ) : (
-              prompts.map(p => (
-                <div
-                  key={p.id}
-                  className={`p-3 border-b cursor-pointer hover:bg-muted/50 ${selectedPrompt?.id === p.id ? 'bg-muted font-semibold' : ''}`}
-                  onClick={() => handleSelectPrompt(p.id)}
-                >
-                  <div className="flex justify-between items-center">
-                    <span>{p.name}</span>
-                    <div className="flex gap-1">
-                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openEditPromptDialog(p);}}>
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/90" onClick={(e) => {e.stopPropagation(); handleDeletePrompt(p.id)}}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground truncate">{p.description}</p>
-                </div>
-              ))
-            )}
+            {renderPromptList()}
           </CardContent>
         </ScrollArea>
       </Card>
 
-      {/* Prompt Editor Area */}
-      {selectedPrompt ? (
-        <Card className="flex-1 flex flex-col shadow-lg">
-          <CardHeader className="border-b">
-            <div className="flex justify-between items-start">
-              <div>
-                <CardTitle className="text-xl font-headline">{selectedPrompt.name}</CardTitle>
-                <CardDescription>{selectedPrompt.description}</CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Select
-                    value={selectedVersion?.id || ''}
-                    onValueChange={(versionId) => handleSelectVersion(versionId)}
-                    disabled={selectedPrompt.versions.length === 0}
-                  >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Select version" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {selectedPrompt.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => (
-                      <SelectItem key={v.id} value={v.id}>Version {v.versionNumber} ({v.createdAt})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button size="sm" variant="outline" onClick={handleCreateNewVersion} disabled={!selectedPrompt}>
-                  <GitBranchPlus className="mr-2 h-4 w-4" /> New Version
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="flex-1 p-0 flex">
-            {/* Editor */}
-            <div className="flex-1 p-4 flex flex-col">
-              <Label htmlFor="prompt-template-area" className="mb-2 font-medium">Prompt Template (Version {selectedVersion?.versionNumber || 'N/A'})</Label>
-              <Textarea
-                ref={promptTextareaRef}
-                id="prompt-template-area"
-                value={promptTemplateContent}
-                onChange={(e) => setPromptTemplateContent(e.target.value)}
-                placeholder="Enter your prompt template here. Use {{variable_name}} to insert parameters."
-                className="flex-1 resize-none font-code text-sm"
-                disabled={!selectedVersion}
-              />
-              <Label htmlFor="version-notes" className="mt-4 mb-2 font-medium">Version Notes</Label>
-              <Input 
-                id="version-notes" 
-                value={versionNotes} 
-                onChange={(e) => setVersionNotes(e.target.value)} 
-                placeholder="Notes for this version (e.g., 'Improved clarity on instructions')" 
-                disabled={!selectedVersion}
-              />
-            </div>
-            {/* Variables Sidebar */}
-            <div className="w-1/3 min-w-[250px] border-l p-4 bg-muted/30">
-              <h3 className="text-md font-semibold mb-3">Available Parameters</h3>
-              <ScrollArea className="h-[calc(100%-40px)]"> {/* Adjust height */}
-              {availableProductParameters.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No product parameters defined. Go to Schema Definition.</p>
-              ) : (
-                <div className="space-y-2">
-                  {availableProductParameters.map(param => (
-                    <Card key={param.id} className="p-2 shadow-sm bg-background">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Tag className="h-4 w-4 text-primary" />
-                          <span className="text-sm font-medium">{param.name}</span>
-                        </div>
-                        <Button size="xs" variant="outline" onClick={() => insertVariable(param.name)} title={`Insert {{${param.name}}}`}>
-                          Insert
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1 pl-6">{param.description}</p>
-                    </Card>
-                  ))}
-                </div>
-              )}
-              </ScrollArea>
-            </div>
-          </CardContent>
-          <CardFooter className="border-t pt-4 flex justify-end gap-2">
-            <Button variant="outline" onClick={() => navigator.clipboard.writeText(promptTemplateContent)} disabled={!selectedVersion}>
-              <Copy className="mr-2 h-4 w-4" /> Copy Template
-            </Button>
-            <Button onClick={handleSaveVersion} disabled={!selectedVersion}>
-              <Save className="mr-2 h-4 w-4" /> Save Current Version
-            </Button>
-          </CardFooter>
-        </Card>
-      ) : (
-        <Card className="flex-1 flex items-center justify-center shadow-lg">
-          <div className="text-center text-muted-foreground p-8">
-            <FileText className="mx-auto h-16 w-16 mb-4" />
-            <h2 className="text-xl font-semibold">No Prompt Selected</h2>
-            <p>Select a prompt from the list or create a new one to start editing.</p>
-          </div>
-        </Card>
-      )}
+      {renderEditorArea()}
     </div>
   );
 }
+
