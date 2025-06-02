@@ -232,7 +232,9 @@ export default function DatasetsPage() {
             const data = e.target?.result;
             if (data) {
               const workbook = XLSX.read(data, { type: 'array' });
-              const filteredSheetNames = workbook.SheetNames.map(name => String(name).trim()).filter(name => name !== '');
+              const filteredSheetNames = workbook.SheetNames
+                .map(name => String(name).trim())
+                .filter(name => name !== ''); // Filter out empty sheet names
               setAvailableSheetNames(filteredSheetNames);
               if (filteredSheetNames.length === 0) {
                 alert("The selected Excel file contains no valid sheet names or no sheets.");
@@ -261,11 +263,8 @@ export default function DatasetsPage() {
                     if (lines.length > 0 && lines[0].trim() !== '') {
                         const csvRawHeaders = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
                         const headers = csvRawHeaders
-                          .map(header => {
-                            if (header === null || typeof header === 'undefined') return '';
-                            return String(header).trim();
-                          })
-                          .filter(trimmedHeader => trimmedHeader !== '');
+                          .map(header => String(header).trim()) // Ensure string and trim
+                          .filter(trimmedHeader => trimmedHeader !== ''); // Filter out empty strings
                         
                         setSheetColumnHeaders(headers);
                         if (headers.length === 0 && lines[0].trim() !== '') {
@@ -320,11 +319,8 @@ export default function DatasetsPage() {
             const rawHeadersFromSheet: any[] = jsonData[0] || [];
             
             const headers = rawHeadersFromSheet
-              .map(header => {
-                if (header === null || typeof header === 'undefined') return '';
-                return String(header).trim();
-              })
-              .filter(trimmedHeader => trimmedHeader !== '');
+              .map(header => String(header).trim()) // Ensure string and trim
+              .filter(trimmedHeader => trimmedHeader !== ''); // Filter out empty strings
 
             setSheetColumnHeaders(headers); 
             if (headers.length === 0 && rawHeadersFromSheet.length > 0) {
@@ -668,7 +664,7 @@ export default function DatasetsPage() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value=""><em>None</em></SelectItem>
-                              {sheetColumnHeaders.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                              {sheetColumnHeaders.map((col, index) => <SelectItem key={`col-header-${index}`} value={col}>{col}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </div>
