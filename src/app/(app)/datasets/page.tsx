@@ -12,12 +12,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2, LinkIcon, Loader2 } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
-import { db, storage } from '@/lib/firebase'; // Import storage
+import { db, storage } from '@/lib/firebase';
 import { 
   collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, 
   query, orderBy, writeBatch, type Timestamp, type FieldValue, getDoc
 } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getBlob, deleteObject } from 'firebase/storage'; // Storage functions
+import { ref as storageRef, uploadBytes, getBlob, deleteObject } from 'firebase/storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import * as XLSX from 'xlsx';
@@ -30,7 +30,7 @@ interface DatasetVersion {
   fileName: string;
   uploadDate: string; // ISO String
   size: string; // e.g. "2.5MB"
-  records: number;
+  records: number; // Placeholder, actual counting not implemented
   storagePath?: string; // Path in Firebase Storage
   selectedSheetName?: string | null; 
   columnMapping?: Record<string, string>; 
@@ -47,10 +47,8 @@ interface Dataset {
 
 type NewDatasetData = Omit<Dataset, 'id' | 'versions' | 'createdAt'> & { createdAt: FieldValue };
 type DatasetUpdatePayload = { id: string } & Partial<Omit<Dataset, 'id' | 'versions' | 'createdAt'>>;
-// For new version, storagePath is added after doc creation and file upload
 type NewDatasetVersionFirestoreData = Omit<DatasetVersion, 'id' | 'createdAt' | 'selectedSheetName' | 'columnMapping' | 'storagePath'> & { createdAt: FieldValue };
 type UpdateVersionMappingPayload = { datasetId: string; versionId: string; selectedSheetName: string | null; columnMapping: Record<string, string> };
-
 
 interface ProductParameterForMapping {
   id: string;
@@ -136,13 +134,11 @@ export default function DatasetsPage() {
   const [isMappingDialogOpen, setIsMappingDialogOpen] = useState(false);
   const [isLoadingMappingData, setIsLoadingMappingData] = useState(false);
   const [versionBeingMapped, setVersionBeingMapped] = useState<{datasetId: string; version: DatasetVersion} | null>(null);
-  // mappingDialogFile now stores Blob/ArrayBuffer and original name
   const [mappingDialogFileData, setMappingDialogFileData] = useState<{blob: Blob, name: string} | null>(null);
   const [mappingDialogSheetNames, setMappingDialogSheetNames] = useState<string[]>([]);
   const [mappingDialogSelectedSheet, setMappingDialogSelectedSheet] = useState<string>('');
   const [mappingDialogSheetColumnHeaders, setMappingDialogSheetColumnHeaders] = useState<string[]>([]);
   const [mappingDialogCurrentColumnMapping, setMappingDialogCurrentColumnMapping] = useState<Record<string, string>>({});
-
 
   const addDatasetMutation = useMutation<void, Error, NewDatasetData>({
     mutationFn: async (newDataset) => {
@@ -184,7 +180,6 @@ export default function DatasetsPage() {
           try {
             const fileRef = storageRef(storage, versionData.storagePath);
             await deleteObject(fileRef);
-            console.log(`Successfully deleted file from storage: ${versionData.storagePath}`);
           } catch (storageError) {
             console.error(`Error deleting file ${versionData.storagePath} from storage:`, storageError);
             // Decide if you want to halt the process or just log the error and continue
@@ -192,10 +187,10 @@ export default function DatasetsPage() {
         }
         batch.delete(versionDoc.ref);
       }
-      await batch.commit(); // Delete Firestore version documents
+      await batch.commit(); 
       
       const datasetDocRef = doc(db, 'users', currentUserId, 'datasets', datasetIdToDelete);
-      await deleteDoc(datasetDocRef); // Delete Firestore dataset document
+      await deleteDoc(datasetDocRef); 
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['datasets', currentUserId] }),
     onError: (error, variables) => {
@@ -208,18 +203,14 @@ export default function DatasetsPage() {
     mutationFn: async ({ datasetId, versionFirestoreData, fileToUpload }) => {
       if (!currentUserId) throw new Error("User not identified for adding version.");
 
-      // 1. Add version metadata to Firestore to get the version ID
       const versionDocRef = await addDoc(collection(db, 'users', currentUserId, 'datasets', datasetId, 'versions'), versionFirestoreData);
       const versionId = versionDocRef.id;
 
-      // 2. Construct storage path
       const filePath = `users/${currentUserId}/datasets/${datasetId}/versions/${versionId}/${fileToUpload.name}`;
       const fileStorageRef = storageRef(storage, filePath);
 
-      // 3. Upload file to Firebase Storage
       await uploadBytes(fileStorageRef, fileToUpload);
 
-      // 4. Update Firestore document with the storagePath
       await updateDoc(versionDocRef, { storagePath: filePath });
     },
     onSuccess: () => {
@@ -292,7 +283,7 @@ export default function DatasetsPage() {
       fileName: selectedFileUpload.name,
       uploadDate: new Date().toISOString().split('T')[0],
       size: `${(selectedFileUpload.size / (1024 * 1024)).toFixed(2)}MB`,
-      records: 0, 
+      records: 0, // Placeholder
       createdAt: serverTimestamp(),
     };
     
@@ -311,7 +302,9 @@ export default function DatasetsPage() {
         try {
             const arrayBuffer = await fileData.blob.arrayBuffer();
             const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-            const filteredSheetNames = workbook.SheetNames.map(name => String(name).trim()).filter(name => name !== '');
+            const filteredSheetNames = workbook.SheetNames
+              .map(name => String(name).trim())
+              .filter(name => name !== '');
             setMappingDialogSheetNames(filteredSheetNames);
             if (filteredSheetNames.length === 0) {
                 alert("The selected Excel file contains no valid sheet names or no sheets.");
@@ -325,7 +318,9 @@ export default function DatasetsPage() {
             const text = await fileData.blob.text();
             const lines = text.split(/\r\n|\n|\r/);
             if (lines.length > 0 && lines[0].trim() !== '') {
-                const headers = lines[0].split(',').map(h => String(h.replace(/^"|"$/g, '').trim())).filter(Boolean);
+                const headers = lines[0].split(',')
+                  .map(h => String(h.replace(/^"|"$/g, '').trim()))
+                  .filter(Boolean); // Filter out empty or whitespace-only headers
                 setMappingDialogSheetColumnHeaders(headers);
                 if (headers.length === 0) {
                      alert("CSV file has a header row, but no valid column names could be extracted or all are empty.");
@@ -347,7 +342,6 @@ export default function DatasetsPage() {
     }
   };
 
-
   const handleMappingDialogSheetSelect = async (sheetName: string) => {
     setMappingDialogSelectedSheet(sheetName);
     setMappingDialogSheetColumnHeaders([]);
@@ -361,7 +355,9 @@ export default function DatasetsPage() {
             if (worksheet) {
                 const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
                 const rawHeaders = jsonData[0] || [];
-                const headers = rawHeaders.map(header => String(header).trim()).filter(Boolean);
+                const headers = rawHeaders
+                    .map(header => String(header).trim())
+                    .filter(Boolean); // Filter out empty or whitespace-only headers
                 setMappingDialogSheetColumnHeaders(headers);
 
                 if (headers.length === 0 && rawHeaders.length > 0) {
@@ -453,8 +449,7 @@ export default function DatasetsPage() {
 
     if (!version.storagePath) {
         alert("Error: This version does not have an associated file in storage. Cannot configure mapping.");
-        setIsLoadingMappingData(false);
-        setIsMappingDialogOpen(false); // Close if no path
+        setIsMappingDialogOpen(false);
         return;
     }
     
@@ -462,22 +457,22 @@ export default function DatasetsPage() {
     try {
         const fileRef = storageRef(storage, version.storagePath);
         const blob = await getBlob(fileRef);
-        setMappingDialogFileData({blob, name: version.fileName}); // Store blob and original name
+        setMappingDialogFileData({blob, name: version.fileName});
         await parseFileDataForMapping({blob, name: version.fileName});
 
-        // Pre-fill with existing mapping if available
         if(version.selectedSheetName && version.fileName.toLowerCase().endsWith('.xlsx')) {
             setMappingDialogSelectedSheet(version.selectedSheetName);
-            // Re-trigger header parsing for the pre-selected sheet
-            await handleMappingDialogSheetSelect(version.selectedSheetName);
+            await handleMappingDialogSheetSelect(version.selectedSheetName); // This will parse headers for the selected sheet
         }
-        if(version.columnMapping) setMappingDialogCurrentColumnMapping(version.columnMapping);
+        if(version.columnMapping) {
+          setMappingDialogCurrentColumnMapping(version.columnMapping);
+        }
 
     } catch (error) {
         console.error("Error fetching or parsing file for mapping:", error);
         alert(`Failed to load file data for mapping: ${(error as Error).message}`);
-        resetMappingDialogState(); // Ensure dialog is reset on error
-        setIsMappingDialogOpen(false); // Close on error
+        resetMappingDialogState();
+        setIsMappingDialogOpen(false);
     } finally {
         setIsLoadingMappingData(false);
     }
@@ -491,13 +486,14 @@ export default function DatasetsPage() {
     resetDatasetForm();
     setIsDatasetDialogOpen(true);
   };
-
+  
   const showMappingUIInDialog = (
     mappingDialogFileData &&
-    mappingDialogSheetColumnHeaders.length > 0 &&
     productParametersForMapping.length > 0 &&
-    ((mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet) || 
-     (mappingDialogFileData.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)) 
+    (
+      (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet && mappingDialogSheetColumnHeaders.length > 0) || 
+      (mappingDialogFileData.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)
+    )
   );
   
   const isInitialUploadButtonDisabled = !selectedFileUpload || !currentUserId || addDatasetVersionMutation.isPending;
@@ -510,7 +506,6 @@ export default function DatasetsPage() {
     isLoadingMappingData ||
     (mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSheetNames.length > 0 && !mappingDialogSelectedSheet) ||
     (mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData && mappingDialogFileData.blob.size > 0);
-
 
   if (isLoadingUserId || (isLoadingDatasets && currentUserId) || (isLoadingProdParams && currentUserId)) {
     return <div className="space-y-6"><Card><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-56" /></CardContent></Card></div>;
