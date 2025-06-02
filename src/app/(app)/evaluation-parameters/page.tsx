@@ -203,7 +203,7 @@ export default function EvaluationParametersPage() {
   };
 
   const handleAddNewCategorizationLabelInLabelsDialog = () => {
-    console.log('Adding new label. Current count before add:', currentCategorizationLabelsInLabelsDialog.length);
+    console.log('[Add Label Click] Current labels before add:', currentCategorizationLabelsInLabelsDialog.length);
     setCurrentCategorizationLabelsInLabelsDialog(prev => {
       const newLabel = { 
         tempId: `new-cl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, 
@@ -212,7 +212,7 @@ export default function EvaluationParametersPage() {
         example: '' 
       };
       const updatedLabels = [...prev, newLabel];
-      console.log('New labels array state:', updatedLabels);
+      console.log('[Add Label Click] New labels array state after add:', updatedLabels);
       return updatedLabels;
     });
   };
@@ -231,14 +231,35 @@ export default function EvaluationParametersPage() {
 
   const handleSubmitLabelsDialog = (e: FormEvent) => {
     e.preventDefault();
+    console.log('[handleSubmitLabelsDialog] Form submitted. Editing Param:', editingLabelsForParam);
+    console.log('[handleSubmitLabelsDialog] Current User ID:', currentUserId);
+    console.log('[handleSubmitLabelsDialog] Labels in dialog state before processing:', JSON.stringify(currentCategorizationLabelsInLabelsDialog, null, 2));
+
+
     if (!editingLabelsForParam || !currentUserId) {
       alert("No parameter selected for label editing or user not identified.");
+      console.error('[handleSubmitLabelsDialog] Missing editingLabelsForParam or currentUserId.');
       return;
     }
     
     const labelsToSave: CategorizationLabelToStore[] = currentCategorizationLabelsInLabelsDialog
       .map(({ tempId, ...restOfLabel }) => restOfLabel) 
-      .filter(cl => cl.name.trim() && cl.definition.trim()); 
+      .filter(cl => {
+        const isValid = cl.name.trim() && cl.definition.trim();
+        if (!isValid) {
+          console.warn('[handleSubmitLabelsDialog] Filtering out invalid label (empty name or definition):', cl);
+        }
+        return isValid;
+      }); 
+
+    console.log('[handleSubmitLabelsDialog] Labels to save to Firestore:', JSON.stringify(labelsToSave, null, 2));
+    
+    // Additional check to ensure no undefined properties are sneaking in (paranoid check)
+    if (labelsToSave.some(label => label.name === undefined || label.definition === undefined)) {
+        console.error('[handleSubmitLabelsDialog] Aborting save due to undefined name/definition in labelsToSave array:', labelsToSave);
+        alert("Error: Some labels are incomplete after processing. Please check label names and definitions.");
+        return;
+    }
 
     updateLabelsMutation.mutate({ parameterId: editingLabelsForParam.id, labels: labelsToSave });
   };
@@ -314,14 +335,14 @@ export default function EvaluationParametersPage() {
             <DialogTitle>Manage Categorization Labels for: {editingLabelsForParam?.name}</DialogTitle>
             <DialogDescription>Add, edit, or remove specific labels with definitions and examples for this evaluation parameter.</DialogDescription>
           </DialogHeader>
-          <div className="flex-grow overflow-y-auto pr-2"> {/* Form content area that scrolls */}
-            <form onSubmit={handleSubmitLabelsDialog} className="h-full"> {/* Form takes full height of this area */}
+          <div className="flex-grow overflow-y-auto pr-2">
+            <form onSubmit={handleSubmitLabelsDialog} id="manage-labels-form" className="h-full">
                 <div className="space-y-4 py-4">
                   {currentCategorizationLabelsInLabelsDialog.length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-4">No categorization labels defined yet for this parameter.</p>
                   )}
                   {currentCategorizationLabelsInLabelsDialog.map((label, index) => {
-                    console.log('Rendering label in dialog:', label, 'at index:', index);
+                    console.log('[Render Label Card] Rendering label in dialog:', label, 'at index:', index);
                     return (
                       <Card key={label.tempId} className="p-4 space-y-3 bg-muted/50">
                         <div className="flex justify-between items-center">
@@ -353,19 +374,9 @@ export default function EvaluationParametersPage() {
           </div>
           <DialogFooter className="pt-4 border-t flex-shrink-0">
             <Button type="button" variant="outline" onClick={() => {setIsLabelsDialogOpen(false); resetLabelsDialogForm();}}>Cancel</Button>
-            {/* The submit button for the form is implicitly handled by the form's onSubmit,
-                but if we want an explicit button in the footer that triggers the form submission: */}
             <Button 
-              type="button" 
-              onClick={(e) => {
-                // Create a synthetic event or directly call the handler
-                const form = e.currentTarget.closest('dialog')?.querySelector('form');
-                if (form) {
-                  // Create a synthetic submit event
-                  const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-                  form.dispatchEvent(submitEvent);
-                }
-              }}
+              type="submit"
+              form="manage-labels-form"
               disabled={updateLabelsMutation.isPending || !editingLabelsForParam}
             >
               {updateLabelsMutation.isPending ? 'Saving Labels...' : 'Save Labels'}
