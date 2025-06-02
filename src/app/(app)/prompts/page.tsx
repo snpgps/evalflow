@@ -641,7 +641,7 @@ export default function PromptsPage() {
     }
 
     return (
-      <Card className="flex-1 flex flex-col shadow-lg min-h-0"> {/* Added min-h-0 for flex child */}
+      <Card className="flex-1 flex flex-col shadow-lg min-h-0"> {}
         <CardHeader className="border-b">
           <div className="flex justify-between items-start">
             <div>
@@ -672,7 +672,7 @@ export default function PromptsPage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 p-0 flex min-h-0"> {/* Added min-h-0 for flex child */}
+        <CardContent className="flex-1 p-0 flex min-h-0"> {}
           <div className="flex-1 p-4 flex flex-col">
             <Label htmlFor="prompt-template-area" className="mb-2 font-medium">
               Prompt Template (Version {selectedVersion?.versionNumber || 'N/A'})
@@ -708,11 +708,11 @@ export default function PromptsPage() {
                   <div className="space-y-2">
                     {productParameters.map(param => (
                       <Card key={param.id} className="p-2 shadow-sm bg-background overflow-hidden">
-                        <div className="flex items-center gap-2 mb-1 overflow-hidden">
+                        <div className="flex items-center gap-2 mb-1">
                           <Tag className="h-4 w-4 text-primary shrink-0" />
                           <span className="text-sm font-medium truncate min-w-0" title={param.name}>{param.name}</span>
                         </div>
-                        <Button onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8">
+                        <Button onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
                           Insert Variable
                         </Button>
                         <p className="text-xs text-muted-foreground truncate min-w-0" title={param.description}>{param.description}</p>
@@ -732,11 +732,11 @@ export default function PromptsPage() {
                   <div className="space-y-2">
                     {evaluationParameters.map(param => (
                       <Card key={param.id} className="p-2 shadow-sm bg-background overflow-hidden">
-                        <div className="flex items-center gap-2 mb-1 overflow-hidden">
+                        <div className="flex items-center gap-2 mb-1">
                           <Target className="h-4 w-4 text-green-600 shrink-0" />
                           <span className="text-sm font-medium truncate min-w-0" title={param.name}>{param.name}</span>
                         </div>
-                        <Button onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8">
+                        <Button onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
                           Insert Details
                         </Button>
                         <p className="text-xs text-muted-foreground truncate min-w-0" title={param.definition}>{param.definition}</p>
@@ -762,7 +762,7 @@ export default function PromptsPage() {
 
 
   return (
-    <div className="flex h-[calc(100vh-theme(spacing.28))] gap-6"> {/* Ensure this overall container allows flex children to have min-h-0 if needed */}
+    <div className="flex h-[calc(100vh-theme(spacing.28))] gap-6"> {}
       <Card className="w-1/4 min-w-[300px] flex flex-col shadow-lg">
         <CardHeader className="border-b">
           <CardTitle>Prompt Templates</CardTitle>
