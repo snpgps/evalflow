@@ -16,7 +16,7 @@ export default function LandingPage() {
         Streamline your AI model evaluations with powerful tools for schema definition, dataset management, prompt engineering, and performance analysis.
       </p>
       <div className="space-x-4">
-        <Link href="/auth/login">
+        <Link href="/login">
           <Button size="lg" className="font-semibold">
             <LogIn className="mr-2 h-5 w-5" />
             Get Started / Log In

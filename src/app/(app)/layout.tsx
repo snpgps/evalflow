@@ -1,3 +1,4 @@
+
 'use client';
 
 import { SidebarProvider, Sidebar, SidebarInset, SidebarContent } from '@/components/ui/sidebar';
@@ -16,7 +17,6 @@ function AppContent({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // This effect handles redirection for protected (app) routes.
     const storedUserId = localStorage.getItem('currentUserId');
     if (storedUserId) {
       setCurrentUserId(storedUserId);
@@ -26,11 +26,10 @@ function AppContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoadingUserId && !currentUserId) {
-      router.push('/auth/login');
+      router.push('/login'); // Updated redirect
     }
   }, [currentUserId, isLoadingUserId, router]);
 
-  // Show skeleton loader for (app) pages while user data is loading.
   if (isLoadingUserId) {
     return (
        <div className="flex flex-col flex-1 min-h-screen">
@@ -46,8 +45,6 @@ function AppContent({ children }: { children: React.ReactNode }) {
     );
   }
   
-  // If loading is finished, but there's no currentUserId,
-  // it means the redirect from useEffect is in progress or has just been initiated.
   if (!currentUserId) {
     return (
        <div className="flex flex-col flex-1 min-h-screen items-center justify-center bg-background">
@@ -56,7 +53,6 @@ function AppContent({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // If currentUserId is set (and isLoadingUserId is false), render the main app content.
   return (
     <SidebarProvider defaultOpen={true}>
       <Sidebar collapsible="icon" variant="sidebar" side="left" className="border-r">

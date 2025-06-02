@@ -1,3 +1,4 @@
+
 'use client';
 
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -18,14 +19,12 @@ import { useEffect, useState } from 'react';
 // Helper function to generate title from pathname
 const generateTitle = (pathname: string): string => {
   if (pathname === '/dashboard') return 'Dashboard';
+  if (pathname === '/login') return 'Login'; // Added for /login
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length === 0) return 'EvalFlow';
   
   if (segments[0] === 'runs' && segments.length > 1 && segments[1] !== 'new') {
     return `Run Details`;
-  }
-  if (segments[0] === 'auth' && segments[1] === 'login') {
-    return 'Login';
   }
 
   const title = segments[segments.length -1]
@@ -53,18 +52,17 @@ export function Header({ userId }: { userId: string | null }) {
 
   const handleLogout = () => {
     localStorage.removeItem('currentUserId');
-    router.push('/auth/login');
+    router.push('/login'); // Updated redirect
   };
   
   const getAvatarFallback = (id: string | null) => {
     if (!id) return '??';
-    // Simple fallback for User ID
     return id.substring(0, 2).toUpperCase();
   }
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-4 md:px-6 shadow-sm">
-      {(!pathname.startsWith('/auth') && pathname !== '/') && <SidebarTrigger className="md:hidden" />}
+      {(pathname !== '/login' && pathname !== '/') && <SidebarTrigger className="md:hidden" />}
       <div className="flex-1">
         <h1 className="text-xl font-semibold font-headline">{pageTitle}</h1>
       </div>
@@ -73,7 +71,7 @@ export function Header({ userId }: { userId: string | null }) {
           {isDarkTheme ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </Button>
         
-        {(!pathname.startsWith('/auth') && pathname !== '/') && (
+        {(pathname !== '/login' && pathname !== '/') && (
           <>
             <Button variant="ghost" size="icon" aria-label="Notifications">
               <Bell className="h-5 w-5" />
@@ -110,7 +108,7 @@ export function Header({ userId }: { userId: string | null }) {
                     </DropdownMenuItem>
                   </>
                 ) : (
-                  <DropdownMenuItem onClick={() => router.push('/auth/login')}>
+                  <DropdownMenuItem onClick={() => router.push('/login')}>
                     <LogIn className="mr-2 h-4 w-4" />
                     <span>Log In</span>
                   </DropdownMenuItem>
