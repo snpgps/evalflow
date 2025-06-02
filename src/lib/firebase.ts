@@ -1,7 +1,7 @@
-
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getAnalytics, type Analytics } from 'firebase/analytics';
+import { getStorage, type FirebaseStorage } from 'firebase/storage'; // Added FirebaseStorage type
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -16,6 +16,7 @@ const firebaseConfig = {
 let app: FirebaseApp;
 let db: Firestore;
 let analytics: Analytics | undefined;
+let storage: FirebaseStorage; // Changed to FirebaseStorage
 
 if (getApps().length === 0) {
   app = initializeApp(firebaseConfig);
@@ -24,10 +25,11 @@ if (getApps().length === 0) {
 }
 
 db = getFirestore(app);
+storage = getStorage(app); // Initialize storage
 
 // Initialize Analytics only in the browser environment and if measurementId is available
 if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
   analytics = getAnalytics(app);
 }
 
-export { app, db, analytics };
+export { app, db, analytics, storage }; // Export storage
