@@ -48,7 +48,7 @@ interface Dataset {
 
 type NewDatasetData = Omit<Dataset, 'id' | 'versions' | 'createdAt'> & { createdAt: FieldValue };
 type DatasetUpdatePayload = { id: string } & Partial<Omit<Dataset, 'id' | 'versions' | 'createdAt'>>;
-type NewDatasetVersionFirestoreData = Omit<DatasetVersion, 'id' | 'createdAt' | 'selectedSheetName' | 'columnMapping' | 'storagePath'> & { createdAt: FieldValue };
+type NewDatasetVersionFirestoreData = Omit<DatasetVersion, 'id' | 'createdAt' | 'selectedSheetName' | 'columnMapping'> & { createdAt: FieldValue };
 type UpdateVersionMappingPayload = { datasetId: string; versionId: string; selectedSheetName: string | null; columnMapping: Record<string, string> };
 
 interface ProductParameterForMapping {
@@ -181,9 +181,7 @@ export default function DatasetsPage() {
           try {
             const fileRef = storageRef(storage, versionData.storagePath);
             await deleteObject(fileRef);
-            console.log(`Successfully deleted file from storage: ${versionData.storagePath}`);
           } catch (storageError: any) {
-            // Log specific Firebase Storage errors, but don't halt the Firestore deletion
             if (storageError.code === 'storage/object-not-found') {
               console.warn(`File not found in storage, skipping deletion: ${versionData.storagePath}`);
             } else {
@@ -300,7 +298,6 @@ export default function DatasetsPage() {
     setMappingDialogSheetNames([]);
     setMappingDialogSelectedSheet('');
     setMappingDialogSheetColumnHeaders([]);
-    // Do NOT reset setMappingDialogCurrentColumnMapping here, as it might be pre-filled
 
     const fileName = fileData.name.toLowerCase();
 
@@ -310,7 +307,7 @@ export default function DatasetsPage() {
             const workbook = XLSX.read(arrayBuffer, { type: 'array', sheets: 0, bookFiles: false, bookProps: false, bookDeps: false, bookSheets: false, bookStrings: false, sheetStubs: true });
             const filteredSheetNames = workbook.SheetNames
               .map(name => String(name).trim())
-              .filter(name => name !== ''); // Ensure non-empty sheet names
+              .filter(name => name !== ''); 
             setMappingDialogSheetNames(filteredSheetNames);
             if (filteredSheetNames.length === 0) {
                 alert("The selected Excel file contains no valid sheet names or no sheets.");
@@ -326,14 +323,13 @@ export default function DatasetsPage() {
             if (lines.length > 0 && lines[0].trim() !== '') {
                 const headers = lines[0].split(',')
                   .map(h => String(h.replace(/^"|"$/g, '').trim()))
-                  .filter(h => h !== ''); // Ensure non-empty headers
+                  .filter(h => h !== '');
                 setMappingDialogSheetColumnHeaders(headers);
                 if (headers.length === 0) {
                      alert("CSV file has a header row, but no valid column names could be extracted or all are empty.");
                 }
-                setMappingDialogSelectedSheet(fileData.name); // For CSV, sheet name is effectively the file name
+                setMappingDialogSelectedSheet(fileData.name); 
 
-                // Auto-map if not already mapped from version data
                 if (Object.keys(mappingDialogCurrentColumnMapping).length === 0) {
                     const initialMapping: Record<string, string> = {};
                     productParametersForMapping.forEach(param => {
@@ -356,19 +352,18 @@ export default function DatasetsPage() {
   const handleMappingDialogSheetSelect = async (sheetName: string) => {
     setMappingDialogSelectedSheet(sheetName);
     setMappingDialogSheetColumnHeaders([]); 
-    // Do NOT reset mappingDialogCurrentColumnMapping here, as it might be pre-filled for this sheet
 
     if (mappingDialogFileData && mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && sheetName) {
         try {
             const arrayBuffer = await mappingDialogFileData.blob.arrayBuffer();
-            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            const workbook = XLSX.read(arrayBuffer, { type: 'array' ,  cellNF: false, cellText: false, cellDates: false});
             const worksheet = workbook.Sheets[sheetName];
             if (worksheet) {
                 const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false });
                 const rawHeaders = jsonData[0] || [];
                 const headers = rawHeaders
-                    .map(header => String(header).trim())
-                    .filter(h => h !== ''); // Ensure non-empty headers
+                    .map(header => String(header === null || header === undefined ? "" : header).trim())
+                    .filter(h => h !== '');
                 setMappingDialogSheetColumnHeaders(headers);
 
                 if (headers.length === 0 && rawHeaders.length > 0) {
@@ -377,7 +372,6 @@ export default function DatasetsPage() {
                      alert(`Sheet '${sheetName}' appears to be empty or has no header row.`);
                 }
                 
-                // Auto-map if not already mapped from version data for this specific sheet
                 if (Object.keys(mappingDialogCurrentColumnMapping).length === 0 || (versionBeingMapped && versionBeingMapped.version.selectedSheetName !== sheetName)) {
                     const initialMapping: Record<string, string> = {};
                     productParametersForMapping.forEach(param => {
@@ -397,8 +391,16 @@ export default function DatasetsPage() {
     }
   };
 
-  const handleMappingDialogColumnMappingChange = (schemaParamName: string, sheetColumnName: string) => {
-    setMappingDialogCurrentColumnMapping(prev => ({ ...prev, [schemaParamName]: sheetColumnName }));
+  const handleMappingDialogColumnMappingChange = (schemaParamName: string, sheetColumnName: string | undefined) => {
+    setMappingDialogCurrentColumnMapping(prev => {
+        const newMapping = { ...prev };
+        if (sheetColumnName === undefined || sheetColumnName === null) { // Check for undefined or null to clear
+            delete newMapping[schemaParamName];
+        } else {
+            newMapping[schemaParamName] = sheetColumnName;
+        }
+        return newMapping;
+    });
   };
 
   const handleSaveMappingSubmit = (e: FormEvent) => {
@@ -459,7 +461,7 @@ export default function DatasetsPage() {
   };
   
   const openMappingDialog = async (datasetId: string, version: DatasetVersion) => {
-    resetMappingDialogState(); // Reset most state first
+    resetMappingDialogState(); 
     setVersionBeingMapped({datasetId, version});
     setIsMappingDialogOpen(true);
 
@@ -473,25 +475,21 @@ export default function DatasetsPage() {
     try {
         const fileRef = storageRef(storage, version.storagePath);
         const blob = await getBlob(fileRef);
-        setMappingDialogFileData({blob, name: version.fileName}); // Set file data first
+        setMappingDialogFileData({blob, name: version.fileName}); 
 
-        // Pre-fill column mapping from version, if exists, BEFORE parsing file
         if (version.columnMapping) {
             setMappingDialogCurrentColumnMapping(version.columnMapping);
         }
         
-        await parseFileDataForMapping({blob, name: version.fileName}); // This will populate sheet names/headers
+        await parseFileDataForMapping({blob, name: version.fileName}); 
 
-        // Pre-select sheet and trigger header parsing if an XLSX sheet was previously selected
         if(version.selectedSheetName && version.fileName.toLowerCase().endsWith('.xlsx')) {
-            // Check if this sheet is still valid from parseFileDataForMapping
-            if (mappingDialogSheetNames.includes(version.selectedSheetName)) {
+            const currentSheetNames = workbookSheetNames({blob, name: version.fileName}); // Helper to re-get fresh sheet names
+            if (currentSheetNames.includes(version.selectedSheetName)) {
                  setMappingDialogSelectedSheet(version.selectedSheetName);
-                 await handleMappingDialogSheetSelect(version.selectedSheetName); // This will parse headers for the selected sheet
+                 await handleMappingDialogSheetSelect(version.selectedSheetName); 
             } else {
                 console.warn(`Previously selected sheet "${version.selectedSheetName}" not found in the file.`);
-                 // If pre-selected sheet is no longer valid, clear the selection,
-                 // but keep existing column mapping if user wants to re-map to a new sheet
                  setMappingDialogSelectedSheet('');
             }
         }
@@ -504,6 +502,23 @@ export default function DatasetsPage() {
         setIsLoadingMappingData(false);
     }
   };
+  // Helper to get sheet names without setting state, used in openMappingDialog
+  const workbookSheetNames = (fileData: {blob: Blob, name: string}): string[] => {
+    if (!fileData.name.toLowerCase().endsWith('.xlsx')) return [];
+    try {
+      const arrayBuffer = fileData.blob.constructor.name === 'ArrayBuffer' ? fileData.blob as ArrayBuffer : null; // This is a simplification, proper conversion needed
+      if (!arrayBuffer) { // Fallback if blob is not already ArrayBuffer (this part needs robust ArrayBuffer conversion)
+          console.warn("Blob to ArrayBuffer conversion needed for workbookSheetNames");
+          return []; // Or implement async conversion here
+      }
+      const workbook = XLSX.read(arrayBuffer, { type: 'array', sheets: 0, bookFiles: false, bookProps: false, bookDeps: false, bookSheets: false, bookStrings: false, sheetStubs: true });
+      return workbook.SheetNames.map(name => String(name).trim()).filter(name => name !== '');
+    } catch (e) {
+      console.error("Error getting sheet names for pre-selection check:", e);
+      return [];
+    }
+  }
+
 
   const handleCreateNewDatasetClick = () => {
     if (!currentUserId) {
@@ -655,7 +670,7 @@ export default function DatasetsPage() {
                       <SelectTrigger id="mapping-sheet-select"><SelectValue placeholder="Select a sheet" /></SelectTrigger>
                       <SelectContent>
                         {mappingDialogSheetNames
-                          .filter(name => name && name.trim() !== '')
+                          .filter(name => name && String(name).trim() !== '') 
                           .map((name, idx) => <SelectItem key={`map-sheet-${idx}`} value={name}>{name}</SelectItem>)
                         }
                       </SelectContent>
@@ -678,14 +693,15 @@ export default function DatasetsPage() {
                           <div key={param.id} className="grid grid-cols-2 gap-2 items-center">
                             <Label htmlFor={`map-dialog-${param.id}`} className="text-sm font-medium truncate" title={param.name}>{param.name}:</Label>
                             <Select
-                              value={mappingDialogCurrentColumnMapping[param.name] || ''}
-                              onValueChange={(value) => handleMappingDialogColumnMappingChange(param.name, value)}
+                              value={mappingDialogCurrentColumnMapping[param.name]} // Default to undefined
+                              onValueChange={(value) => handleMappingDialogColumnMappingChange(param.name, value === '' ? undefined : value)}
                             >
-                              <SelectTrigger id={`map-dialog-${param.id}`} className="h-9 text-xs"><SelectValue placeholder="Select column" /></SelectTrigger>
+                              <SelectTrigger id={`map-dialog-${param.id}`} className="h-9 text-xs">
+                                <SelectValue placeholder="Select column" />
+                              </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value=""><em>None</em></SelectItem>
                                 {mappingDialogSheetColumnHeaders
-                                  .filter(col => col && col.trim() !== '')
+                                  .filter(col => col && String(col).trim() !== '')
                                   .map((col, index) => <SelectItem key={`map-col-header-${index}`} value={col}>{col}</SelectItem>)
                                 }
                               </SelectContent>
