@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea } from '@/components/ui/scroll-area'; // Will use a div for scrolling for now
 import { toast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { 
@@ -25,9 +25,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 
 // Interfaces for dropdown data
-interface SelectableDataset { id: string; name: string; versions: { id: string; versionNumber: number }[]; }
+interface SelectableDatasetVersion { id: string; versionNumber: number; fileName?: string; }
+interface SelectableDataset { id: string; name: string; versions: SelectableDatasetVersion[]; }
 interface SelectableModelConnector { id: string; name: string; }
-interface SelectablePromptTemplate { id: string; name: string; versions: { id: string; versionNumber: number }[]; }
+interface SelectablePromptVersion { id: string; versionNumber: number;}
+interface SelectablePromptTemplate { id: string; name: string; versions: SelectablePromptVersion[]; }
 interface SelectableEvalParameter { id: string; name: string; }
 
 
@@ -85,8 +87,21 @@ const fetchSelectableDatasets = async (userId: string): Promise<SelectableDatase
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data();
     const versionsSnapshot = await getDocs(collection(db, 'users', userId, 'datasets', docSnap.id, 'versions'));
-    const versions = versionsSnapshot.docs.map(vDoc => ({ id: vDoc.id, versionNumber: vDoc.data().versionNumber as number, fileName: vDoc.data().fileName as string })).filter(v => v.versionNumber);
-    if (versions.length > 0) { // Only include datasets with versions
+    const versions = versionsSnapshot.docs
+      .map(vDoc => ({ 
+        id: vDoc.id, 
+        versionNumber: vDoc.data().versionNumber as number,
+        fileName: vDoc.data().fileName as string 
+      }))
+      .filter(v => v.versionNumber); // Ensure versionNumber is present
+    
+    // Only include datasets that have at least one version with mapping configured
+    const hasMappedVersion = versions.some(async (v) => {
+        const versionDoc = await getDoc(doc(db, 'users', userId, 'datasets', docSnap.id, 'versions', v.id));
+        return versionDoc.exists() && versionDoc.data()?.columnMapping && Object.keys(versionDoc.data()?.columnMapping).length > 0;
+    });
+
+    if (versions.length > 0 && hasMappedVersion) { // Ensure there are versions and at least one is mapped
         datasetsData.push({ id: docSnap.id, name: data.name as string, versions });
     }
   }
@@ -108,7 +123,12 @@ const fetchSelectablePromptTemplates = async (userId: string): Promise<Selectabl
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data();
     const versionsSnapshot = await getDocs(collection(db, 'users', userId, 'promptTemplates', docSnap.id, 'versions'));
-    const versions = versionsSnapshot.docs.map(vDoc => ({ id: vDoc.id, versionNumber: vDoc.data().versionNumber as number })).filter(v => v.versionNumber);
+    const versions = versionsSnapshot.docs
+      .map(vDoc => ({ 
+        id: vDoc.id, 
+        versionNumber: vDoc.data().versionNumber as number 
+      }))
+      .filter(v => v.versionNumber); // Ensure versionNumber is present
     if (versions.length > 0) { // Only include prompts with versions
         promptsData.push({ id: docSnap.id, name: data.name as string, versions });
     }
@@ -224,13 +244,22 @@ export default function EvalRunsPage() {
     const promptVersion = prompt?.versions.find(v => v.id === selectedPromptVersionId);
     const selEvalParams = evaluationParameters.filter(ep => selectedEvalParamIds.includes(ep.id));
 
+    if (!newRunName.trim()){
+        toast({ title: "Validation Error", description: "Run Name is required.", variant: "destructive"});
+        return;
+    }
     if (!dataset || !datasetVersion || !connector || !prompt || !promptVersion || selEvalParams.length === 0) {
         toast({ title: "Configuration Incomplete", description: "Please ensure all fields are selected, including at least one evaluation parameter.", variant: "destructive"});
         return;
     }
+     if (runOnNRows < 0) {
+      toast({ title: "Validation Error", description: "Number of rows to test cannot be negative.", variant: "destructive" });
+      return;
+    }
+
 
     const newRunData: NewEvalRunPayload = {
-      name: newRunName.trim() || `Eval Run - ${new Date().toLocaleString()}`,
+      name: newRunName.trim(),
       status: 'Pending',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -247,7 +276,7 @@ export default function EvalRunsPage() {
       promptVersionNumber: promptVersion?.versionNumber,
       selectedEvalParamIds: selectedEvalParamIds,
       selectedEvalParamNames: selEvalParams.map(ep => ep.name),
-      runOnNRows: Number(runOnNRows) || 0,
+      runOnNRows: Number(runOnNRows) || 0, // Defaults to 0 if input is empty or not a number
     };
     addEvalRunMutation.mutate(newRunData);
   };
@@ -284,6 +313,8 @@ export default function EvalRunsPage() {
     return timestamp ? timestamp.toDate().toLocaleDateString() : 'N/A';
   };
 
+  const isLoadingDialogData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams;
+
   if (isLoadingUserId) return <div className="p-6"><Skeleton className="h-32 w-full"/></div>;
   if (!currentUserId) return <Card><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
 
@@ -306,20 +337,20 @@ export default function EvalRunsPage() {
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh]">
-              <DialogHeader className="flex-shrink-0">
+              <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b">
                 <DialogTitle>Configure New Evaluation Run</DialogTitle>
                 <DialogDescription>Select components and parameters for your new eval run.</DialogDescription>
               </DialogHeader>
-              {(isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams) && !isNewRunDialogOpen ? (
+              {isLoadingDialogData ? (
                 <div className="py-8 flex justify-center items-center flex-grow"><Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading configuration options...</span></div>
               ) : (
-                <form onSubmit={handleNewRunSubmit} className="flex-grow overflow-y-hidden flex flex-col space-y-0">
-                  <ScrollArea className="flex-grow p-1">
-                    <div className="space-y-4 p-3"> {/* Added p-3 here for content padding */}
-                      <div><Label htmlFor="run-name">Run Name (Optional)</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July"/></div>
+                <>
+                  <div className="flex-grow overflow-y-auto"> {/* This div handles scrolling */}
+                    <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
+                      <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
                       
                       <div>
-                        <Label htmlFor="run-dataset">Dataset</Label>
+                        <Label htmlFor="run-dataset">Dataset (Mapped Only)</Label>
                         <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required>
                           <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger>
                           <SelectContent>{datasets.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent>
@@ -360,8 +391,9 @@ export default function EvalRunsPage() {
                       )}
 
                       <div><Label>Evaluation Parameters (Select one or more)</Label>
-                        <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50">
+                        <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border"> {/* Added border for visibility */}
                           <div className="space-y-2">
+                            {evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>}
                             {evaluationParameters.map(ep => (
                               <div key={ep.id} className="flex items-center space-x-2">
                                 <Checkbox 
@@ -376,25 +408,25 @@ export default function EvalRunsPage() {
                                 <Label htmlFor={`ep-${ep.id}`} className="font-normal">{ep.name}</Label>
                               </div>
                             ))}
-                            {evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>}
                           </div>
                         </Card>
                       </div>
                       
                       <div>
                         <Label htmlFor="run-nrows">Test on first N rows (0 for all)</Label>
-                        <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => setRunOnNRows(Number(e.target.value))} min="0" />
+                        <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => setRunOnNRows(parseInt(e.target.value, 10))} min="0" />
+                        <p className="text-xs text-muted-foreground mt-1">Enter 1 to test on the first row only. 0 will use all (mock) data.</p>
                       </div>
-                    </div>
-                  </ScrollArea>
-                  <DialogFooter className="pt-4 border-t flex-shrink-0">
+                    </form>
+                  </div>
+                  <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
                     <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
-                    <Button type="submit" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId}>
+                    <Button type="submit" form="new-eval-run-form" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId || !newRunName.trim()}>
                       {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />}
                       Start Evaluation
                     </Button>
                   </DialogFooter>
-                </form>
+                </>
               )}
             </DialogContent>
           </Dialog>
@@ -458,5 +490,4 @@ export default function EvalRunsPage() {
     </div>
   );
 }
-
     
