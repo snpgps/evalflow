@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { UserCircle } from 'lucide-react'; // Changed icon
+import { UserCircle } from 'lucide-react'; 
 
 export default function LoginPage() {
+  console.log('LoginPage rendering'); // Diagnostic log
   const [userId, setUserId] = useState('');
   const router = useRouter();
 
