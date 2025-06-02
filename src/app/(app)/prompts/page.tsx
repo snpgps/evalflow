@@ -39,6 +39,7 @@ interface EvalParameterForPrompts {
   name: string;
   definition: string;
   categorizationLabels?: CategorizationLabelForPrompts[];
+  requiresRationale?: boolean; // Added for rationale request
 }
 
 
@@ -108,6 +109,7 @@ const fetchEvaluationParametersForPrompts = async (userId: string | null): Promi
           definition: label.definition || '',
           example: label.example || undefined,
         })),
+        requiresRationale: data.requiresRationale || false, // Fetch requiresRationale
       };
     });
   } catch (error) {
@@ -450,7 +452,12 @@ export default function PromptsPage() {
 
   const insertEvaluationParameter = (evalParam: EvalParameterForPrompts) => {
     let textToInsert = `--- EVALUATION PARAMETER: ${evalParam.name} ---\n`;
-    textToInsert += `Definition: ${evalParam.definition}\n\n`;
+    textToInsert += `Definition: ${evalParam.definition}\n`;
+
+    if (evalParam.requiresRationale) {
+      textToInsert += `IMPORTANT: For this parameter, when providing your evaluation, you MUST include a 'rationale' field explaining your reasoning for the chosen label.\n`;
+    }
+    textToInsert += "\n"; 
 
     if (evalParam.categorizationLabels && evalParam.categorizationLabels.length > 0) {
       textToInsert += "Relevant Categorization Labels:\n";
