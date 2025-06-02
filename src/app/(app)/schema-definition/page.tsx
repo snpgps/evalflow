@@ -1,6 +1,7 @@
+
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,49 +10,113 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, Settings2, GripVertical } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, Settings2, AlertTriangle } from "lucide-react";
+import { useUserEmail } from '@/contexts/UserEmailContext';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp } from 'firebase/firestore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface ProductParameter {
-  id: string;
+  id: string; // Firestore document ID
   name: string;
   type: 'text' | 'dropdown' | 'textarea';
   definition: string;
-  options?: string[]; // For dropdown type
+  options?: string[];
+  createdAt?: Timestamp; // Added for ordering or tracking
+  order?: number; // For future reordering
 }
 
-const initialParameters: ProductParameter[] = [
-  { id: '1', name: 'Reference Metadata', type: 'textarea', definition: 'Contextual information or documents relevant to the interaction.' },
-  { id: '2', name: 'Chatbot-User Conversation', type: 'textarea', definition: 'The full transcript of the conversation between the chatbot and the user.' },
-  { id: '3', name: 'Product Details', type: 'textarea', definition: 'Specific information about the product being discussed.' },
-];
+const fetchProductParameters = async (userId: string): Promise<ProductParameter[]> => {
+  if (!userId) return [];
+  const parametersCollection = collection(db, 'users', userId, 'productParameters');
+  const q = query(parametersCollection, orderBy('createdAt', 'asc')); // Or orderBy 'order' if implemented
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProductParameter));
+};
 
 export default function SchemaDefinitionPage() {
-  const [parameters, setParameters] = useState<ProductParameter[]>(initialParameters);
+  const { userEmail, isLoading: isLoadingUser } = useUserEmail();
+  const queryClient = useQueryClient();
+
+  const { data: parameters = [], isLoading: isLoadingParameters, error: fetchError } = useQuery<ProductParameter[], Error>({
+    queryKey: ['productParameters', userEmail],
+    queryFn: () => userEmail ? fetchProductParameters(userEmail) : Promise.resolve([]),
+    enabled: !!userEmail && !isLoadingUser,
+  });
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingParameter, setEditingParameter] = useState<ProductParameter | null>(null);
+  
+  // Form state
   const [parameterName, setParameterName] = useState('');
   const [parameterType, setParameterType] = useState<'text' | 'dropdown' | 'textarea'>('text');
   const [parameterDefinition, setParameterDefinition] = useState('');
   const [dropdownOptions, setDropdownOptions] = useState('');
 
+  const addMutation = useMutation<void, Error, Omit<ProductParameter, 'id' | 'createdAt'>>({
+    mutationFn: async (newParameterData) => {
+      if (!userEmail) throw new Error("User not identified.");
+      await addDoc(collection(db, 'users', userEmail, 'productParameters'), {
+        ...newParameterData,
+        createdAt: serverTimestamp(),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productParameters', userEmail] });
+      resetForm();
+      setIsDialogOpen(false);
+    },
+    onError: (error) => {
+      alert(`Error adding parameter: ${error.message}`);
+    }
+  });
+
+  const updateMutation = useMutation<void, Error, ProductParameter>({
+    mutationFn: async (parameterToUpdate) => {
+      if (!userEmail) throw new Error("User not identified.");
+      const { id, ...dataToUpdate } = parameterToUpdate;
+      // Ensure createdAt is not overwritten if it exists, or handle as needed
+      const docRef = doc(db, 'users', userEmail, 'productParameters', id);
+      await updateDoc(docRef, dataToUpdate);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productParameters', userEmail] });
+      resetForm();
+      setIsDialogOpen(false);
+    },
+     onError: (error) => {
+      alert(`Error updating parameter: ${error.message}`);
+    }
+  });
+
+  const deleteMutation = useMutation<void, Error, string>({
+    mutationFn: async (parameterId) => {
+      if (!userEmail) throw new Error("User not identified.");
+      await deleteDoc(doc(db, 'users', userEmail, 'productParameters', parameterId));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['productParameters', userEmail] });
+    },
+    onError: (error) => {
+      alert(`Error deleting parameter: ${error.message}`);
+    }
+  });
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const newParam: ProductParameter = {
-      id: editingParameter ? editingParameter.id : Date.now().toString(),
+    const paramData = {
       name: parameterName,
       type: parameterType,
       definition: parameterDefinition,
-      options: parameterType === 'dropdown' ? dropdownOptions.split(',').map(opt => opt.trim()) : undefined,
+      options: parameterType === 'dropdown' ? dropdownOptions.split(',').map(opt => opt.trim()).filter(Boolean) : undefined,
     };
 
     if (editingParameter) {
-      setParameters(parameters.map(p => p.id === editingParameter.id ? newParam : p));
+      updateMutation.mutate({ ...editingParameter, ...paramData });
     } else {
-      setParameters([...parameters, newParam]);
+      addMutation.mutate(paramData);
     }
-    resetForm();
-    setIsDialogOpen(false);
   };
 
   const resetForm = () => {
@@ -72,24 +137,43 @@ export default function SchemaDefinitionPage() {
   };
 
   const handleDelete = (id: string) => {
-    setParameters(parameters.filter(p => p.id !== id));
+    if (confirm('Are you sure you want to delete this parameter?')) {
+      deleteMutation.mutate(id);
+    }
   };
+
+  if (isLoadingUser || (isLoadingParameters && userEmail)) {
+    return (
+      <div className="space-y-6">
+        <Card className="shadow-lg">
+          <CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader>
+          <CardContent><Skeleton className="h-10 w-48" /></CardContent>
+        </Card>
+        <Card>
+          <CardHeader><Skeleton className="h-8 w-1/2" /></CardHeader>
+          <CardContent className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   
-  // Placeholder for drag-and-drop reordering logic
-  const handleDragStart = (e: React.DragEvent<HTMLTableRowElement>, id: string) => {
-    e.dataTransfer.setData("parameterId", id);
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLTableRowElement>) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLTableRowElement>, targetId: string) => {
-    const draggedId = e.dataTransfer.getData("parameterId");
-    // Implement reordering logic here
-    console.log(`Drag ${draggedId} to ${targetId}`);
-  };
-
+  if (fetchError) {
+    return (
+      <Card className="shadow-lg">
+        <CardHeader>
+            <CardTitle className="text-2xl font-headline text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Could not fetch product parameters: {fetchError.message}</p>
+           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered an email on the login page and have a stable internet connection. Check Firebase console for potential issues.</p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -106,7 +190,7 @@ export default function SchemaDefinitionPage() {
         <CardContent>
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={() => { setEditingParameter(null); resetForm(); setIsDialogOpen(true); }}>
+              <Button onClick={() => { setEditingParameter(null); resetForm(); setIsDialogOpen(true); }} disabled={!userEmail || addMutation.isPending || updateMutation.isPending}>
                 <PlusCircle className="mr-2 h-5 w-5" /> Add New Parameter
               </Button>
             </DialogTrigger>
@@ -147,7 +231,9 @@ export default function SchemaDefinitionPage() {
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
-                  <Button type="submit">{editingParameter ? 'Save Changes' : 'Add Parameter'}</Button>
+                  <Button type="submit" disabled={addMutation.isPending || updateMutation.isPending}>
+                    {addMutation.isPending || updateMutation.isPending ? 'Saving...' : (editingParameter ? 'Save Changes' : 'Add Parameter')}
+                  </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -158,19 +244,22 @@ export default function SchemaDefinitionPage() {
       <Card>
         <CardHeader>
           <CardTitle>Defined Parameters</CardTitle>
-          <CardDescription>Manage your existing product parameters. Drag to reorder.</CardDescription>
+          <CardDescription>Manage your existing product parameters.</CardDescription>
         </CardHeader>
         <CardContent>
-          {parameters.length === 0 ? (
+          {!userEmail ? (
+             <div className="text-center text-muted-foreground py-8">
+                <p>Please log in to see your parameters.</p>
+              </div>
+          ) : parameters.length === 0 && !isLoadingParameters ? (
             <div className="text-center text-muted-foreground py-8">
-              <p>No product parameters defined yet.</p>
+              <p>No product parameters defined yet for {userEmail}.</p>
               <p className="text-sm">Click "Add New Parameter" to get started.</p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50px]">Reorder</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Definition</TableHead>
@@ -179,23 +268,15 @@ export default function SchemaDefinitionPage() {
               </TableHeader>
               <TableBody>
                 {parameters.map((param) => (
-                  <TableRow 
-                    key={param.id} 
-                    draggable 
-                    onDragStart={(e) => handleDragStart(e, param.id)}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, param.id)}
-                    className="hover:bg-muted/50 cursor-grab"
-                  >
-                    <TableCell><GripVertical className="h-5 w-5 text-muted-foreground" /></TableCell>
+                  <TableRow key={param.id} className="hover:bg-muted/50">
                     <TableCell className="font-medium">{param.name}</TableCell>
                     <TableCell className="capitalize">{param.type}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{param.definition}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-2">
+                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-2" disabled={updateMutation.isPending || deleteMutation.isPending}>
                         <Edit2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(param.id)} className="text-destructive hover:text-destructive/90">
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || updateMutation.isPending && editingParameter?.id === param.id}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </TableCell>
