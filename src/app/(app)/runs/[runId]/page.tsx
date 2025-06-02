@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap } from "lucide-react"; // Removed Download
+import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap } from "lucide-react";
 import { BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBarElement, ResponsiveContainer } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +17,7 @@ import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { db, storage } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp, type FieldValue } from 'firebase/firestore';
 import { ref as storageRef, getBlob } from 'firebase/storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
@@ -105,7 +105,10 @@ const fetchPromptVersionText = async (userId: string, promptId: string, versionI
 };
 
 const fetchEvaluationParameterDetailsForPrompt = async (userId: string, paramIds: string[]): Promise<EvalParamDetailForPrompt[]> => {
-  if (!paramIds || paramIds.length === 0) return [];
+  if (!userId || !paramIds || paramIds.length === 0) {
+    console.warn("fetchEvaluationParameterDetailsForPrompt: Missing userId or paramIds. Returning empty array.");
+    return [];
+  }
   const details: EvalParamDetailForPrompt[] = [];
   const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
   
@@ -120,6 +123,8 @@ const fetchEvaluationParameterDetailsForPrompt = async (userId: string, paramIds
         definition: data.definition,
         labels: (data.categorizationLabels || []).map((l: any) => ({ name: l.name, definition: l.definition, example: l.example})),
       });
+    } else {
+         console.warn(`Evaluation parameter with ID ${paramId} not found for user ${userId}.`);
     }
   }
   return details;
@@ -148,6 +153,7 @@ export default function RunDetailsPage() {
   const [previewDataError, setPreviewDataError] = useState<string | null>(null);
   
   const [evalParamDetailsForLLM, setEvalParamDetailsForLLM] = useState<EvalParamDetailForPrompt[]>([]);
+  const [isLoadingEvalParamDetails, setIsLoadingEvalParamDetails] = useState(false);
 
 
   useEffect(() => {
@@ -160,17 +166,9 @@ export default function RunDetailsPage() {
     queryKey: ['evalRunDetails', currentUserId, runId],
     queryFn: () => fetchEvalRunDetails(currentUserId!, runId),
     enabled: !!currentUserId && !!runId && !isLoadingUserId,
-    onSuccess: async (data) => {
-        if (data && data.selectedEvalParamIds && currentUserId) {
-            if(evalParamDetailsForLLM.length !== data.selectedEvalParamIds.length){ // Fetch only if not already fetched or changed
-                const details = await fetchEvaluationParameterDetailsForPrompt(currentUserId, data.selectedEvalParamIds);
-                setEvalParamDetailsForLLM(details);
-            }
-        }
-    }
   });
   
-  const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & { id: string }>({
+  const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & { id: string; updatedAt?: FieldValue } >({
     mutationFn: async (updateData) => {
       if (!currentUserId) throw new Error("User not identified.");
       const { id, ...dataToUpdate } = updateData;
@@ -188,10 +186,37 @@ export default function RunDetailsPage() {
     }
   });
 
-
-  const addLog = (message: string) => {
-    setCurrentSimulationLog(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`].slice(-100)); // Keep last 100 logs
+  const addLog = (message: string, type: 'info' | 'error' = 'info') => {
+    const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
+    console[type === 'error' ? 'error' : 'log'](logEntry); // Also log to console for easier debugging
+    setCurrentSimulationLog(prev => [...prev, logEntry].slice(-100));
   };
+
+  useEffect(() => {
+    if (!runDetails) {
+      setEvalParamDetailsForLLM([]);
+      return;
+    }
+    if (runDetails.selectedEvalParamIds && runDetails.selectedEvalParamIds.length > 0 && currentUserId) {
+      const fetchDetails = async () => {
+        setIsLoadingEvalParamDetails(true);
+        addLog("Fetching/updating evaluation parameter details for LLM...");
+        const details = await fetchEvaluationParameterDetailsForPrompt(currentUserId, runDetails.selectedEvalParamIds);
+        setEvalParamDetailsForLLM(details);
+        addLog(`Fetched ${details.length} evaluation parameter details.`);
+        if (details.length === 0 && runDetails.selectedEvalParamIds!.length > 0) {
+             addLog("Warning: Selected evaluation parameter IDs were present, but no details were fetched. Check IDs in Firestore and parameter definitions.", "error");
+        }
+        setIsLoadingEvalParamDetails(false);
+      };
+      fetchDetails();
+    } else {
+      setEvalParamDetailsForLLM([]);
+      addLog("No evaluation parameters selected for this run, or selectedEvalParamIds is empty.");
+      setIsLoadingEvalParamDetails(false);
+    }
+  }, [runDetails, currentUserId]); // Dependency on runDetails ensures it re-runs if runDetails object changes
+
 
   const handleFetchAndPreviewData = async () => {
     if (!runDetails || !currentUserId || !runDetails.datasetId || !runDetails.datasetVersionId) {
@@ -201,21 +226,22 @@ export default function RunDetailsPage() {
     setIsPreviewDataLoading(true);
     setPreviewDataError(null);
     setCurrentSimulationLog([]); 
+    addLog("Data Preview: Process started.");
 
     try {
-        addLog("Fetching dataset version configuration...");
+        addLog("Data Preview: Fetching dataset version configuration...");
         const versionConfig = await fetchDatasetVersionConfig(currentUserId, runDetails.datasetId, runDetails.datasetVersionId);
         if (!versionConfig || !versionConfig.storagePath || !versionConfig.columnMapping || Object.keys(versionConfig.columnMapping).length === 0) {
             throw new Error("Dataset version configuration (storage path or column mapping) is incomplete or missing.");
         }
-        addLog(`Storage path: ${versionConfig.storagePath}`);
-        addLog(`Column mapping: ${JSON.stringify(versionConfig.columnMapping)}`);
-        if (versionConfig.selectedSheetName) addLog(`Selected sheet: ${versionConfig.selectedSheetName}`);
+        addLog(`Data Preview: Storage path: ${versionConfig.storagePath}`);
+        addLog(`Data Preview: Column mapping: ${JSON.stringify(versionConfig.columnMapping)}`);
+        if (versionConfig.selectedSheetName) addLog(`Data Preview: Selected sheet: ${versionConfig.selectedSheetName}`);
 
-        addLog("Downloading dataset file from storage...");
+        addLog("Data Preview: Downloading dataset file from storage...");
         const fileRef = storageRef(storage, versionConfig.storagePath);
         const blob = await getBlob(fileRef);
-        addLog(`File downloaded (${(blob.size / (1024*1024)).toFixed(2)} MB). Parsing...`);
+        addLog(`Data Preview: File downloaded (${(blob.size / (1024*1024)).toFixed(2)} MB). Parsing...`);
 
         let parsedRows: Array<Record<string, any>> = [];
         const fileName = versionConfig.storagePath.split('/').pop()?.toLowerCase() || '';
@@ -228,7 +254,7 @@ export default function RunDetailsPage() {
                 throw new Error(`Sheet "${sheetName || 'default'}" not found in Excel file.`);
             }
             parsedRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
-            addLog(`Parsed ${parsedRows.length} rows from Excel sheet "${sheetName}".`);
+            addLog(`Data Preview: Parsed ${parsedRows.length} rows from Excel sheet "${sheetName}".`);
         } else if (fileName.endsWith('.csv')) {
             const text = await blob.text();
             const lines = text.split(/\r\n|\n|\r/).filter(line => line.trim() !== '');
@@ -243,23 +269,24 @@ export default function RunDetailsPage() {
                 });
                 parsedRows.push(rowObject);
             }
-            addLog(`Parsed ${parsedRows.length} rows from CSV file.`);
+            addLog(`Data Preview: Parsed ${parsedRows.length} rows from CSV file.`);
         } else {
             throw new Error("Unsupported file type. Only .xlsx and .csv are supported for preview.");
         }
         
         if (parsedRows.length === 0) {
-            addLog("No data rows found after parsing.");
-            updateRunMutation.mutate({ id: runId, previewedDatasetSample: [], status: 'DataPreviewed', errorMessage: null, results: [] }); // Clear previous results
+            addLog("Data Preview: No data rows found after parsing.");
+            updateRunMutation.mutate({ id: runId, previewedDatasetSample: [], status: 'DataPreviewed', errorMessage: null, results: [] });
             toast({ title: "No Data", description: "The dataset file was parsed but contained no data rows." });
             setIsPreviewDataLoading(false);
             return;
         }
 
         const maxRowsForPreview = 10;
-        const numRowsToFetch = runDetails.runOnNRows > 0 ? Math.min(runDetails.runOnNRows, maxRowsForPreview) : maxRowsForPreview;
-        const actualRowsToPreview = parsedRows.slice(0, Math.min(numRowsToFetch, parsedRows.length));
-        addLog(`Taking first ${actualRowsToPreview.length} rows for preview (max ${maxRowsForPreview} for preview, config: ${runDetails.runOnNRows}).`);
+        const numRowsToFetch = runDetails.runOnNRows > 0 ? Math.min(runDetails.runOnNRows, parsedRows.length, maxRowsForPreview) : Math.min(parsedRows.length, maxRowsForPreview);
+
+        const actualRowsToPreview = parsedRows.slice(0, numRowsToFetch);
+        addLog(`Data Preview: Taking first ${actualRowsToPreview.length} rows for preview (Config N: ${runDetails.runOnNRows}, Max Preview: ${maxRowsForPreview}).`);
 
         const mappedSampleData: Array<Record<string, any>> = [];
         const productParamToOriginalColMap = versionConfig.columnMapping; 
@@ -274,20 +301,20 @@ export default function RunDetailsPage() {
                     rowHasMappedData = true;
                 } else {
                     mappedRow[productParamName] = undefined; 
-                    addLog(`Warning: Row ${index+1} missing original column "${originalColName}" for product parameter "${productParamName}".`);
+                    addLog(`Data Preview: Warning: Row ${index+1} missing original column "${originalColName}" for product parameter "${productParamName}".`);
                 }
             }
             if(rowHasMappedData) mappedSampleData.push(mappedRow);
-            else addLog(`Skipping row ${index+1} as no mapped data was found for it.`)
+            else addLog(`Data Preview: Skipping row ${index+1} as no mapped data was found for it.`)
         });
         
-        addLog(`Successfully mapped ${mappedSampleData.length} rows for preview.`);
+        addLog(`Data Preview: Successfully mapped ${mappedSampleData.length} rows for preview.`);
         
-        updateRunMutation.mutate({ id: runId, previewedDatasetSample: mappedSampleData, status: 'DataPreviewed', errorMessage: null, results: [] }); // Clear previous results on new preview
+        updateRunMutation.mutate({ id: runId, previewedDatasetSample: mappedSampleData, status: 'DataPreviewed', errorMessage: null, results: [] });
         toast({ title: "Data Preview Ready", description: `${mappedSampleData.length} rows fetched and mapped.`});
 
     } catch (error: any) {
-        addLog(`Error fetching/previewing data: ${error.message}`);
+        addLog(`Data Preview: Error fetching/previewing data: ${error.message}`, "error");
         setPreviewDataError(error.message);
         toast({ title: "Preview Error", description: error.message, variant: "destructive" });
         updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `Data preview failed: ${error.message}` });
@@ -299,7 +326,18 @@ export default function RunDetailsPage() {
 
   const simulateRunExecution = async () => {
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || evalParamDetailsForLLM.length === 0) {
-      toast({ title: "Cannot start LLM Categorization", description: "Missing critical run configuration or evaluation parameter details.", variant: "destructive" });
+      const errorMsg = "Missing critical run configuration or evaluation parameter details.";
+      toast({ title: "Cannot start LLM Categorization", description: errorMsg, variant: "destructive" });
+      console.error("Pre-simulation check failed:", {
+        runDetailsExists: !!runDetails,
+        userIdExists: !!currentUserId,
+        promptIdExists: !!runDetails?.promptId,
+        promptVersionIdExists: !!runDetails?.promptVersionId,
+        evalParamDetailsLength: evalParamDetailsForLLM.length,
+        evalParamDetailsActual: evalParamDetailsForLLM,
+        selectedEvalParamIdsFromRun: runDetails?.selectedEvalParamIds
+      });
+      addLog(errorMsg, "error");
       return;
     }
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) {
@@ -309,11 +347,13 @@ export default function RunDetailsPage() {
 
     setIsSimulating(true);
     setSimulationProgress(0);
-    setCurrentSimulationLog([]);
+    if (currentSimulationLog.length === 0 || !currentSimulationLog.some(log => log.includes("Data Preview"))) {
+      setCurrentSimulationLog([]); // Clear log only if it's a fresh simulation, not if appended from preview
+    }
     addLog("LLM Categorization started using previewed data.");
 
     try {
-      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, results: [] }); // Clear previous results
+      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, results: [] });
       addLog("Status set to Processing.");
 
       const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
@@ -324,7 +364,7 @@ export default function RunDetailsPage() {
       addLog(`Using ${evalParamDetailsForLLM.length} evaluation parameter details for LLM call.`);
       
       const datasetToProcess = runDetails.previewedDatasetSample; 
-      const rowsToProcess = datasetToProcess.length; // Process all previewed rows
+      const rowsToProcess = datasetToProcess.length;
       addLog(`Starting LLM categorization for ${rowsToProcess} previewed rows.`);
       
       const collectedResults: EvalRunResultItem[] = [];
@@ -341,10 +381,14 @@ export default function RunDetailsPage() {
         let evalCriteriaText = "\n\n--- EVALUATION CRITERIA ---\n";
         evalParamDetailsForLLM.forEach(ep => {
           evalCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`;
-          evalCriteriaText += "Labels:\n";
-          ep.labels.forEach(label => {
-            evalCriteriaText += `  - "${label.name}": ${label.definition || 'No definition.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`;
-          });
+          if (ep.labels && ep.labels.length > 0) {
+            evalCriteriaText += "Labels:\n";
+            ep.labels.forEach(label => {
+              evalCriteriaText += `  - "${label.name}": ${label.definition || 'No definition.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`;
+            });
+          } else {
+            evalCriteriaText += " (No specific categorization labels defined for this parameter)\n";
+          }
           evalCriteriaText += "\n";
         });
         evalCriteriaText += "--- END EVALUATION CRITERIA ---\n";
@@ -385,7 +429,7 @@ export default function RunDetailsPage() {
       toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
 
     } catch (error: any) {
-      addLog(`Error during LLM categorization: ${error.message}`);
+      addLog(`Error during LLM categorization: ${error.message}`, "error");
       console.error("LLM Categorization Error: ", error);
       toast({ title: "LLM Categorization Error", description: error.message, variant: "destructive" });
       updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM Categorization failed: ${error.message}` });
@@ -451,8 +495,9 @@ export default function RunDetailsPage() {
   };
 
   const isRunTerminal = runDetails.status === 'Completed';
-  const canStartLLMCategorization = runDetails.status === 'DataPreviewed' || (runDetails.status === 'Failed' && runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
-  const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed'; // Allow re-fetch if previewed
+  const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed';
+  const canStartLLMCategorization = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && evalParamDetailsForLLM.length > 0;
+
 
   return (
     <div className="space-y-6">
@@ -472,7 +517,7 @@ export default function RunDetailsPage() {
              <Button 
                 variant="outline" 
                 onClick={handleFetchAndPreviewData} 
-                disabled={isPreviewDataLoading || isSimulating || !canFetchData || isRunTerminal}
+                disabled={isLoadingEvalParamDetails || isPreviewDataLoading || isSimulating || !canFetchData || isRunTerminal}
              >
                 {isPreviewDataLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <DatabaseZap className="mr-2 h-4 w-4" />}
                 {runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0 ? 'Refetch Sample' : 'Fetch & Preview Sample'}
@@ -480,17 +525,17 @@ export default function RunDetailsPage() {
              <Button 
                 variant="default" 
                 onClick={simulateRunExecution} 
-                disabled={isSimulating || !canStartLLMCategorization || isRunTerminal }
+                disabled={isLoadingEvalParamDetails || isSimulating || !canStartLLMCategorization || isRunTerminal }
              >
-                {isSimulating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                {isSimulating ? 'Categorizing...' : (runDetails.status === 'Failed' ? 'Retry LLM Categorization' : 'Start LLM Categorization')}
+                {isSimulating || isLoadingEvalParamDetails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                {isSimulating ? 'Categorizing...' : (isLoadingEvalParamDetails ? 'Loading Config...' : (runDetails.status === 'Failed' ? 'Retry LLM Categorization' : 'Start LLM Categorization'))}
             </Button>
           </div>
         </CardHeader>
-        {(isPreviewDataLoading || isSimulating) && (
+        {(isPreviewDataLoading || isSimulating || isLoadingEvalParamDetails) && (
           <CardContent>
-            <Label>{isSimulating ? 'LLM Categorization Progress' : 'Data Fetch Progress'}: {isSimulating ? simulationProgress : (isPreviewDataLoading ? 'In Progress' : 'Done')}%</Label>
-            <Progress value={isSimulating ? simulationProgress : (isPreviewDataLoading ? 50 : 0)} className="w-full h-2 mt-1 mb-2" />
+            <Label>{isSimulating ? 'LLM Categorization Progress' : (isPreviewDataLoading ? 'Data Fetch Progress' : 'Loading Configuration...')}: {isSimulating ? `${simulationProgress}%` : (isPreviewDataLoading || isLoadingEvalParamDetails ? 'In Progress...' : 'Idle')}</Label>
+            <Progress value={isSimulating ? simulationProgress : (isPreviewDataLoading || isLoadingEvalParamDetails ? 50 : 0)} className="w-full h-2 mt-1 mb-2" />
           </CardContent>
         )}
          {currentSimulationLog.length > 0 && (
@@ -623,7 +668,7 @@ export default function RunDetailsPage() {
                     <YAxis dataKey="name" type="category" width={150} tick={{fontSize: 12}}/>
                     <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} />
                     <Legend />
-                    <RechartsBarElement dataKey="Accuracy" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={30} />
+                    <RechartsBarElement dataKey="Accuracy" fill="var(--primary)" radius={[0, 4, 4, 0]} barSize={30} />
                   </BarChart>
                 </ResponsiveContainer>
               </ChartContainer>
@@ -634,3 +679,5 @@ export default function RunDetailsPage() {
     </div>
   );
 }
+
+    
