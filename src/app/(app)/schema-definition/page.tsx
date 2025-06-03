@@ -340,9 +340,9 @@ export default function SchemaDefinitionPage() {
               <TableBody>
                 {parameters.map((param) => (
                   <TableRow key={param.id} className="hover:bg-muted/50">
-                    <TableCell className="font-medium">{param.name}</TableCell>
+                    <TableCell className="font-medium max-w-[120px] sm:max-w-sm truncate" title={param.name}>{param.name}</TableCell>
                     <TableCell className="capitalize hidden sm:table-cell">{param.type}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{param.definition}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate" title={param.definition}>{param.definition}</TableCell>
                     <TableCell className="text-right">
                         <div className="flex justify-end items-center gap-0 sm:gap-1">
                           <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-0 sm:mr-2" disabled={updateMutation.isPending || deleteMutation.isPending || !currentUserId}>
