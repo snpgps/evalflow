@@ -466,21 +466,22 @@ export default function EvalRunsPage() {
             </div>
           )}
           {!isLoadingEvalRuns && !fetchEvalRunsError && evalRuns.length > 0 && (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader><TableRow>
-                  <TableHead className="w-[150px] sm:w-auto">Name</TableHead><TableHead>Status</TableHead>
-                  <TableHead className="hidden md:table-cell">Dataset</TableHead>
-                  <TableHead className="hidden lg:table-cell">Model</TableHead>
-                  <TableHead className="hidden lg:table-cell">Prompt</TableHead>
-                  <TableHead>Accuracy</TableHead>
-                  <TableHead className="hidden sm:table-cell">Created At</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="w-[120px] sm:w-auto">Name</TableHead>
+                  <TableHead className="w-[120px]">Status</TableHead>
+                  <TableHead className="hidden md:table-cell w-auto">Dataset</TableHead>
+                  <TableHead className="hidden lg:table-cell w-auto">Model</TableHead>
+                  <TableHead className="hidden lg:table-cell w-auto">Prompt</TableHead>
+                  <TableHead className="w-[100px] sm:w-[120px]">Accuracy</TableHead>
+                  <TableHead className="hidden sm:table-cell w-[100px]">Created At</TableHead>
+                  <TableHead className="text-right w-[80px]">Actions</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {evalRuns.map((run) => (
                   <TableRow key={run.id} className="hover:bg-muted/50">
                     <TableCell className="font-medium max-w-[100px] sm:max-w-xs truncate">
-                      <Link href={`/runs/${run.id}`} className="hover:underline">{run.name}</Link>
+                      <Link href={`/runs/${run.id}`} className="hover:underline" title={run.name}>{run.name}</Link>
                     </TableCell>
                     <TableCell>{getStatusBadge(run.status)}</TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden md:table-cell max-w-[100px] truncate" title={run.datasetName || run.datasetId}>{run.datasetName || run.datasetId}{run.datasetVersionNumber ? ` (v${run.datasetVersionNumber})` : ''}</TableCell>

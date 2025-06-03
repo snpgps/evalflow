@@ -651,7 +651,7 @@ export default function PromptsPage() {
       <Card className="w-full md:flex-1 flex flex-col shadow-lg min-h-0">
         <CardHeader className="border-b">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-            <div className="flex-grow min-w-0"> {/* Added min-w-0 here */}
+            <div className="flex-grow min-w-0">
               <CardTitle className="text-xl font-headline truncate">{selectedPrompt.name}</CardTitle>
               <CardDescription className="truncate">{selectedPrompt.description || "No description."}</CardDescription>
             </div>
@@ -691,7 +691,7 @@ export default function PromptsPage() {
               value={promptTemplateContent}
               onChange={(e) => setPromptTemplateContent(e.target.value)}
               placeholder={!selectedVersion && selectedPrompt.versions.length === 0 ? "Create a version to start editing." : "Enter your prompt template here..."}
-              className="flex-1 resize-none font-mono text-sm min-h-[200px] lg:min-h-[300px]"
+              className="flex-1 resize-none font-mono text-sm min-h-[200px] md:min-h-[250px] lg:min-h-[300px]"
               disabled={!selectedVersion || updatePromptVersionMutation.isPending}
             />
             <Label htmlFor="version-notes" className="mt-4 mb-2 font-medium">Version Notes</Label>
@@ -704,7 +704,7 @@ export default function PromptsPage() {
             />
           </div>
           <div className="w-full lg:w-1/3 lg:min-w-[300px] border-t lg:border-t-0 lg:border-l p-4 bg-muted/20 flex flex-col">
-            <ScrollArea className="flex-1 max-h-[30vh] lg:max-h-none">
+            <ScrollArea className="flex-1 max-h-[40vh] lg:max-h-none">
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">Product Parameters</h3>
                 {isLoadingProdParams ? <Skeleton className="h-20 w-full" /> :
@@ -770,7 +770,7 @@ export default function PromptsPage() {
 
   return (
     <div className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-theme(spacing.28))] gap-6 p-4 md:p-0">
-      <Card className="w-full md:w-1/4 md:min-w-[300px] flex flex-col shadow-lg max-h-[50vh] md:max-h-none">
+      <Card className="w-full md:w-1/4 md:min-w-[300px] flex flex-col shadow-lg md:max-h-none"> {/* Removed max-h-[50vh] for mobile */}
         <CardHeader className="border-b">
           <CardTitle>Prompt Templates</CardTitle>
           <CardDescription>Manage your Judge LLM prompts.</CardDescription>
