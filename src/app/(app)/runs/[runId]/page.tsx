@@ -261,7 +261,7 @@ export default function RunDetailsPage() {
           parameterName: paramDetail.name,
           data: chartDataEntries.sort((a, b) => b.count - a.count),
         };
-      }).filter(paramChart => paramChart.data.length > 0); 
+      }).filter(paramChart => paramChart.data.length > 0);
 
       setMetricsBreakdownData(newMetricsBreakdownData);
     } else {
@@ -405,7 +405,7 @@ export default function RunDetailsPage() {
       setCurrentSimulationLog([]);
     }
     addLog("LLM Categorization started using previewed data.");
-    let collectedResults: EvalRunResultItem[] = runDetails.results || []; // Initialize with existing results if any
+    let collectedResults: EvalRunResultItem[] = runDetails.results || [];
 
 
     try {
@@ -422,7 +422,7 @@ export default function RunDetailsPage() {
       const datasetToProcess = runDetails.previewedDatasetSample;
       const rowsToProcess = datasetToProcess.length;
       addLog(`Starting LLM categorization for ${rowsToProcess} previewed rows.`);
-      
+
       const parameterIdsRequiringRationale = evalParamDetailsForLLM
         .filter(ep => ep.requiresRationale)
         .map(ep => ep.id);
@@ -475,11 +475,12 @@ export default function RunDetailsPage() {
         const currentProgress = Math.round(((i + 1) / rowsToProcess) * 100);
         setSimulationProgress(currentProgress);
 
+
         if ((i + 1) % Math.max(1, Math.floor(rowsToProcess / 10)) === 0) {
             updateRunMutation.mutate({
                 id: runId,
                 progress: currentProgress,
-                results: [...collectedResults], 
+                results: [...collectedResults],
                 status: 'Processing'
             });
         }
@@ -489,10 +490,10 @@ export default function RunDetailsPage() {
       updateRunMutation.mutate({
         id: runId,
         status: 'Completed',
-        results: collectedResults, 
+        results: collectedResults,
         progress: 100,
-        completedAt: serverTimestamp(), 
-        overallAccuracy: Math.round(Math.random() * 30 + 70) 
+        completedAt: serverTimestamp(),
+        overallAccuracy: Math.round(Math.random() * 30 + 70)
       });
       toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
 
@@ -698,7 +699,6 @@ export default function RunDetailsPage() {
                   <TableHeader><TableRow>
                     <TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>
                     {evalParamDetailsForLLM?.map(paramDetail => <TableHead key={paramDetail.id} className="min-w-[120px] sm:min-w-[150px]">{paramDetail.name}</TableHead>)}
-                    <TableHead className="min-w-[200px] sm:min-w-[250px]">Full Prompt (Truncated)</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
                     {actualResultsToDisplay.map((item, index) => (
@@ -723,12 +723,6 @@ export default function RunDetailsPage() {
                               </TableCell>
                             );
                         })}
-                        <TableCell className="max-w-xs sm:max-w-md text-xs align-top">
-                           <details>
-                             <summary className="cursor-pointer hover:underline">View Prompt</summary>
-                             <pre className="whitespace-pre-wrap text-[10px] bg-muted p-1 rounded mt-1 max-h-40 overflow-y-auto border">{item.fullPromptSent || "Not stored."}</pre>
-                           </details>
-                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -767,19 +761,19 @@ export default function RunDetailsPage() {
                 ) : (
                   <ChartContainer
                     config={{ count: { label: "Count" } }}
-                    className="w-full" 
-                    style={{ height: `${Math.max(150, paramChart.data.length * 40 + 60)}px` }} 
+                    className="w-full"
+                    style={{ height: `${Math.max(150, paramChart.data.length * 40 + 60)}px` }}
                   >
                     <ResponsiveContainer width="100%" height="100%">
-                      <RechartsBarChartElement data={paramChart.data} layout="vertical" margin={{ right: 30, left: 70, top: 5, bottom: 20 }}> 
+                      <RechartsBarChartElement data={paramChart.data} layout="vertical" margin={{ right: 30, left: 70, top: 5, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
                         <YAxis
                           dataKey="labelName"
                           type="category"
-                          width={120} 
+                          width={120}
                           tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-                          interval={0} 
+                          interval={0}
                         />
                         <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} />
                         <RechartsBar dataKey="count" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} barSize={20}>
