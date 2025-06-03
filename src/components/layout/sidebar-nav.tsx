@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -46,8 +47,14 @@ const settingsItems = [
 
 export function SidebarNav() {
   const pathname = usePathname();
-  const { state } = useSidebar();
+  const { state, isMobile, setOpenMobile } = useSidebar();
   const isCollapsed = state === 'collapsed';
+
+  const handleLinkClick = () => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -64,6 +71,7 @@ export function SidebarNav() {
                 isActive={pathname.startsWith(item.href)}
                 tooltip={isCollapsed ? item.label : undefined}
                 className="justify-start"
+                onClick={handleLinkClick}
               >
                 <a>
                   <item.icon className="h-5 w-5" />
@@ -85,6 +93,7 @@ export function SidebarNav() {
                 isActive={pathname.startsWith(item.href)}
                 tooltip={isCollapsed ? item.label : undefined}
                 className="justify-start"
+                onClick={handleLinkClick}
               >
                 <a>
                   <item.icon className="h-5 w-5" />
