@@ -1,3 +1,4 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -27,7 +28,7 @@ export default function DashboardPage() {
           <p className="text-muted-foreground mb-6">
             Get started by defining your product and evaluation parameters, uploading datasets, and running your first evaluation. Use the AI Insights tool to enhance your prompts and improve model accuracy.
           </p>
-          <Link href="/runs/new">
+          <Link href="/runs">
             <Button>
               <PlayCircle className="mr-2 h-5 w-5" />
               Start New Evaluation
