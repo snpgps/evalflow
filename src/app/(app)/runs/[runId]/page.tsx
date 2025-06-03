@@ -719,10 +719,10 @@ export default function RunDetailsPage() {
             </CardContent>
         )}
         {previewDataError && !isPreviewDataLoading && (
-             <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Data Preview Error</AlertTitle><AlertDescription>{previewDataError}</AlertDescription></Alert></CardContent>
+             <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Data Preview Error</AlertTitle><AlertDescription className="whitespace-pre-wrap break-words">{previewDataError}</AlertDescription></Alert></CardContent>
         )}
          {runDetails.errorMessage && runDetails.status === 'Failed' && !isSimulating && !isPreviewDataLoading && (
-             <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Run Failed</AlertTitle><AlertDescription>{runDetails.errorMessage}</AlertDescription></Alert></CardContent>
+             <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Run Failed</AlertTitle><AlertDescription className="whitespace-pre-wrap break-words">{runDetails.errorMessage}</AlertDescription></Alert></CardContent>
         )}
       </Card>
 
