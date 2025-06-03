@@ -524,9 +524,14 @@ export default function RunDetailsPage() {
         collectedResults.forEach(res => {
           if (res.groundTruth) {
             for (const evalParamId in res.judgeLlmOutput) {
-              if (res.groundTruth.hasOwnProperty(evalParamId) && res.groundTruth[evalParamId] !== undefined && res.groundTruth[evalParamId] !== null && String(res.groundTruth[evalParamId]).trim() !== '') {
+              if (res.groundTruth.hasOwnProperty(evalParamId) && 
+                  res.groundTruth[evalParamId] !== undefined && 
+                  res.groundTruth[evalParamId] !== null && 
+                  String(res.groundTruth[evalParamId]).trim() !== '') {
                 totalComparisons++;
-                if (res.judgeLlmOutput[evalParamId]?.chosenLabel === res.groundTruth[evalParamId]) {
+                const llmLabel = res.judgeLlmOutput[evalParamId]?.chosenLabel;
+                const gtLabel = res.groundTruth[evalParamId];
+                if (llmLabel && gtLabel && String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase()) {
                   totalCorrect++;
                 }
               }
@@ -584,7 +589,8 @@ export default function RunDetailsPage() {
         if (runDetails.runType === 'GroundTruth') {
           const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A';
           row[`${paramDetail.name} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A';
-          row[`${paramDetail.name} - Match`] = (output?.chosenLabel && gtValue !== 'N/A' && output.chosenLabel === gtValue) ? 'Yes' : 'No';
+          const llmLabel = output?.chosenLabel;
+          row[`${paramDetail.name} - Match`] = (llmLabel && gtValue !== 'N/A' && String(llmLabel).toLowerCase() === String(gtValue).toLowerCase()) ? 'Yes' : 'No';
         }
         row[`${paramDetail.name} - LLM Rationale`] = output?.rationale || '';
       });
@@ -813,15 +819,21 @@ export default function RunDetailsPage() {
                             const paramId = paramDetail.id;
                             const output = item.judgeLlmOutput[paramId];
                             const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined;
-                            const isMatch = runDetails.runType === 'GroundTruth' && groundTruthValue !== undefined && output?.chosenLabel === groundTruthValue;
-                            const showGroundTruth = runDetails.runType === 'GroundTruth' && groundTruthValue !== undefined && groundTruthValue !== null && String(groundTruthValue).trim() !== '';
+                            const llmLabel = output?.chosenLabel;
+                            const gtLabel = groundTruthValue;
+                            const isMatch = runDetails.runType === 'GroundTruth' && 
+                                            gtLabel !== undefined && 
+                                            llmLabel && 
+                                            String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase();
+                            const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
+                            
                             return (
                               <TableCell key={paramId} className="text-xs align-top">
                                 <div><strong>LLM:</strong> {output?.chosenLabel || 'N/A'}</div>
                                 {showGroundTruth && (
                                   <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}>
                                     <div className="flex items-center">
-                                      <strong>GT:</strong>&nbsp;{groundTruthValue}
+                                      <strong>GT:</strong>&nbsp;{gtLabel}
                                       {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>}
                                     </div>
                                   </div>
