@@ -130,26 +130,16 @@ export default function SchemaDefinitionPage() {
 
  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    console.log('handleSubmit called');
-    console.log('Current User ID:', currentUserId);
-    console.log('Parameter Name:', parameterName);
-    console.log('Parameter Definition:', parameterDefinition);
-    console.log('Is addMutation pending?', addMutation.isPending);
-    console.log('Is updateMutation pending?', updateMutation.isPending);
-
     if (!currentUserId) {
         alert("No User ID found. Please log in again.");
-        console.error("Attempted to submit with no User ID.");
         return;
     }
     if (!parameterName.trim() || !parameterDefinition.trim()) {
         alert("Parameter Name and Definition are required.");
-        console.warn("Form validation failed: Name or Definition is empty. Name: '"+parameterName+"', Definition: '"+parameterDefinition+"'");
         return;
     }
 
     if (editingParameter) {
-      console.log('Calling updateMutation');
       const payloadForUpdate: ProductParameterUpdatePayload = {
             id: editingParameter.id,
             name: parameterName.trim(),
@@ -164,7 +154,6 @@ export default function SchemaDefinitionPage() {
         }
         updateMutation.mutate(payloadForUpdate);
     } else {
-      console.log('Calling addMutation');
       const newParamData: Omit<ProductParameter, 'id' | 'createdAt' | 'order'> = {
         name: parameterName.trim(),
         type: parameterType,
@@ -328,21 +317,21 @@ export default function SchemaDefinitionPage() {
               <p className="text-sm">Click "Add New Parameter" to get started.</p>
             </div>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden sm:table-cell">Type</TableHead>
-                  <TableHead>Definition</TableHead>
-                  <TableHead className="text-right w-auto md:w-[120px]">Actions</TableHead>
+                  <TableHead className="w-2/5 sm:w-1/3">Name</TableHead>
+                  <TableHead className="hidden sm:table-cell w-1/5 sm:w-1/4">Type</TableHead>
+                  <TableHead className="w-2/5 sm:w-1/3">Definition</TableHead>
+                  <TableHead className="text-right w-[70px] sm:w-auto">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {parameters.map((param) => (
                   <TableRow key={param.id} className="hover:bg-muted/50">
-                    <TableCell className="font-medium max-w-[120px] sm:max-w-sm truncate" title={param.name}>{param.name}</TableCell>
-                    <TableCell className="capitalize hidden sm:table-cell">{param.type}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate" title={param.definition}>{param.definition}</TableCell>
+                    <TableCell className="font-medium truncate" title={param.name}>{param.name}</TableCell>
+                    <TableCell className="capitalize hidden sm:table-cell truncate">{param.type}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground truncate" title={param.definition}>{param.definition}</TableCell>
                     <TableCell className="text-right">
                         <div className="flex justify-end items-center gap-0 sm:gap-1">
                           <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-0 sm:mr-2" disabled={updateMutation.isPending || deleteMutation.isPending || !currentUserId}>
