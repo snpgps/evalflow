@@ -264,7 +264,9 @@ export default function DatasetsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['datasets', currentUserId] });
-      resetMappingDialogState();
+      // Do not call resetMappingDialogState() here on success, as it clears mappings
+      // The dialog will be closed by its onOpenChange if user clicks Save or Cancel
+      // We want the state to persist if the dialog is re-opened for the same version without a full page refresh
       setIsMappingDialogOpen(false);
     },
     onError: (error) => {
@@ -290,10 +292,11 @@ export default function DatasetsPage() {
     setMappingDialogSheetNames([]);
     setMappingDialogSelectedSheet('');
     setMappingDialogSheetColumnHeaders([]);
-    setMappingDialogCurrentColumnMapping({});
-    setMappingDialogCurrentGtMapping({}); // Reset GT mapping
+    // DO NOT reset mappingDialogCurrentColumnMapping or mappingDialogCurrentGtMapping here.
+    // They will be explicitly set in openMappingDialog based on the selected version.
     setIsLoadingMappingData(false);
   };
+
 
   const handleSelectedFileChangeForUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -327,8 +330,6 @@ export default function DatasetsPage() {
     setMappingDialogSheetNames([]);
     setMappingDialogSelectedSheet('');
     setMappingDialogSheetColumnHeaders([]);
-    // Do NOT reset mappingDialogCurrentColumnMapping or mappingDialogCurrentGtMapping here
-    // as they might be pre-filled from existing version data.
 
     const fileName = fileData.name.toLowerCase();
 
@@ -343,6 +344,9 @@ export default function DatasetsPage() {
             if (filteredSheetNames.length === 0) {
                 alert("The selected Excel file contains no valid sheet names or no sheets.");
             }
+            // Auto-selection of sheet and header loading will be handled by openMappingDialog
+            // or subsequent user interaction with handleMappingDialogSheetSelect.
+            // mappingDialogCurrentColumnMapping & GtMapping are already set by openMappingDialog
         } catch (error) {
             console.error("Error parsing XLSX for mapping dialog:", error);
             alert("Failed to parse Excel file for mapping. Please ensure it's a valid .xlsx file.");
@@ -361,8 +365,8 @@ export default function DatasetsPage() {
                 }
                 setMappingDialogSelectedSheet(fileData.name); // For CSV, sheet name is essentially file name
 
-                // Auto-map product parameters if no existing mapping or if sheet changed
-                if (Object.keys(mappingDialogCurrentColumnMapping).length === 0) {
+                // Auto-map product parameters if no existing mapping (i.e., mappingDialogCurrentColumnMapping is empty)
+                if (Object.keys(mappingDialogCurrentColumnMapping).length === 0 && headers.length > 0) {
                     const initialMapping: Record<string, string> = {};
                     productParametersForMapping.forEach(param => {
                         const foundColumn = headers.find(h => String(h).toLowerCase() === param.name.toLowerCase());
@@ -371,7 +375,7 @@ export default function DatasetsPage() {
                     setMappingDialogCurrentColumnMapping(initialMapping);
                 }
                 // Auto-map ground truth parameters if no existing mapping
-                if (Object.keys(mappingDialogCurrentGtMapping).length === 0) {
+                if (Object.keys(mappingDialogCurrentGtMapping).length === 0 && headers.length > 0) {
                     const initialGtMapping: Record<string, string> = {};
                     evaluationParametersForGtMapping.forEach(evalParam => {
                         const foundColumn = headers.find(h => String(h).toLowerCase() === evalParam.name.toLowerCase());
@@ -379,8 +383,6 @@ export default function DatasetsPage() {
                     });
                     setMappingDialogCurrentGtMapping(initialGtMapping);
                 }
-
-
             } else {
                  alert("CSV file appears to be empty or has no header row.");
             }
@@ -414,8 +416,8 @@ export default function DatasetsPage() {
                      alert(`Sheet '${sheetName}' appears to be empty or has no header row.`);
                 }
 
-                // Auto-map product parameters if no existing mapping or if sheet changed
-                if (Object.keys(mappingDialogCurrentColumnMapping).length === 0 || (versionBeingMapped && versionBeingMapped.version.selectedSheetName !== sheetName)) {
+                // Auto-map product parameters if mappingDialogCurrentColumnMapping is currently empty
+                if (Object.keys(mappingDialogCurrentColumnMapping).length === 0 && headers.length > 0) {
                     const initialMapping: Record<string, string> = {};
                     productParametersForMapping.forEach(param => {
                         const foundColumn = headers.find(h => String(h).toLowerCase() === param.name.toLowerCase());
@@ -423,8 +425,8 @@ export default function DatasetsPage() {
                     });
                     setMappingDialogCurrentColumnMapping(initialMapping);
                 }
-                 // Auto-map ground truth parameters if no existing mapping or if sheet changed
-                if (Object.keys(mappingDialogCurrentGtMapping).length === 0 || (versionBeingMapped && versionBeingMapped.version.selectedSheetName !== sheetName)) {
+                 // Auto-map ground truth parameters if mappingDialogCurrentGtMapping is currently empty
+                if (Object.keys(mappingDialogCurrentGtMapping).length === 0 && headers.length > 0) {
                     const initialGtMapping: Record<string, string> = {};
                     evaluationParametersForGtMapping.forEach(evalParam => {
                         const foundColumn = headers.find(h => String(h).toLowerCase() === evalParam.name.toLowerCase());
@@ -432,7 +434,6 @@ export default function DatasetsPage() {
                     });
                     setMappingDialogCurrentGtMapping(initialGtMapping);
                 }
-
             } else {
                 alert(`Sheet '${sheetName}' could not be read.`);
             }
@@ -446,7 +447,7 @@ export default function DatasetsPage() {
   const handleMappingDialogColumnMappingChange = (schemaParamName: string, sheetColumnName: string | undefined) => {
     setMappingDialogCurrentColumnMapping(prev => {
         const newMapping = { ...prev };
-        if (sheetColumnName === undefined || sheetColumnName === null) {
+        if (sheetColumnName === undefined || sheetColumnName === null || sheetColumnName === '') { // Also treat empty string as unsetting
             delete newMapping[schemaParamName];
         } else {
             newMapping[schemaParamName] = sheetColumnName;
@@ -458,7 +459,7 @@ export default function DatasetsPage() {
   const handleMappingDialogGtMappingChange = (evalParamId: string, sheetColumnName: string | undefined) => {
     setMappingDialogCurrentGtMapping(prev => {
         const newMapping = { ...prev };
-        if (sheetColumnName === undefined || sheetColumnName === null) {
+        if (sheetColumnName === undefined || sheetColumnName === null || sheetColumnName === '') { // Also treat empty string as unsetting
             delete newMapping[evalParamId];
         } else {
             newMapping[evalParamId] = sheetColumnName;
@@ -478,7 +479,7 @@ export default function DatasetsPage() {
       alert("Please select a sheet from the Excel file for mapping.");
       return;
     }
-     if (mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData.blob.size > 0) {
+     if (mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData.blob.size > 0 && (mappingDialogFileData.name.toLowerCase().endsWith('.csv') || (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet))) {
         alert("No column headers could be determined from the selected file/sheet. Cannot save mapping.");
         return;
     }
@@ -527,13 +528,19 @@ export default function DatasetsPage() {
   };
 
   const openMappingDialog = async (datasetId: string, version: DatasetVersion) => {
-    resetMappingDialogState(); // This now also resets GT mapping state
+    resetMappingDialogState(); // This no longer clears the actual mapping objects
+
     setVersionBeingMapped({datasetId, version});
-    setIsMappingDialogOpen(true);
+    setIsMappingDialogOpen(true); // Open dialog first so states are ready
+
+    // Explicitly set the current mappings from the version data
+    // This will be the source of truth for pre-filling the select dropdowns
+    setMappingDialogCurrentColumnMapping(version.columnMapping || {});
+    setMappingDialogCurrentGtMapping(version.groundTruthMapping || {});
 
     if (!version.storagePath) {
         alert("Error: This version does not have an associated file in storage. Cannot configure mapping.");
-        setIsMappingDialogOpen(false);
+        setIsMappingDialogOpen(false); // Close if no path
         return;
     }
 
@@ -543,36 +550,34 @@ export default function DatasetsPage() {
         const blob = await getBlob(fileRef);
         setMappingDialogFileData({blob, name: version.fileName});
 
-        if (version.columnMapping) {
-            setMappingDialogCurrentColumnMapping(version.columnMapping);
-        }
-        if (version.groundTruthMapping) { // Load existing GT mapping
-            setMappingDialogCurrentGtMapping(version.groundTruthMapping);
-        }
-
+        // Parse file data - this will read the mappingDialogCurrentColumnMapping/GtMapping states
+        // and only auto-map if they are empty (which they won't be if version had mappings)
         await parseFileDataForMapping({blob, name: version.fileName});
 
         if(version.selectedSheetName && version.fileName.toLowerCase().endsWith('.xlsx')) {
             const currentSheetNames = await getWorkbookSheetNamesAsync({blob, name: version.fileName});
             if (currentSheetNames.includes(version.selectedSheetName)) {
                  setMappingDialogSelectedSheet(version.selectedSheetName);
-                 // Re-trigger sheet select to load headers and potentially auto-map if current mappings are empty
+                 // Re-trigger sheet select to load headers. This function will also respect
+                 // the existing mappingDialogCurrentColumnMapping/GtMapping states.
                  await handleMappingDialogSheetSelect(version.selectedSheetName);
             } else {
                 console.warn(`Previously selected sheet "${version.selectedSheetName}" not found in the file.`);
                  setMappingDialogSelectedSheet('');
-                 // If sheet was invalid, don't auto-map, let user pick a new one
             }
         }
     } catch (error) {
         console.error("Error fetching or parsing file for mapping:", error);
         alert(`Failed to load file data for mapping: ${(error as Error).message}`);
-        resetMappingDialogState();
+        // On error, fully reset dialog state including mappings to avoid inconsistent state
+        setMappingDialogCurrentColumnMapping({}); 
+        setMappingDialogCurrentGtMapping({});
         setIsMappingDialogOpen(false);
     } finally {
         setIsLoadingMappingData(false);
     }
   };
+
 
   const getWorkbookSheetNamesAsync = async (fileData: {blob: Blob, name: string}): Promise<string[]> => {
     if (!fileData.name.toLowerCase().endsWith('.xlsx')) return [];
@@ -624,7 +629,8 @@ export default function DatasetsPage() {
     updateVersionMappingMutation.isPending ||
     isLoadingMappingData ||
     (mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSheetNames.length > 0 && !mappingDialogSelectedSheet) ||
-    (mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData && mappingDialogFileData.blob.size > 0);
+    (mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData && mappingDialogFileData.blob.size > 0 && (mappingDialogFileData.name.toLowerCase().endsWith('.csv') || (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet)));
+
 
   if (isLoadingUserId || (isLoadingDatasets && currentUserId) || (isLoadingProdParams && currentUserId) || (isLoadingEvalParamsForGt && currentUserId)) {
     return <div className="space-y-6 p-4 md:p-0"><Card><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-full sm:w-56" /></CardContent></Card></div>;
@@ -861,4 +867,3 @@ export default function DatasetsPage() {
     </div>
   );
 }
-
