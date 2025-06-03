@@ -58,19 +58,6 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-          <CardDescription>Overview of your latest evaluations and changes.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center text-muted-foreground py-8">
-            <p>No recent activity to display.</p>
-            <p className="text-sm">Start an evaluation run to see activity here.</p>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
