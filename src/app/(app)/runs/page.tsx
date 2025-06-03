@@ -94,9 +94,8 @@ const fetchSelectableDatasets = async (userId: string): Promise<SelectableDatase
     const versionsSnapshot = await getDocs(versionsQuery);
 
     const versions: SelectableDatasetVersion[] = [];
-    versionsSnapshot.forEach(vDoc => { // Changed from for...of to forEach for brevity
+    versionsSnapshot.forEach(vDoc => {
         const versionData = vDoc.data();
-        // Include all versions, mapping status will be checked in the dialog
         versions.push({
              id: vDoc.id,
              versionNumber: versionData.versionNumber as number,
@@ -106,8 +105,7 @@ const fetchSelectableDatasets = async (userId: string): Promise<SelectableDatase
         });
     });
 
-    // Include all datasets, even if they have no versions yet
-    datasetsData.push({ id: docSnap.id, name: data.name as string, versions });
+    datasetsData.push({ id: docSnap.id, name: (data.name as string || `Dataset ${docSnap.id.substring(0,5)}`), versions });
   }
   return datasetsData;
 };
@@ -132,11 +130,8 @@ const fetchSelectablePromptTemplates = async (userId: string): Promise<Selectabl
         id: vDoc.id,
         versionNumber: vDoc.data().versionNumber as number
       }))
-      .filter(v => v.versionNumber); // Ensure versionNumber exists
-    // Only include prompts that have at least one version
-    // if (versions.length > 0) { // Removed this filter
-    promptsData.push({ id: docSnap.id, name: data.name as string, versions });
-    // }
+      .filter(v => v.versionNumber);
+    promptsData.push({ id: docSnap.id, name: (data.name as string || `Prompt ${docSnap.id.substring(0,5)}`), versions });
   }
   return promptsData;
 };
@@ -577,6 +572,6 @@ export default function EvalRunsPage() {
     </div>
   );
 }
-
+    
 
     
