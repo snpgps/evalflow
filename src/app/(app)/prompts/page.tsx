@@ -651,9 +651,9 @@ export default function PromptsPage() {
       <Card className="w-full md:flex-1 flex flex-col shadow-lg min-h-0">
         <CardHeader className="border-b">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-            <div className="flex-grow">
-              <CardTitle className="text-xl font-headline">{selectedPrompt.name}</CardTitle>
-              <CardDescription>{selectedPrompt.description || "No description."}</CardDescription>
+            <div className="flex-grow min-w-0"> {/* Added min-w-0 here */}
+              <CardTitle className="text-xl font-headline truncate">{selectedPrompt.name}</CardTitle>
+              <CardDescription className="truncate">{selectedPrompt.description || "No description."}</CardDescription>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
               <Select
@@ -769,7 +769,7 @@ export default function PromptsPage() {
 
 
   return (
-    <div className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-theme(spacing.28))] gap-6">
+    <div className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-theme(spacing.28))] gap-6 p-4 md:p-0">
       <Card className="w-full md:w-1/4 md:min-w-[300px] flex flex-col shadow-lg max-h-[50vh] md:max-h-none">
         <CardHeader className="border-b">
           <CardTitle>Prompt Templates</CardTitle>

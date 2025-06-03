@@ -607,16 +607,16 @@ export default function DatasetsPage() {
                     <TableHead className="hidden md:table-cell w-[100px]">Size</TableHead>
                     <TableHead className="w-1/5 sm:w-[100px]">Source</TableHead>
                     <TableHead className="w-[100px] sm:w-[120px]">Mapping</TableHead>
-                    <TableHead className="text-right w-[80px] sm:w-[120px]">Actions</TableHead>
+                    <TableHead className="text-right w-[90px] sm:w-auto">Actions</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
                     {dataset.versions.map((version) => (
                       <TableRow key={version.id} className="hover:bg-muted/50">
                         <TableCell><Badge variant="secondary">v{version.versionNumber}</Badge></TableCell>
-                        <TableCell className="font-medium truncate" title={version.fileName}>{version.fileName}</TableCell>
+                        <TableCell className="font-medium truncate max-w-[100px] sm:max-w-xs" title={version.fileName}>{version.fileName}</TableCell>
                         <TableCell className="hidden sm:table-cell truncate" title={version.uploadDate}>{version.uploadDate}</TableCell>
                         <TableCell className="hidden md:table-cell truncate" title={version.size}>{version.size}</TableCell>
-                        <TableCell className="truncate" title={version.selectedSheetName || (version.fileName.toLowerCase().endsWith('.csv') && version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "CSV" : "N/A")}>
+                        <TableCell className="truncate max-w-[80px] sm:max-w-[100px]" title={version.selectedSheetName || (version.fileName.toLowerCase().endsWith('.csv') && version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "CSV" : "N/A")}>
                           {version.selectedSheetName || (version.fileName.toLowerCase().endsWith('.csv') && version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "CSV" : "N/A")}
                         </TableCell>
                         <TableCell>
