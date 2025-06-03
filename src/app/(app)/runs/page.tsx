@@ -26,7 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
 
 // Interfaces for dropdown data
-interface SelectableDatasetVersion { id: string; versionNumber: number; fileName?: string; groundTruthMapping?: Record<string, string>; }
+interface SelectableDatasetVersion { id: string; versionNumber: number; fileName?: string; columnMapping?: Record<string,string>; groundTruthMapping?: Record<string, string>; }
 interface SelectableDataset { id: string; name: string; versions: SelectableDatasetVersion[]; }
 interface SelectableModelConnector { id: string; name: string; }
 interface SelectablePromptVersion { id: string; versionNumber: number;}
@@ -94,22 +94,20 @@ const fetchSelectableDatasets = async (userId: string): Promise<SelectableDatase
     const versionsSnapshot = await getDocs(versionsQuery);
 
     const versions: SelectableDatasetVersion[] = [];
-    for (const vDoc of versionsSnapshot.docs) {
+    versionsSnapshot.forEach(vDoc => { // Changed from for...of to forEach for brevity
         const versionData = vDoc.data();
-        // Only include versions that have a columnMapping for product parameters
-        if (versionData.columnMapping && Object.keys(versionData.columnMapping).length > 0) {
-            versions.push({
-                 id: vDoc.id,
-                 versionNumber: versionData.versionNumber as number,
-                 fileName: versionData.fileName as string,
-                 groundTruthMapping: versionData.groundTruthMapping as Record<string, string> | undefined
-            });
-        }
-    }
+        // Include all versions, mapping status will be checked in the dialog
+        versions.push({
+             id: vDoc.id,
+             versionNumber: versionData.versionNumber as number,
+             fileName: versionData.fileName as string,
+             columnMapping: versionData.columnMapping as Record<string, string> | undefined,
+             groundTruthMapping: versionData.groundTruthMapping as Record<string, string> | undefined
+        });
+    });
 
-    if (versions.length > 0) { // Only include datasets with at least one mapped version
-        datasetsData.push({ id: docSnap.id, name: data.name as string, versions });
-    }
+    // Include all datasets, even if they have no versions yet
+    datasetsData.push({ id: docSnap.id, name: data.name as string, versions });
   }
   return datasetsData;
 };
@@ -262,12 +260,12 @@ export default function EvalRunsPage() {
     e.preventDefault();
     if (!currentUserId) return;
 
-    const dataset = datasets.find(d => d.id === selectedDatasetId);
+    const dataset = datasets?.find(d => d.id === selectedDatasetId);
     const datasetVersion = dataset?.versions.find(v => v.id === selectedDatasetVersionId);
-    const connector = modelConnectors.find(c => c.id === selectedConnectorId);
-    const prompt = promptTemplates.find(p => p.id === selectedPromptId);
+    const connector = modelConnectors?.find(c => c.id === selectedConnectorId);
+    const prompt = promptTemplates?.find(p => p.id === selectedPromptId);
     const promptVersion = prompt?.versions.find(v => v.id === selectedPromptVersionId);
-    const selEvalParams = evaluationParameters.filter(ep => selectedEvalParamIds.includes(ep.id));
+    const selEvalParams = evaluationParameters?.filter(ep => selectedEvalParamIds.includes(ep.id)) || [];
 
     if (!newRunName.trim()){
         toast({ title: "Validation Error", description: "Run Name is required.", variant: "destructive"});
@@ -281,9 +279,14 @@ export default function EvalRunsPage() {
       toast({ title: "Validation Error", description: "Number of rows to test cannot be negative.", variant: "destructive" });
       return;
     }
+    
+    if (!datasetVersion.columnMapping || Object.keys(datasetVersion.columnMapping).length === 0) {
+      toast({ title: "Dataset Version Not Ready", description: "The selected dataset version must have product parameters mapped. Please configure it on the Datasets page.", variant: "destructive" });
+      return;
+    }
+
     if (newRunType === 'GroundTruth' && (!datasetVersion.groundTruthMapping || Object.keys(datasetVersion.groundTruthMapping).length === 0)) {
-      toast({ title: "Configuration Warning", description: "For Ground Truth runs, the selected dataset version should have Ground Truth columns mapped. Please check dataset mapping.", variant: "destructive" });
-      // Allow creation but with a warning, or could prevent it. For now, allow.
+      toast({ title: "Configuration Warning", description: "For Ground Truth runs, the selected dataset version should have Ground Truth columns mapped for accurate results. Please check dataset mapping. The run will proceed but accuracy may be 0%.", variant: "default" });
     }
 
 
@@ -346,6 +349,8 @@ export default function EvalRunsPage() {
   };
 
   const isLoadingDialogData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams;
+  const selectedDatasetForVersions = datasets?.find(d => d.id === selectedDatasetId);
+  const selectedDatasetVersionForWarnings = selectedDatasetForVersions?.versions.find(v => v.id === selectedDatasetVersionId);
 
   if (isLoadingUserId) return <div className="p-4 md:p-6"><Skeleton className="h-32 w-full"/></div>;
   if (!currentUserId) return <Card className="m-4 md:m-0"><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
@@ -400,30 +405,36 @@ export default function EvalRunsPage() {
 
 
                       <div>
-                        <Label htmlFor="run-dataset">Dataset (Mapped Versions Only)</Label>
+                        <Label htmlFor="run-dataset">Dataset</Label>
                         <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required>
                           <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger>
-                          <SelectContent>{datasets.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent>
+                          <SelectContent>{datasets?.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
-                      {selectedDatasetId && datasets.find(d => d.id === selectedDatasetId)?.versions.length > 0 && (
+                      {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length > 0 && (
                         <div>
-                          <Label htmlFor="run-dataset-version">Dataset Version (Mapped)</Label>
+                          <Label htmlFor="run-dataset-version">Dataset Version</Label>
                           <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required>
                             <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger>
-                            <SelectContent>{datasets.find(d => d.id === selectedDatasetId)?.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent>
+                            <SelectContent>{selectedDatasetForVersions.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent>
                           </Select>
-                           {newRunType === 'GroundTruth' && selectedDatasetVersionId && 
-                            !(datasets.find(d => d.id === selectedDatasetId)?.versions.find(v => v.id === selectedDatasetVersionId)?.groundTruthMapping && Object.keys(datasets.find(d => d.id === selectedDatasetId)!.versions.find(v => v.id === selectedDatasetVersionId)!.groundTruthMapping!).length > 0) && (
-                              <p className="text-xs text-amber-600 mt-1">Warning: This version has no Ground Truth columns mapped. Accuracy will be 0%.</p>
+                           {selectedDatasetVersionForWarnings && (!selectedDatasetVersionForWarnings.columnMapping || Object.keys(selectedDatasetVersionForWarnings.columnMapping).length === 0) && (
+                             <p className="text-xs text-destructive mt-1">Warning: This version has no Product Parameters mapped. Run creation will fail.</p>
+                           )}
+                           {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings && 
+                            !(selectedDatasetVersionForWarnings.groundTruthMapping && Object.keys(selectedDatasetVersionForWarnings.groundTruthMapping).length > 0) && (
+                              <p className="text-xs text-amber-600 mt-1">Warning: This version has no Ground Truth columns mapped. Accuracy may be 0%.</p>
                            )}
                         </div>
                       )}
+                       {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length === 0 && (
+                           <p className="text-xs text-muted-foreground mt-1">This dataset has no versions.</p>
+                       )}
 
                       <div><Label htmlFor="run-connector">Model Connector (Judge LLM)</Label>
                         <Select value={selectedConnectorId} onValueChange={setSelectedConnectorId} required>
                           <SelectTrigger id="run-connector"><SelectValue placeholder="Select model connector" /></SelectTrigger>
-                          <SelectContent>{modelConnectors.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name}</SelectItem>)}</SelectContent>
+                          <SelectContent>{modelConnectors?.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
 
@@ -431,15 +442,15 @@ export default function EvalRunsPage() {
                         <Label htmlFor="run-prompt">Prompt Template</Label>
                         <Select value={selectedPromptId} onValueChange={(value) => {setSelectedPromptId(value); setSelectedPromptVersionId('');}} required>
                           <SelectTrigger id="run-prompt"><SelectValue placeholder="Select prompt" /></SelectTrigger>
-                          <SelectContent>{promptTemplates.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                          <SelectContent>{promptTemplates?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
-                       {selectedPromptId && promptTemplates.find(p => p.id === selectedPromptId)?.versions.length > 0 && (
+                       {selectedPromptId && promptTemplates?.find(p => p.id === selectedPromptId)?.versions.length > 0 && (
                         <div>
                           <Label htmlFor="run-prompt-version">Prompt Version</Label>
                           <Select value={selectedPromptVersionId} onValueChange={setSelectedPromptVersionId} required>
                             <SelectTrigger id="run-prompt-version"><SelectValue placeholder="Select version" /></SelectTrigger>
-                            <SelectContent>{promptTemplates.find(p => p.id === selectedPromptId)?.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)}</SelectContent>
+                            <SelectContent>{promptTemplates?.find(p => p.id === selectedPromptId)?.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                       )}
@@ -447,8 +458,8 @@ export default function EvalRunsPage() {
                       <div><Label>Evaluation Parameters (Select one or more)</Label>
                         <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border">
                           <div className="space-y-2">
-                            {evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>}
-                            {evaluationParameters.map(ep => (
+                            {evaluationParameters && evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>}
+                            {evaluationParameters?.map(ep => (
                               <div key={ep.id} className="flex items-center space-x-2">
                                 <Checkbox
                                   id={`ep-${ep.id}`}
@@ -564,3 +575,5 @@ export default function EvalRunsPage() {
   );
 }
 
+
+    
