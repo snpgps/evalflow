@@ -455,7 +455,7 @@ export default function PromptsPage() {
     textToInsert += `Definition: ${evalParam.definition}\n`;
 
     if (evalParam.requiresRationale) {
-      textToInsert += `IMPORTANT: For this parameter, when providing your evaluation, you MUST include a 'rationale' field explaining your reasoning for the chosen label.\n`;
+      textToInsert += `IMPORTANT: For this parameter (${evalParam.name}), when providing your evaluation, you MUST include a 'rationale' explaining your choice.\n`;
     }
     textToInsert += "\n";
 
@@ -582,7 +582,7 @@ export default function PromptsPage() {
         onClick={() => handleSelectPrompt(p.id)}
       >
         <div className="flex justify-between items-center">
-          <span className={`font-medium ${selectedPromptId === p.id ? 'text-primary': ''} truncate`}>{p.name}</span>
+          <span className={`font-medium ${selectedPromptId === p.id ? 'text-primary': ''} truncate min-w-0`}>{p.name}</span>
           <div className="flex gap-1 shrink-0">
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openEditPromptDialog(p);}} disabled={updatePromptTemplateMutation.isPending || deletePromptTemplateMutation.isPending}>
               <Edit2 className="h-4 w-4" />
