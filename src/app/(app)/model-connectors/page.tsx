@@ -22,12 +22,37 @@ interface ModelConnector {
   name: string;
   provider: 'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Other';
   apiKey: string;
-  config: string; // JSON string for other configurations
+  config: string; // JSON string for other configurations, will include "model" if selected
   createdAt?: Timestamp;
 }
 
 type ModelConnectorCreationPayload = Omit<ModelConnector, 'id' | 'createdAt'> & { createdAt: FieldValue };
 type ModelConnectorUpdatePayload = Partial<Omit<ModelConnector, 'id' | 'createdAt'>> & { id: string };
+
+const VERTEX_AI_MODELS = [
+  "gemini-1.5-pro-latest",
+  "gemini-1.5-flash-latest",
+  "gemini-1.0-pro",
+  "gemini-1.0-pro-001",
+  "gemini-1.0-pro-vision",
+  "gemini-2.0-flash", // Specific model used for image gen in Genkit docs
+  "text-bison",
+  "chat-bison",
+];
+const OPENAI_MODELS = [
+  "gpt-4-turbo",
+  "gpt-4-turbo-preview",
+  "gpt-4",
+  "gpt-4-0125-preview",
+  "gpt-4-1106-preview",
+  "gpt-3.5-turbo",
+  "gpt-3.5-turbo-0125",
+  "gpt-3.5-turbo-1106",
+];
+const AZURE_OPENAI_MODELS = [ // These are common underlying model types; deployment name is key.
+  "gpt-4 (via Azure)",
+  "gpt-35-turbo (via Azure)", // Common shorthand for gpt-3.5-turbo on Azure
+];
 
 
 const fetchModelConnectors = async (userId: string | null): Promise<ModelConnector[]> => {
@@ -66,7 +91,55 @@ export default function ModelConnectorsPage() {
   const [connectorName, setConnectorName] = useState('');
   const [provider, setProvider] = useState<'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Other'>('OpenAI');
   const [apiKey, setApiKey] = useState('');
-  const [config, setConfig] = useState('');
+  const [config, setConfig] = useState('{}'); // Bound to textarea, stores full JSON string
+  const [selectedModelForDropdown, setSelectedModelForDropdown] = useState('');
+
+
+  // Effect to update the 'config' string when provider or selectedModelForDropdown changes
+  useEffect(() => {
+    // Don't run if the dialog isn't open and we are not editing, or if provider isn't set
+    if (!isDialogOpen && !editingConnector) return;
+    if (!provider && !editingConnector) return; // Avoid running on initial mount before provider is set for a new connector
+
+    const effectiveProvider = editingConnector?.provider || provider;
+
+    try {
+      let currentConfigJson: any = {};
+      // Try to parse existing config, but gracefully handle if it's not valid JSON yet (e.g. user is typing)
+      if (config.trim() !== "") {
+        try {
+          currentConfigJson = JSON.parse(config);
+        } catch (e) {
+          // If current config is invalid, and we have a model to set, start with that.
+          // Otherwise, we'll preserve the invalid user input for now.
+          if (selectedModelForDropdown) currentConfigJson = {};
+          else return; // Don't overwrite invalid JSON if no model change is driving an update
+        }
+      }
+
+      const relevantProvidersForModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI"];
+
+      if (relevantProvidersForModelDropdown.includes(effectiveProvider) && selectedModelForDropdown) {
+        currentConfigJson.model = selectedModelForDropdown;
+      } else {
+        // If provider doesn't use dropdown OR no model is selected in dropdown, remove 'model' key
+        delete currentConfigJson.model;
+      }
+      
+      const newConfigString = Object.keys(currentConfigJson).length === 0 ? '{}' : JSON.stringify(currentConfigJson, null, 2);
+
+      // Only setConfig if the string content would actually change, to avoid loops if formatting is the only difference
+      if (newConfigString !== config.trim()) {
+         setConfig(newConfigString);
+      }
+
+    } catch (e) {
+      // This catch is for JSON.parse if it somehow still fails (should be handled above)
+      console.error("Error processing config for model update:", e);
+      // Potentially set to a clean state if really broken
+      // setConfig(JSON.stringify({ model: selectedModelForDropdown }, null, 2));
+    }
+  }, [provider, selectedModelForDropdown, editingConnector]); // Do NOT add `config` to dependency array - it creates a loop.
 
 
   const addConnectorMutation = useMutation<void, Error, ModelConnectorCreationPayload>({
@@ -129,11 +202,22 @@ export default function ModelConnectorsPage() {
         return;
     }
 
+    let finalConfig = '{}';
+    try {
+      // Ensure what's in the textarea is valid JSON, or default it.
+      JSON.parse(config); // This will throw if invalid
+      finalConfig = config.trim() === "" ? '{}' : config.trim();
+    } catch (err) {
+      toast({title: "Configuration Error", description: "Additional Configuration contains invalid JSON. Please correct it or leave it as {} an empty object.", variant: "destructive"});
+      return;
+    }
+    
+
     const connectorData = {
       name: connectorName.trim(),
       provider,
       apiKey: apiKey.trim(),
-      config: config.trim(),
+      config: finalConfig,
     };
 
     if (editingConnector) {
@@ -147,16 +231,40 @@ export default function ModelConnectorsPage() {
     setConnectorName('');
     setProvider('OpenAI');
     setApiKey('');
-    setConfig('');
+    setConfig('{}');
+    setSelectedModelForDropdown('');
     setEditingConnector(null);
   };
 
   const openEditDialog = (connector: ModelConnector) => {
-    setEditingConnector(connector);
+    setEditingConnector(connector); // Important to set this first
     setConnectorName(connector.name);
     setProvider(connector.provider);
     setApiKey(connector.apiKey);
-    setConfig(connector.config);
+    const loadedConfig = connector.config || '{}';
+    setConfig(loadedConfig); // Set the textarea content
+
+    // Manually pre-select model dropdown based on loaded config and provider
+    try {
+      if (loadedConfig.trim() !== "") {
+        const parsedConfig = JSON.parse(loadedConfig);
+        if (parsedConfig.model && typeof parsedConfig.model === 'string') {
+          const currentModels = connector.provider === "Vertex AI" ? VERTEX_AI_MODELS : connector.provider === "OpenAI" ? OPENAI_MODELS : connector.provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS : [];
+          if (currentModels.includes(parsedConfig.model)) {
+            setSelectedModelForDropdown(parsedConfig.model);
+          } else {
+            setSelectedModelForDropdown(''); // Model in config not valid for current provider
+          }
+        } else {
+          setSelectedModelForDropdown('');
+        }
+      } else {
+         setSelectedModelForDropdown('');
+      }
+    } catch (e) {
+      setSelectedModelForDropdown('');
+      console.warn("Failed to parse connector.config in openEditDialog for model dropdown", e);
+    }
     setIsDialogOpen(true);
   };
 
@@ -170,10 +278,6 @@ export default function ModelConnectorsPage() {
     }
   };
 
-  const toggleApiKeyVisibility = (id: string) => {
-    setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
   const handleOpenNewDialog = () => {
     if (!currentUserId) {
       toast({title: "Login Required", description: "Please log in to add connectors.", variant: "destructive"});
@@ -181,7 +285,18 @@ export default function ModelConnectorsPage() {
     }
     resetForm();
     setIsDialogOpen(true);
-  }
+  };
+
+  const toggleApiKeyVisibility = (id: string) => {
+    setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const currentModelsForProvider = provider === "Vertex AI" ? VERTEX_AI_MODELS :
+                                  provider === "OpenAI" ? OPENAI_MODELS :
+                                  provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS :
+                                  [];
+  const showModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI"].includes(provider);
+
 
   if (isLoadingUserId || (isLoadingConnectors && currentUserId)) {
     return (
@@ -236,7 +351,7 @@ export default function ModelConnectorsPage() {
                 </div>
                 <div>
                   <Label htmlFor="conn-provider">LLM Provider</Label>
-                  <Select value={provider} onValueChange={(value: any) => setProvider(value)}>
+                  <Select value={provider} onValueChange={(value: any) => { setProvider(value); setSelectedModelForDropdown(''); /* Reset model on provider change */ }}>
                     <SelectTrigger id="conn-provider">
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
@@ -249,14 +364,53 @@ export default function ModelConnectorsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {showModelDropdown && (
+                  <div>
+                    <Label htmlFor="conn-model">Select Model</Label>
+                    <Select value={selectedModelForDropdown} onValueChange={setSelectedModelForDropdown}>
+                      <SelectTrigger id="conn-model">
+                        <SelectValue placeholder={`Select a ${provider} model`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currentModelsForProvider.map(modelName => (
+                          <SelectItem key={modelName} value={modelName}>{modelName}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                     <p className="text-xs text-muted-foreground mt-1">The selected model will be set as <code className="bg-muted p-0.5 rounded-sm">"model": "..."</code> in the JSON configuration.</p>
+                  </div>
+                )}
+
                 <div>
                   <Label htmlFor="conn-api-key">API Key</Label>
                   <Input id="conn-api-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Enter API Key" required />
                 </div>
                 <div>
                   <Label htmlFor="conn-config">Additional Configuration (JSON)</Label>
-                  <Textarea id="conn-config" value={config} onChange={(e) => setConfig(e.target.value)} placeholder='e.g., { "model": "gemini-1.5-pro", "temperature": 0.7 }' rows={3} />
-                   <p className="text-xs text-muted-foreground mt-1">For Vertex AI (Gemini), you might put model name here like: <code className="bg-muted p-0.5 rounded-sm">{'{ "model": "gemini-1.5-pro-latest" }'}</code></p>
+                  <Textarea 
+                    id="conn-config" 
+                    value={config} 
+                    onChange={(e) => {
+                      setConfig(e.target.value);
+                      // If user types in config, try to update dropdown
+                      try {
+                        const parsed = JSON.parse(e.target.value);
+                        if (parsed.model && typeof parsed.model === 'string' && currentModelsForProvider.includes(parsed.model)) {
+                          setSelectedModelForDropdown(parsed.model);
+                        } else if (!parsed.model && selectedModelForDropdown) {
+                           // If user deletes model from textarea, clear dropdown
+                           //setSelectedModelForDropdown(''); // This might cause issues if provider still expects model
+                        }
+                      } catch (err) { /* Ignore parse errors while typing */ }
+                    }} 
+                    placeholder='e.g., { "temperature": 0.7, "maxOutputTokens": 1024 }' 
+                    rows={3} 
+                  />
+                   <p className="text-xs text-muted-foreground mt-1">
+                     Use this for settings like temperature, token limits, or Azure-specific fields like <code className="bg-muted p-0.5 rounded-sm">{'{ "deployment": "my-deployment" }'}</code>.
+                     The "model" field will be managed by the dropdown above if applicable.
+                   </p>
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
@@ -309,7 +463,7 @@ export default function ModelConnectorsPage() {
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground hidden md:table-cell truncate" title={conn.config}>{conn.config || 'N/A'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden md:table-cell truncate" title={conn.config}>{conn.config || '{}'}</TableCell>
                     <TableCell className="text-right">
                         <div className="flex justify-end items-center gap-0">
                           <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
@@ -330,3 +484,5 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
+
+    
