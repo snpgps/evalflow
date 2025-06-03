@@ -31,9 +31,9 @@ import * as XLSX from 'xlsx';
 
 // Interfaces
 interface EvalRunResultItem {
-  inputData: Record<string, any>; 
-  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string }>; 
-  groundTruth?: Record<string, string>; 
+  inputData: Record<string, any>;
+  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string }>;
+  groundTruth?: Record<string, string>;
 }
 
 interface EvalRun {
@@ -59,7 +59,7 @@ interface EvalRun {
   runOnNRows: number;
   progress?: number;
   results?: EvalRunResultItem[];
-  previewedDatasetSample?: Array<Record<string, any>>; 
+  previewedDatasetSample?: Array<Record<string, any>>;
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
   userId?: string;
@@ -67,8 +67,8 @@ interface EvalRun {
 
 interface DatasetVersionConfig {
     storagePath?: string;
-    columnMapping?: Record<string, string>; 
-    groundTruthMapping?: Record<string, string>; 
+    columnMapping?: Record<string, string>;
+    groundTruthMapping?: Record<string, string>;
     selectedSheetName?: string | null;
 }
 
@@ -95,6 +95,8 @@ interface ProductParameterForSchema {
   definition: string;
   options?: string[];
 }
+
+const MAX_ROWS_FOR_PROCESSING = 200;
 
 
 const fetchEvalRunDetails = async (userId: string, runId: string): Promise<EvalRun | null> => {
@@ -212,7 +214,7 @@ export default function RunDetailsPage() {
       return (data?.status === 'Running' || data?.status === 'Processing') ? 5000 : false;
     },
   });
-  
+
   const { data: evalParamDetailsForLLM = [], isLoading: isLoadingEvalParamsForLLMHook } = useQuery<EvalParamDetailForPrompt[], Error>({
     queryKey: ['evalParamDetailsForLLM', currentUserId, runDetails?.selectedEvalParamIds?.join(',')],
     queryFn: async () => {
@@ -223,7 +225,7 @@ export default function RunDetailsPage() {
       return details;
     },
     enabled: !!currentUserId && !!runDetails?.selectedEvalParamIds && runDetails.selectedEvalParamIds.length > 0,
-    staleTime: Infinity, 
+    staleTime: Infinity,
   });
 
   const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & { id: string; updatedAt?: FieldValue } >({
@@ -256,7 +258,7 @@ export default function RunDetailsPage() {
             if (label && typeof label.name === 'string') labelCounts[label.name] = 0;
           });
         }
-        
+
         let correctCountForParam = 0;
         let totalComparedForParam = 0;
 
@@ -370,16 +372,30 @@ export default function RunDetailsPage() {
             return;
         }
 
-        const maxRowsForPreview = 10;
-        const numRowsToFetch = runDetails.runOnNRows > 0 ? Math.min(runDetails.runOnNRows, parsedRows.length, maxRowsForPreview) : Math.min(parsedRows.length, maxRowsForPreview);
-        const actualRowsToPreview = parsedRows.slice(0, numRowsToFetch);
-        addLog(`Data Preview: Taking first ${actualRowsToPreview.length} rows for preview (Config N: ${runDetails.runOnNRows}, Max Preview: ${maxRowsForPreview}).`);
+        // Determine how many rows to actually process and store, respecting runOnNRows and the system cap
+        let rowsToAttemptFromConfig: number;
+        if (runDetails.runOnNRows > 0) {
+            rowsToAttemptFromConfig = Math.min(runDetails.runOnNRows, parsedRows.length);
+        } else { // runOnNRows is 0, meaning "all"
+            rowsToAttemptFromConfig = parsedRows.length;
+        }
+
+        const actualRowsToProcessAndStore = Math.min(rowsToAttemptFromConfig, MAX_ROWS_FOR_PROCESSING);
+        const dataSliceForStorage = parsedRows.slice(0, actualRowsToProcessAndStore);
+
+        if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows !== 0 /* Only log cap if not "all" and capped */) {
+            addLog(`Data Preview: User requested ${rowsToAttemptFromConfig} rows, but processing is capped at ${MAX_ROWS_FOR_PROCESSING} rows by the system.`);
+        } else if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows === 0) {
+            addLog(`Data Preview: "All rows" selected (${rowsToAttemptFromConfig}), processing capped at ${MAX_ROWS_FOR_PROCESSING} rows by the system.`);
+        }
+        addLog(`Data Preview: Preparing ${dataSliceForStorage.length} rows for processing and storage (User N: ${runDetails.runOnNRows === 0 ? 'All' : runDetails.runOnNRows}, System Cap: ${MAX_ROWS_FOR_PROCESSING}).`);
+
 
         const sampleForStorage: Array<Record<string, any>> = [];
         const productParamToOriginalColMap = versionConfig.columnMapping;
         const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
 
-        actualRowsToPreview.forEach((originalRow, index) => {
+        dataSliceForStorage.forEach((originalRow, index) => {
             const mappedRowForStorage: Record<string, any> = {};
             let rowHasAnyMappedData = false;
             for (const productParamName in productParamToOriginalColMap) {
@@ -388,7 +404,7 @@ export default function RunDetailsPage() {
                     mappedRowForStorage[productParamName] = originalRow[originalColName];
                     rowHasAnyMappedData = true;
                 } else {
-                    mappedRowForStorage[productParamName] = undefined; 
+                    mappedRowForStorage[productParamName] = undefined;
                     addLog(`Data Preview: Warning: Row ${index+1} missing original column "${originalColName}" for product parameter "${productParamName}".`);
                 }
             }
@@ -397,7 +413,7 @@ export default function RunDetailsPage() {
                   const gtColName = evalParamIdToGtColMap[evalParamId];
                   if (originalRow.hasOwnProperty(gtColName)) {
                       mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[gtColName];
-                      rowHasAnyMappedData = true; 
+                      rowHasAnyMappedData = true;
                   } else {
                       mappedRowForStorage[`_gt_${evalParamId}`] = undefined;
                        addLog(`Data Preview: Warning: Row ${index+1} missing ground truth column "${gtColName}" for eval parameter ID "${evalParamId}".`);
@@ -407,9 +423,10 @@ export default function RunDetailsPage() {
             if(rowHasAnyMappedData) sampleForStorage.push(mappedRowForStorage);
             else addLog(`Data Preview: Skipping row ${index+1} as no mapped data (product or GT) was found for it.`)
         });
+
         addLog(`Data Preview: Successfully processed ${sampleForStorage.length} rows for preview storage.`);
         updateRunMutation.mutate({ id: runId, previewedDatasetSample: sampleForStorage, status: 'DataPreviewed', errorMessage: null, results: [] });
-        toast({ title: "Data Preview Ready", description: `${sampleForStorage.length} rows fetched and mapped.`});
+        toast({ title: "Data Preview Ready", description: `${sampleForStorage.length} rows fetched and mapped for processing.`});
     } catch (error: any) {
         addLog(`Data Preview: Error fetching/previewing data: ${error.message}`, "error");
         setPreviewDataError(error.message);
@@ -576,7 +593,7 @@ export default function RunDetailsPage() {
         setIsLoadingSuggestion(false);
         return;
       }
-      
+
       const productParamsSchemaString = productParametersForSchema.length > 0
         ? "Product Parameters:\n" + productParametersForSchema.map(p => `- ${p.name} (${p.type}): ${p.definition}${p.options ? ` Options: [${p.options.join(', ')}]` : ''}`).join("\n")
         : "No product parameters defined.";
@@ -608,10 +625,10 @@ export default function RunDetailsPage() {
       setIsLoadingSuggestion(false);
     }
   };
-  
+
   const hasMismatches = useMemo(() => {
     if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false;
-    return runDetails.results.some(item => 
+    return runDetails.results.some(item =>
       evalParamDetailsForLLM.some(paramDetail => {
         const llmOutput = item.judgeLlmOutput[paramDetail.id];
         const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
@@ -682,18 +699,37 @@ export default function RunDetailsPage() {
       </Card>
 
       <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2"> {/* Changed to lg:grid-cols-2 */}
-        <Card><CardHeader className="pb-2"><CardDescription>Status</CardDescription><CardTitle className="text-2xl md:text-3xl">{getStatusBadge(runDetails.status)}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.progress !== undefined && (runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress}% complete` : `Rows in sample: ${runDetails.previewedDatasetSample?.length || 'N/A (Fetch sample first)'}`}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardDescription>Status</CardDescription><CardTitle className="text-2xl md:text-3xl">{getStatusBadge(runDetails.status)}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.progress !== undefined && (runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress}% complete` : `Rows to process: ${runDetails.previewedDatasetSample?.length || 'N/A (Fetch sample first)'}`}</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardDescription>Duration</CardDescription><CardTitle className="text-3xl md:text-3xl">{runDetails.summaryMetrics?.duration || (runDetails.status === 'Completed' && runDetails.createdAt && runDetails.completedAt ? `${((runDetails.completedAt.toMillis() - runDetails.createdAt.toMillis()) / 1000).toFixed(1)}s` : 'N/A')}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">&nbsp;</div></CardContent></Card>
       </div>
 
       {displayedPreviewData.length > 0 && (
-        <Card> <CardHeader> <CardTitle>Dataset Sample Preview (Input Data Only)</CardTitle> <CardDescription>Showing first {displayedPreviewData.length} mapped input rows from the dataset ({runDetails.datasetName} v{runDetails.datasetVersionNumber}). Ground truth data (if any) is used internally.</CardDescription> </CardHeader> <CardContent> <div className="max-h-96 overflow-auto"> <Table> <TableHeader><TableRow>{previewTableHeaders.map(header => <TableHead key={header}>{header}</TableHead>)}</TableRow></TableHeader> <TableBody> {displayedPreviewData.map((row, rowIndex) => ( <TableRow key={`preview-row-${rowIndex}`}> {previewTableHeaders.map(header => <TableCell key={`preview-cell-${rowIndex}-${header}`} className="text-xs max-w-[150px] sm:max-w-[200px] truncate" title={String(row[header])}>{String(row[header])}</TableCell>)} </TableRow> ))} </TableBody> </Table> </div> </CardContent> </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Dataset Sample Preview (Input Data Only)</CardTitle>
+            <CardDescription>Showing {displayedPreviewData.length} rows that will be processed. (Configured N: {runDetails.runOnNRows === 0 ? 'All' : runDetails.runOnNRows}, System processing limit: {MAX_ROWS_FOR_PROCESSING} rows). Ground truth data (if any) is used internally.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="max-h-96 overflow-auto">
+              <Table>
+                <TableHeader><TableRow>{previewTableHeaders.map(header => <TableHead key={header}>{header}</TableHead>)}</TableRow></TableHeader>
+                <TableBody>
+                  {displayedPreviewData.map((row, rowIndex) => (
+                    <TableRow key={`preview-row-${rowIndex}`}>
+                      {previewTableHeaders.map(header => <TableCell key={`preview-cell-${rowIndex}-${header}`} className="text-xs max-w-[150px] sm:max-w-[200px] truncate" title={String(row[header])}>{String(row[header])}</TableCell>)}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <Tabs defaultValue="results_table">
         <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 mb-4"> <TabsTrigger value="config">Run Configuration</TabsTrigger> <TabsTrigger value="results_table">LLM Results Table</TabsTrigger> <TabsTrigger value="breakdown">Metrics Breakdown</TabsTrigger> </TabsList>
-        <TabsContent value="config"> <Card> <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader> <CardContent className="space-y-3 text-sm"> <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"> <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p> <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p> <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId}</p> <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p> <p><strong>Test on Rows Config (from dataset):</strong> {runDetails.runOnNRows === 0 ? 'All (capped for preview)' : `First ${runDetails.runOnNRows} (capped for preview)`}</p> <div><strong>Evaluation Parameters Used:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected or details not loaded.")} </div> </div> </CardContent> </Card> </TabsContent>
-        <TabsContent value="results_table"> <Card> <CardHeader><CardTitle>Detailed LLM Categorization Results</CardTitle><CardDescription>Row-by-row results from the Genkit LLM flow on the previewed data.</CardDescription></CardHeader> <CardContent> {actualResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results available. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization to generate results.' : (runDetails.status === 'Pending' ? 'Fetch data sample first.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : 'Run may have failed or has no results.'))}</p> ) : ( <div className="max-h-[600px] overflow-auto"> <Table> <TableHeader><TableRow> <TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead> {evalParamDetailsForLLM?.map(paramDetail => <TableHead key={paramDetail.id} className="min-w-[150px] sm:min-w-[200px]">{paramDetail.name}</TableHead>)} </TableRow></TableHeader> <TableBody> {actualResultsToDisplay.map((item, index) => ( <TableRow key={`result-${index}`}> <TableCell className="max-w-xs text-xs align-top"> <pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre> </TableCell> {evalParamDetailsForLLM?.map(paramDetail => { const paramId = paramDetail.id; const output = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = output?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== ''; return ( <TableCell key={paramId} className="text-xs align-top"> <div><strong>LLM:</strong> {output?.chosenLabel || 'N/A'}</div> {showGroundTruth && ( <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}> <div className="flex items-center"> <strong>GT:</strong>&nbsp;{gtLabel} {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>} </div> </div> )} {output?.rationale && ( <details className="mt-1"> <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center"> <MessageSquareText className="h-3 w-3 mr-1"/> LLM Rationale </summary> <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{output.rationale}</p> </details> )} </TableCell> ); })} </TableRow> ))} </TableBody> </Table> </div> )} </CardContent> </Card> </TabsContent>
+        <TabsContent value="config"> <Card> <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader> <CardContent className="space-y-3 text-sm"> <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"> <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p> <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p> <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId}</p> <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p> <p><strong>Test on Rows Config (from dataset):</strong> {runDetails.runOnNRows === 0 ? 'All (capped for processing)' : `First ${runDetails.runOnNRows} (capped for processing)`}</p> <div><strong>Evaluation Parameters Used:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected or details not loaded.")} </div> </div> </CardContent> </Card> </TabsContent>
+        <TabsContent value="results_table"> <Card> <CardHeader><CardTitle>Detailed LLM Categorization Results</CardTitle><CardDescription>Row-by-row results from the Genkit LLM flow on the processed data.</CardDescription></CardHeader> <CardContent> {actualResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results available. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization to generate results.' : (runDetails.status === 'Pending' ? 'Fetch data sample first.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : 'Run may have failed or has no results.'))}</p> ) : ( <div className="max-h-[600px] overflow-auto"> <Table> <TableHeader><TableRow> <TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead> {evalParamDetailsForLLM?.map(paramDetail => <TableHead key={paramDetail.id} className="min-w-[150px] sm:min-w-[200px]">{paramDetail.name}</TableHead>)} </TableRow></TableHeader> <TableBody> {actualResultsToDisplay.map((item, index) => ( <TableRow key={`result-${index}`}> <TableCell className="max-w-xs text-xs align-top"> <pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre> </TableCell> {evalParamDetailsForLLM?.map(paramDetail => { const paramId = paramDetail.id; const output = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = output?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== ''; return ( <TableCell key={paramId} className="text-xs align-top"> <div><strong>LLM:</strong> {output?.chosenLabel || 'N/A'}</div> {showGroundTruth && ( <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}> <div className="flex items-center"> <strong>GT:</strong>&nbsp;{gtLabel} {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>} </div> </div> )} {output?.rationale && ( <details className="mt-1"> <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center"> <MessageSquareText className="h-3 w-3 mr-1"/> LLM Rationale </summary> <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{output.rationale}</p> </details> )} </TableCell> ); })} </TableRow> ))} </TableBody> </Table> </div> )} </CardContent> </Card> </TabsContent>
         <TabsContent value="breakdown"> {metricsBreakdownData.length === 0 && (!runDetails?.results || runDetails.results.length === 0) && ( <Card> <CardHeader> <CardTitle className="flex items-center"> <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/>Metrics Breakdown </CardTitle> </CardHeader> <CardContent> <p className="text-muted-foreground">No results available to generate breakdown. Please complete the run or check configuration.</p> </CardContent> </Card> )} {metricsBreakdownData.map(paramChart => ( <Card key={paramChart.parameterId} className="mb-6"> <CardHeader> <CardTitle className="flex items-center"> <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/> {paramChart.parameterName} </CardTitle> {runDetails.runType === 'GroundTruth' && paramChart.accuracy !== undefined && ( <CardDescription className="flex items-center mt-1"> <CheckCheck className="h-4 w-4 mr-1.5 text-green-600" /> Accuracy: {paramChart.accuracy.toFixed(1)}% {paramChart.totalCompared !== undefined && ` (${(paramChart.accuracy/100 * paramChart.totalCompared).toFixed(0)}/${paramChart.totalCompared} correct)`} </CardDescription> )} {runDetails.runType === 'Product' && ( <CardDescription className="flex items-center mt-1"> <Info className="h-4 w-4 mr-1.5 text-blue-600" /> Label distribution for this Product run. </CardDescription> )} </CardHeader> <CardContent> {paramChart.data.length === 0 ? ( <p className="text-muted-foreground">No data recorded for this parameter in the results.</p> ) : ( <ChartContainer config={{ count: { label: "Count" } }} className="w-full" style={{ height: `${Math.max(150, paramChart.data.length * 40 + 60)}px` }} > <ResponsiveContainer width="100%" height="100%"> <RechartsBarChartElement data={paramChart.data} layout="vertical" margin={{ right: 30, left: 70, top: 5, bottom: 20 }}> <CartesianGrid strokeDasharray="3 3" /> <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} /> <YAxis dataKey="labelName" type="category" width={120} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={0} /> <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} /> <RechartsBar dataKey="count" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} barSize={20}> </RechartsBar> </RechartsBarChartElement> </ResponsiveContainer> </ChartContainer> )} </CardContent> </Card> ))} {runDetails?.results && runDetails.results.length > 0 && metricsBreakdownData.length === 0 && ( <Card> <CardHeader> <CardTitle className="flex items-center"> <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/>Metrics Breakdown </CardTitle> </CardHeader> <CardContent> <p className="text-muted-foreground">Results are present, but no specific label counts could be generated for the evaluated parameters. This might happen if the LLM responses did not match expected labels or if evaluation parameters were not configured with labels.</p> </CardContent> </Card> )} </TabsContent>
       </Tabs>
 
