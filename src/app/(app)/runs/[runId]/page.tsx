@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText } from "lucide-react";
+import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download } from "lucide-react";
 import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBar, ResponsiveContainer } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
@@ -27,8 +27,8 @@ import * as XLSX from 'xlsx';
 // Interfaces
 interface EvalRunResultItem {
   inputData: Record<string, any>;
-  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string }>; // Updated to match flow output
-  fullPromptSent?: string;
+  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string }>;
+  // fullPromptSent?: string; // Removed as per user request
   groundTruth?: Record<string, any>;
 }
 
@@ -462,25 +462,24 @@ export default function RunDetailsPage() {
             parameterIdsRequiringRationale: parameterIdsRequiringRationale,
         };
 
-        addLog(`Sending prompt for row ${i+1} to Genkit flow... (Prompt length: ${fullPromptForLLM.length} chars)`);
+        addLog(`Sending prompt for row ${i+1} to Genkit flow...`); // Removed prompt length for brevity
         const judgeOutput = await judgeLlmEvaluation(genkitInput);
         addLog(`Genkit flow for row ${i+1} responded: ${JSON.stringify(judgeOutput)}`);
 
         collectedResults.push({
           inputData: currentMappedRow,
           judgeLlmOutput: judgeOutput,
-          fullPromptSent: fullPromptForLLM.substring(0, 1500) + (fullPromptForLLM.length > 1500 ? "... (truncated)" : "")
+          // fullPromptSent: fullPromptForLLM.substring(0, 1500) + (fullPromptForLLM.length > 1500 ? "... (truncated)" : "") // Removed
         });
 
         const currentProgress = Math.round(((i + 1) / rowsToProcess) * 100);
         setSimulationProgress(currentProgress);
 
-
         if ((i + 1) % Math.max(1, Math.floor(rowsToProcess / 10)) === 0) {
             updateRunMutation.mutate({
                 id: runId,
                 progress: currentProgress,
-                results: [...collectedResults],
+                results: [...collectedResults], // Send a copy to ensure current state
                 status: 'Processing'
             });
         }
@@ -490,10 +489,10 @@ export default function RunDetailsPage() {
       updateRunMutation.mutate({
         id: runId,
         status: 'Completed',
-        results: collectedResults,
+        results: collectedResults, // Final complete results
         progress: 100,
-        completedAt: serverTimestamp(),
-        overallAccuracy: Math.round(Math.random() * 30 + 70)
+        completedAt: serverTimestamp(), // Set completion timestamp
+        overallAccuracy: Math.round(Math.random() * 30 + 70) // Mock accuracy
       });
       toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
 
@@ -505,6 +504,47 @@ export default function RunDetailsPage() {
     } finally {
       setIsSimulating(false);
     }
+  };
+
+  const handleDownloadResults = () => {
+    if (!runDetails || !runDetails.results || runDetails.results.length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) {
+      toast({ title: "No Results", description: "No results available to download.", variant: "destructive" });
+      return;
+    }
+
+    const dataForExcel: any[] = [];
+
+    // Determine all possible inputData keys (product parameter names)
+    const inputDataKeys = new Set<string>();
+    runDetails.results.forEach(item => {
+      Object.keys(item.inputData).forEach(key => inputDataKeys.add(key));
+    });
+    const sortedInputDataKeys = Array.from(inputDataKeys).sort();
+
+    runDetails.results.forEach(item => {
+      const row: Record<string, any> = {};
+
+      // Add inputData fields
+      sortedInputDataKeys.forEach(key => {
+        row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : '';
+      });
+
+      // Add evaluation parameter outputs
+      evalParamDetailsForLLM.forEach(paramDetail => {
+        const output = item.judgeLlmOutput[paramDetail.id];
+        row[`${paramDetail.name} - Label`] = output?.chosenLabel || 'N/A';
+        row[`${paramDetail.name} - Rationale`] = output?.rationale || '';
+      });
+      dataForExcel.push(row);
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results");
+
+    const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    toast({ title: "Download Started", description: `Results are being downloaded as ${fileName}.` });
   };
 
 
@@ -565,6 +605,7 @@ export default function RunDetailsPage() {
   const isRunTerminal = runDetails.status === 'Completed';
   const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed';
   const canStartLLMCategorization = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && evalParamDetailsForLLM.length > 0;
+  const canDownloadResults = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
 
 
   return (
@@ -599,6 +640,15 @@ export default function RunDetailsPage() {
              >
                 {isSimulating || isLoadingEvalParamDetails ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
                 {isSimulating ? 'Categorizing...' : (isLoadingEvalParamDetails ? 'Loading Config...' : (runDetails.status === 'Failed' ? 'Retry LLM Categorization' : 'Start LLM Categorization'))}
+            </Button>
+            <Button
+                variant="outline"
+                onClick={handleDownloadResults}
+                disabled={!canDownloadResults}
+                className="w-full sm:w-auto"
+            >
+                <Download className="mr-2 h-4 w-4" />
+                Download Results
             </Button>
           </div>
         </CardHeader>
