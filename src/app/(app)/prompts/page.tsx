@@ -13,9 +13,9 @@ import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, Tag, Lo
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
-import { 
-  collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, 
-  query, orderBy, writeBatch, Timestamp, type FieldValue 
+import {
+  collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp,
+  query, orderBy, writeBatch, Timestamp, type FieldValue
 } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -39,7 +39,7 @@ interface EvalParameterForPrompts {
   name: string;
   definition: string;
   categorizationLabels?: CategorizationLabelForPrompts[];
-  requiresRationale?: boolean; // Added for rationale request
+  requiresRationale?: boolean;
 }
 
 
@@ -109,7 +109,7 @@ const fetchEvaluationParametersForPrompts = async (userId: string | null): Promi
           definition: label.definition || '',
           example: label.example || undefined,
         })),
-        requiresRationale: data.requiresRationale || false, // Fetch requiresRationale
+        requiresRationale: data.requiresRationale || false,
       };
     });
   } catch (error) {
@@ -139,7 +139,7 @@ export const fetchPromptTemplates = async (userId: string | null): Promise<Promp
       const versionsCollectionRef = collection(db, 'users', userId, 'promptTemplates', promptDoc.id, 'versions');
       const versionsQuery = query(versionsCollectionRef, orderBy('versionNumber', 'desc'));
       const versionsSnapshot = await getDocs(versionsQuery);
-      
+
       const versions: PromptVersion[] = [];
       versionsSnapshot.forEach(versionDocSnap => {
         const versionData = versionDocSnap.data() as PromptVersionFirestore;
@@ -149,7 +149,7 @@ export const fetchPromptTemplates = async (userId: string | null): Promise<Promp
           versionNumber: versionData.versionNumber || 0,
           template: versionData.template || '',
           notes: versionData.notes || '',
-          createdAt: versionCreatedAtTimestamp?.toDate().toISOString() || new Date(0).toISOString(), 
+          createdAt: versionCreatedAtTimestamp?.toDate().toISOString() || new Date(0).toISOString(),
         });
       });
 
@@ -170,7 +170,7 @@ export const fetchPromptTemplates = async (userId: string | null): Promise<Promp
   } catch (error) {
     console.error("Error fetching prompt templates:", error);
     toast({ title: "Error", description: "Could not fetch prompt templates.", variant: "destructive" });
-    return []; 
+    return [];
   }
 };
 
@@ -182,7 +182,7 @@ export default function PromptsPage() {
 
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
-  
+
   const [selectedPrompt, setSelectedPrompt] = useState<PromptTemplate | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<PromptVersion | null>(null);
 
@@ -292,7 +292,7 @@ export default function PromptsPage() {
   const addPromptTemplateMutation = useMutation<string, Error, { name: string; description: string }>({
     mutationFn: async ({ name, description }) => {
       if (!currentUserId) throw new Error("User not identified.");
-      
+
       const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
         name,
         description,
@@ -343,7 +343,7 @@ export default function PromptsPage() {
   const deletePromptTemplateMutation = useMutation<void, Error, string>({
     mutationFn: async (promptId) => {
       if (!currentUserId) throw new Error("User not identified.");
-      
+
       const versionsRef = collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions');
       const versionsSnapshot = await getDocs(versionsRef);
       const batch = writeBatch(db);
@@ -356,7 +356,7 @@ export default function PromptsPage() {
       queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
       toast({ title: "Success", description: "Prompt template deleted." });
       if (selectedPromptId === promptId) {
-        setSelectedPromptId(null); 
+        setSelectedPromptId(null);
         setSelectedVersionId(null);
       }
     },
@@ -368,7 +368,7 @@ export default function PromptsPage() {
   const addPromptVersionMutation = useMutation<string, Error, { promptId: string; template: string; notes: string }>({
     mutationFn: async ({ promptId, template, notes }) => {
       if (!currentUserId || !selectedPrompt) throw new Error("User or prompt not identified.");
-      
+
       const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
       const newVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions'), {
         versionNumber: latestVersionNum + 1,
@@ -376,15 +376,15 @@ export default function PromptsPage() {
         notes: notes || `New version based on v${selectedVersion?.versionNumber || latestVersionNum}`,
         createdAt: serverTimestamp(),
       });
-      await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), { 
+      await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), {
         currentVersionId: newVersionRef.id,
-        updatedAt: serverTimestamp() 
+        updatedAt: serverTimestamp()
       });
       return newVersionRef.id;
     },
     onSuccess: (newVersionId) => {
       queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
-      setSelectedVersionId(newVersionId); 
+      setSelectedVersionId(newVersionId);
       toast({ title: "Success", description: "New prompt version created." });
     },
     onError: (error) => {
@@ -419,7 +419,7 @@ export default function PromptsPage() {
         const latestVersion = [...prompt.versions].sort((a,b) => b.versionNumber - a.versionNumber)[0];
         setSelectedVersionId(latestVersion.id);
       } else {
-        setSelectedVersionId(null); 
+        setSelectedVersionId(null);
       }
     }
   };
@@ -436,11 +436,11 @@ export default function PromptsPage() {
       const currentText = textarea.value;
       const before = currentText.substring(0, start);
       const after = currentText.substring(end, currentText.length);
-      
+
       setPromptTemplateContent(before + textToInsert + after);
-      
+
       textarea.focus();
-      setTimeout(() => { 
+      setTimeout(() => {
         textarea.selectionStart = textarea.selectionEnd = start + textToInsert.length;
       }, 0);
     }
@@ -457,7 +457,7 @@ export default function PromptsPage() {
     if (evalParam.requiresRationale) {
       textToInsert += `IMPORTANT: For this parameter, when providing your evaluation, you MUST include a 'rationale' field explaining your reasoning for the chosen label.\n`;
     }
-    textToInsert += "\n"; 
+    textToInsert += "\n";
 
     if (evalParam.categorizationLabels && evalParam.categorizationLabels.length > 0) {
       textToInsert += "Relevant Categorization Labels:\n";
@@ -481,11 +481,11 @@ export default function PromptsPage() {
       toast({ title: "Error", description: "No prompt or version selected to save.", variant: "destructive" });
       return;
     }
-    updatePromptVersionMutation.mutate({ 
-      promptId: selectedPrompt.id, 
-      versionId: selectedVersion.id, 
-      template: promptTemplateContent, 
-      notes: versionNotes 
+    updatePromptVersionMutation.mutate({
+      promptId: selectedPrompt.id,
+      versionId: selectedVersion.id,
+      template: promptTemplateContent,
+      notes: versionNotes
     });
   };
 
@@ -496,11 +496,11 @@ export default function PromptsPage() {
     }
     addPromptVersionMutation.mutate({
       promptId: selectedPrompt.id,
-      template: promptTemplateContent, 
+      template: promptTemplateContent,
       notes: `New version based on v${selectedVersion?.versionNumber || 'current editor'}`,
     });
   };
-  
+
   const handlePromptDialogSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!promptName.trim()) {
@@ -526,7 +526,7 @@ export default function PromptsPage() {
     setPromptDescription(prompt.description);
     setIsPromptDialogOpen(true);
   };
-  
+
   const handleOpenNewPromptDialog = () => {
     if (!currentUserId) {
         toast({ title: "Login Required", description: "Please log in to create prompts.", variant: "destructive" });
@@ -542,7 +542,7 @@ export default function PromptsPage() {
       deletePromptTemplateMutation.mutate(promptId);
     }
   };
-  
+
   const formatDate = (isoString?: string) => {
     if (!isoString) return 'N/A';
     try {
@@ -600,7 +600,7 @@ export default function PromptsPage() {
   const renderEditorArea = () => {
     if (!selectedPrompt && !isLoadingPrompts && promptsData.length > 0 && currentUserId) {
       return (
-        <Card className="flex-1 flex items-center justify-center shadow-lg">
+        <Card className="w-full md:flex-1 flex items-center justify-center shadow-lg">
           <div className="text-center text-muted-foreground p-8">
             <FileText className="mx-auto h-16 w-16 mb-4" />
             <h2 className="text-xl font-semibold">Select a Prompt</h2>
@@ -611,7 +611,7 @@ export default function PromptsPage() {
     }
      if (!selectedPrompt && promptsData.length === 0 && !isLoadingPrompts && currentUserId) {
          return (
-            <Card className="flex-1 flex items-center justify-center shadow-lg">
+            <Card className="w-full md:flex-1 flex items-center justify-center shadow-lg">
               <div className="text-center text-muted-foreground p-8">
                 <FileText className="mx-auto h-16 w-16 mb-4" />
                 <h2 className="text-xl font-semibold">No Prompts Available</h2>
@@ -622,7 +622,7 @@ export default function PromptsPage() {
      }
     if (!selectedPrompt && (isLoadingPrompts || isLoadingUserId)) {
          return (
-            <Card className="flex-1 flex flex-col shadow-lg">
+            <Card className="w-full md:flex-1 flex flex-col shadow-lg">
                 <CardHeader className="border-b">
                     <Skeleton className="h-6 w-3/4 mb-1"/>
                     <Skeleton className="h-4 w-1/2"/>
@@ -636,9 +636,9 @@ export default function PromptsPage() {
             </Card>
          );
     }
-    if (!selectedPrompt) { 
+    if (!selectedPrompt) {
         return (
-            <Card className="flex-1 flex items-center justify-center shadow-lg">
+            <Card className="w-full md:flex-1 flex items-center justify-center shadow-lg">
                  <div className="text-center text-muted-foreground p-8">
                     <FileText className="mx-auto h-16 w-16 mb-4" />
                     <p>Select or create a prompt.</p>
@@ -648,20 +648,20 @@ export default function PromptsPage() {
     }
 
     return (
-      <Card className="flex-1 flex flex-col shadow-lg min-h-0">
+      <Card className="w-full md:flex-1 flex flex-col shadow-lg min-h-0">
         <CardHeader className="border-b">
-          <div className="flex justify-between items-start">
-            <div>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex-grow">
               <CardTitle className="text-xl font-headline">{selectedPrompt.name}</CardTitle>
               <CardDescription>{selectedPrompt.description || "No description."}</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
               <Select
                   value={selectedVersionId || ''}
                   onValueChange={(versionId) => handleSelectVersion(versionId)}
                   disabled={selectedPrompt.versions.length === 0}
                 >
-                <SelectTrigger className="w-[220px]">
+                <SelectTrigger className="w-full sm:w-[220px]">
                   <SelectValue placeholder="Select version" />
                 </SelectTrigger>
                 <SelectContent>
@@ -673,13 +673,13 @@ export default function PromptsPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button size="sm" variant="outline" onClick={handleCreateNewVersion} disabled={!selectedPrompt || addPromptVersionMutation.isPending}>
+              <Button size="sm" variant="outline" onClick={handleCreateNewVersion} disabled={!selectedPrompt || addPromptVersionMutation.isPending} className="w-full sm:w-auto">
                 {addPromptVersionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <GitBranchPlus className="mr-2 h-4 w-4" />} New Version
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 p-0 flex min-h-0">
+        <CardContent className="flex-1 p-0 flex flex-col lg:flex-row min-h-0">
           <div className="flex-1 p-4 flex flex-col">
             <Label htmlFor="prompt-template-area" className="mb-2 font-medium">
               Prompt Template (Version {selectedVersion?.versionNumber || 'N/A'})
@@ -691,20 +691,20 @@ export default function PromptsPage() {
               value={promptTemplateContent}
               onChange={(e) => setPromptTemplateContent(e.target.value)}
               placeholder={!selectedVersion && selectedPrompt.versions.length === 0 ? "Create a version to start editing." : "Enter your prompt template here..."}
-              className="flex-1 resize-none font-mono text-sm min-h-[200px]"
+              className="flex-1 resize-none font-mono text-sm min-h-[200px] lg:min-h-[300px]"
               disabled={!selectedVersion || updatePromptVersionMutation.isPending}
             />
             <Label htmlFor="version-notes" className="mt-4 mb-2 font-medium">Version Notes</Label>
-            <Input 
-              id="version-notes" 
-              value={versionNotes} 
-              onChange={(e) => setVersionNotes(e.target.value)} 
-              placeholder="Notes for this version (e.g., 'Improved clarity on instructions')" 
+            <Input
+              id="version-notes"
+              value={versionNotes}
+              onChange={(e) => setVersionNotes(e.target.value)}
+              placeholder="Notes for this version (e.g., 'Improved clarity on instructions')"
               disabled={!selectedVersion || updatePromptVersionMutation.isPending}
             />
           </div>
-          <div className="w-1/3 min-w-[300px] border-l p-4 bg-muted/20 flex flex-col">
-            <ScrollArea className="flex-1">
+          <div className="w-full lg:w-1/3 lg:min-w-[300px] border-t lg:border-t-0 lg:border-l p-4 bg-muted/20 flex flex-col">
+            <ScrollArea className="flex-1 max-h-[30vh] lg:max-h-none">
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">Product Parameters</h3>
                 {isLoadingProdParams ? <Skeleton className="h-20 w-full" /> :
@@ -755,11 +755,11 @@ export default function PromptsPage() {
             </ScrollArea>
           </div>
         </CardContent>
-        <CardFooter className="border-t pt-4 flex justify-end gap-2">
-          <Button variant="outline" onClick={() => navigator.clipboard.writeText(promptTemplateContent)} disabled={!selectedVersion || !promptTemplateContent}>
+        <CardFooter className="border-t pt-4 flex flex-col sm:flex-row justify-end gap-2">
+          <Button variant="outline" onClick={() => navigator.clipboard.writeText(promptTemplateContent)} disabled={!selectedVersion || !promptTemplateContent} className="w-full sm:w-auto">
             <Copy className="mr-2 h-4 w-4" /> Copy Template
           </Button>
-          <Button onClick={handleSaveVersion} disabled={!selectedVersion || updatePromptVersionMutation.isPending}>
+          <Button onClick={handleSaveVersion} disabled={!selectedVersion || updatePromptVersionMutation.isPending} className="w-full sm:w-auto">
             {updatePromptVersionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Current Version
           </Button>
         </CardFooter>
@@ -769,8 +769,8 @@ export default function PromptsPage() {
 
 
   return (
-    <div className="flex h-[calc(100vh-theme(spacing.28))] gap-6">
-      <Card className="w-1/4 min-w-[300px] flex flex-col shadow-lg">
+    <div className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-theme(spacing.28))] gap-6">
+      <Card className="w-full md:w-1/4 md:min-w-[300px] flex flex-col shadow-lg max-h-[50vh] md:max-h-none">
         <CardHeader className="border-b">
           <CardTitle>Prompt Templates</CardTitle>
           <CardDescription>Manage your Judge LLM prompts.</CardDescription>
@@ -815,4 +815,3 @@ export default function PromptsPage() {
     </div>
   );
 }
-

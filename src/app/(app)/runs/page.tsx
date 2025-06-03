@@ -16,8 +16,8 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { 
-  collection, addDoc, getDocs, doc, deleteDoc, serverTimestamp, 
+import {
+  collection, addDoc, getDocs, doc, deleteDoc, serverTimestamp,
   query, orderBy, Timestamp, type FieldValue, getDoc
 } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -44,27 +44,27 @@ interface EvalRun {
 
   // Configuration
   datasetId: string;
-  datasetName?: string; 
+  datasetName?: string;
   datasetVersionId?: string;
   datasetVersionNumber?: number;
 
   modelConnectorId: string;
-  modelConnectorName?: string; 
+  modelConnectorName?: string;
 
   promptId: string;
-  promptName?: string; 
+  promptName?: string;
   promptVersionId?: string;
   promptVersionNumber?: number;
 
   selectedEvalParamIds: string[];
-  selectedEvalParamNames?: string[]; 
+  selectedEvalParamNames?: string[];
 
-  runOnNRows: number; 
+  runOnNRows: number;
 
   // Results
   overallAccuracy?: number;
   progress?: number;
-  results?: any[]; 
+  results?: any[];
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
   userId?: string; // To ensure user-specific data
@@ -89,20 +89,20 @@ const fetchSelectableDatasets = async (userId: string): Promise<SelectableDatase
     const versionsCollectionRef = collection(db, 'users', userId, 'datasets', docSnap.id, 'versions');
     const versionsQuery = query(versionsCollectionRef, orderBy('versionNumber', 'desc'));
     const versionsSnapshot = await getDocs(versionsQuery);
-    
+
     const versions: SelectableDatasetVersion[] = [];
     for (const vDoc of versionsSnapshot.docs) {
         const versionData = vDoc.data();
         // Only include versions that have a columnMapping
         if (versionData.columnMapping && Object.keys(versionData.columnMapping).length > 0) {
             versions.push({
-                 id: vDoc.id, 
+                 id: vDoc.id,
                  versionNumber: versionData.versionNumber as number,
-                 fileName: versionData.fileName as string 
+                 fileName: versionData.fileName as string
             });
         }
     }
-    
+
     if (versions.length > 0) { // Only include datasets with at least one mapped version
         datasetsData.push({ id: docSnap.id, name: data.name as string, versions });
     }
@@ -126,12 +126,12 @@ const fetchSelectablePromptTemplates = async (userId: string): Promise<Selectabl
     const data = docSnap.data();
     const versionsSnapshot = await getDocs(query(collection(db, 'users', userId, 'promptTemplates', docSnap.id, 'versions'), orderBy('versionNumber', 'desc')));
     const versions = versionsSnapshot.docs
-      .map(vDoc => ({ 
-        id: vDoc.id, 
-        versionNumber: vDoc.data().versionNumber as number 
+      .map(vDoc => ({
+        id: vDoc.id,
+        versionNumber: vDoc.data().versionNumber as number
       }))
-      .filter(v => v.versionNumber); 
-    if (versions.length > 0) { 
+      .filter(v => v.versionNumber);
+    if (versions.length > 0) {
         promptsData.push({ id: docSnap.id, name: data.name as string, versions });
     }
   }
@@ -171,7 +171,7 @@ export default function EvalRunsPage() {
     queryFn: () => fetchEvalRuns(currentUserId!),
     enabled: !!currentUserId && !isLoadingUserId,
   });
-  
+
   const { data: datasets = [], isLoading: isLoadingDatasets } = useQuery<SelectableDataset[], Error>({
     queryKey: ['selectableDatasets', currentUserId],
     queryFn: () => fetchSelectableDatasets(currentUserId!),
@@ -213,8 +213,8 @@ export default function EvalRunsPage() {
     },
     onSuccess: (newRunId) => {
       queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
-      toast({ 
-        title: "Success", 
+      toast({
+        title: "Success",
         description: "New evaluation run created and set to Pending.",
         action: (
           <Button variant="outline" size="sm" onClick={() => router.push(`/runs/${newRunId}`)}>
@@ -229,7 +229,7 @@ export default function EvalRunsPage() {
       toast({ title: "Error", description: `Failed to create run: ${error.message}`, variant: "destructive" });
     }
   });
-  
+
   const deleteEvalRunMutation = useMutation<void, Error, string>({
     mutationFn: async (runId: string) => {
         if (!currentUserId) throw new Error("User not identified.");
@@ -287,7 +287,7 @@ export default function EvalRunsPage() {
       promptVersionNumber: promptVersion?.versionNumber,
       selectedEvalParamIds: selectedEvalParamIds,
       selectedEvalParamNames: selEvalParams.map(ep => ep.name),
-      runOnNRows: Number(runOnNRows) || 0, 
+      runOnNRows: Number(runOnNRows) || 0,
     };
     addEvalRunMutation.mutate(newRunData);
   };
@@ -302,7 +302,7 @@ export default function EvalRunsPage() {
     setSelectedEvalParamIds([]);
     setRunOnNRows(0);
   };
-  
+
   const handleDeleteRun = (runId: string) => {
     if (confirm('Are you sure you want to delete this evaluation run? This action cannot be undone.')) {
         deleteEvalRunMutation.mutate(runId);
@@ -319,31 +319,31 @@ export default function EvalRunsPage() {
       default: return <Badge variant="outline">{status}</Badge>;
     }
   };
-  
+
   const formatTimestamp = (timestamp?: Timestamp) => {
     return timestamp ? timestamp.toDate().toLocaleDateString() : 'N/A';
   };
 
   const isLoadingDialogData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams;
 
-  if (isLoadingUserId) return <div className="p-6"><Skeleton className="h-32 w-full"/></div>;
-  if (!currentUserId) return <Card><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
+  if (isLoadingUserId) return <div className="p-4 md:p-6"><Skeleton className="h-32 w-full"/></div>;
+  if (!currentUserId) return <Card className="m-4 md:m-0"><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
 
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <PlayCircle className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-2xl font-headline">Evaluation Runs</CardTitle>
+              <CardTitle className="text-xl md:text-2xl font-headline">Evaluation Runs</CardTitle>
               <CardDescription>Manage and track your AI model evaluation runs.</CardDescription>
             </div>
           </div>
            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending}>
+              <Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending} className="w-full sm:w-auto">
                 <PlusCircle className="mr-2 h-5 w-5" /> New Evaluation Run
               </Button>
             </DialogTrigger>
@@ -359,7 +359,7 @@ export default function EvalRunsPage() {
                  <div className="flex-grow overflow-y-auto">
                     <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
                       <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
-                      
+
                       <div>
                         <Label htmlFor="run-dataset">Dataset (Mapped Versions Only)</Label>
                         <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required>
@@ -407,11 +407,11 @@ export default function EvalRunsPage() {
                             {evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>}
                             {evaluationParameters.map(ep => (
                               <div key={ep.id} className="flex items-center space-x-2">
-                                <Checkbox 
-                                  id={`ep-${ep.id}`} 
+                                <Checkbox
+                                  id={`ep-${ep.id}`}
                                   checked={selectedEvalParamIds.includes(ep.id)}
                                   onCheckedChange={(checked) => {
-                                    setSelectedEvalParamIds(prev => 
+                                    setSelectedEvalParamIds(prev =>
                                       checked ? [...prev, ep.id] : prev.filter(id => id !== ep.id)
                                     );
                                   }}
@@ -422,7 +422,7 @@ export default function EvalRunsPage() {
                           </div>
                         </Card>
                       </div>
-                      
+
                       <div>
                         <Label htmlFor="run-nrows">Test on first N rows (0 for all)</Label>
                         <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => setRunOnNRows(parseInt(e.target.value, 10))} min="0" />
@@ -432,9 +432,9 @@ export default function EvalRunsPage() {
                   </div>
                   <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
                     <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
-                    <Button 
-                        type="submit" 
-                        form="new-eval-run-form" 
+                    <Button
+                        type="submit"
+                        form="new-eval-run-form"
                         disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId || !newRunName.trim()}
                     >
                       {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />}
@@ -450,9 +450,9 @@ export default function EvalRunsPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <div><CardTitle>Evaluation Run History</CardTitle><CardDescription>Review past and ongoing evaluation runs.</CardDescription></div>
-            <Button variant="outline" size="sm" disabled><Filter className="mr-2 h-4 w-4" /> Filter Runs</Button>
+            <Button variant="outline" size="sm" disabled className="w-full sm:w-auto"><Filter className="mr-2 h-4 w-4" /> Filter Runs</Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -468,32 +468,38 @@ export default function EvalRunsPage() {
           {!isLoadingEvalRuns && !fetchEvalRunsError && evalRuns.length > 0 && (
             <Table>
               <TableHeader><TableRow>
-                  <TableHead>Name</TableHead><TableHead>Status</TableHead><TableHead>Dataset</TableHead>
-                  <TableHead>Model</TableHead><TableHead>Prompt</TableHead><TableHead>Accuracy</TableHead>
-                  <TableHead>Created At</TableHead><TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="w-[150px] sm:w-auto">Name</TableHead><TableHead>Status</TableHead>
+                  <TableHead className="hidden md:table-cell">Dataset</TableHead>
+                  <TableHead className="hidden lg:table-cell">Model</TableHead>
+                  <TableHead className="hidden lg:table-cell">Prompt</TableHead>
+                  <TableHead>Accuracy</TableHead>
+                  <TableHead className="hidden sm:table-cell">Created At</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {evalRuns.map((run) => (
                   <TableRow key={run.id} className="hover:bg-muted/50">
-                    <TableCell className="font-medium max-w-xs truncate">
+                    <TableCell className="font-medium max-w-[100px] sm:max-w-xs truncate">
                       <Link href={`/runs/${run.id}`} className="hover:underline">{run.name}</Link>
                     </TableCell>
                     <TableCell>{getStatusBadge(run.status)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{run.datasetName || run.datasetId}{run.datasetVersionNumber ? ` (v${run.datasetVersionNumber})` : ''}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{run.modelConnectorName || run.modelConnectorId}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden md:table-cell max-w-[100px] truncate" title={run.datasetName || run.datasetId}>{run.datasetName || run.datasetId}{run.datasetVersionNumber ? ` (v${run.datasetVersionNumber})` : ''}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.modelConnectorName || run.modelConnectorId}>{run.modelConnectorName || run.modelConnectorId}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.promptName || run.promptId}>{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell>
                     <TableCell>
-                      {run.status === 'Completed' && run.overallAccuracy !== undefined ? `${run.overallAccuracy.toFixed(1)}%` : 
-                       (run.status === 'Running' || run.status === 'Processing') && run.progress !== undefined ? <Progress value={run.progress} className="h-2 w-20" /> : 'N/A'}
+                      {run.status === 'Completed' && run.overallAccuracy !== undefined ? `${run.overallAccuracy.toFixed(1)}%` :
+                       (run.status === 'Running' || run.status === 'Processing') && run.progress !== undefined ? <Progress value={run.progress} className="h-2 w-12 sm:w-20" /> : 'N/A'}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{formatTimestamp(run.createdAt)}</TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Link href={`/runs/${run.id}`} passHref>
-                        <Button variant="ghost" size="icon" title="View Details"><Eye className="h-4 w-4" /></Button>
-                      </Link>
-                      <Button variant="ghost" size="icon" title="Delete Run" className="text-destructive hover:text-destructive/90" onClick={() => handleDeleteRun(run.id)} disabled={deleteEvalRunMutation.isPending && deleteEvalRunMutation.variables === run.id}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{formatTimestamp(run.createdAt)}</TableCell>
+                    <TableCell className="text-right">
+                        <div className="flex justify-end items-center gap-0 sm:gap-1">
+                          <Link href={`/runs/${run.id}`} passHref>
+                            <Button variant="ghost" size="icon" title="View Details"><Eye className="h-4 w-4" /></Button>
+                          </Link>
+                          <Button variant="ghost" size="icon" title="Delete Run" className="text-destructive hover:text-destructive/90" onClick={() => handleDeleteRun(run.id)} disabled={deleteEvalRunMutation.isPending && deleteEvalRunMutation.variables === run.id}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -505,6 +511,3 @@ export default function EvalRunsPage() {
     </div>
   );
 }
-    
-
-    

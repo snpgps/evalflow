@@ -13,13 +13,13 @@ const quickAccessItems = [
 
 export default function DashboardPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
             <Rocket className="h-8 w-8 text-primary" />
             <div>
-              <CardTitle className="text-2xl font-headline">Welcome to EvalFlow!</CardTitle>
+              <CardTitle className="text-xl md:text-2xl font-headline">Welcome to EvalFlow!</CardTitle>
               <CardDescription>Your central hub for AI model evaluation and optimization.</CardDescription>
             </div>
           </div>
@@ -31,13 +31,13 @@ export default function DashboardPage() {
           <Link href="/runs">
             <Button>
               <PlayCircle className="mr-2 h-5 w-5" />
-              Start New Evaluation
+              Create Evaluation Run
             </Button>
           </Link>
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {quickAccessItems.map((item) => (
           <Card key={item.title} className="hover:shadow-xl transition-shadow duration-300">
             <CardHeader>
@@ -47,7 +47,7 @@ export default function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">{item.description}</p>
+              <p className="text-sm text-muted-foreground mb-4 h-10 overflow-hidden">{item.description}</p>
               <Link href={item.href}>
                 <Button variant="outline" size="sm" className="w-full">
                   Go to {item.title.split(" ")[0]}

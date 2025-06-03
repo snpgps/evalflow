@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, type FormEvent } from 'react';
@@ -25,7 +26,7 @@ export default function AiInsightsPage() {
   const [isLoadingImprovements, setIsLoadingImprovements] = useState(false);
   const [improvementsResult, setImprovementsResult] = useState<SuggestPromptImprovementsOutput | null>(null);
   const [improvementsError, setImprovementsError] = useState<string | null>(null);
-  
+
   const [promptTemplateSI, setPromptTemplateSI] = useState('');
   const [evalResultsSI, setEvalResultsSI] = useState('');
 
@@ -72,13 +73,13 @@ export default function AiInsightsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-3">
             <Lightbulb className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-2xl font-headline">AI-Powered Insights &amp; Analysis</CardTitle>
+              <CardTitle className="text-xl md:text-2xl font-headline">AI-Powered Insights &amp; Analysis</CardTitle>
               <CardDescription>Leverage AI to understand prompt performance and get suggestions for improvement.</CardDescription>
             </div>
           </div>
@@ -86,7 +87,7 @@ export default function AiInsightsPage() {
       </Card>
 
       <Tabs defaultValue="quality-analysis">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2">
           <TabsTrigger value="quality-analysis"><BrainCircuit className="mr-2 h-4 w-4" />Prompt Quality Analysis</TabsTrigger>
           <TabsTrigger value="suggest-improvements"><Wand2 className="mr-2 h-4 w-4" />Suggest Prompt Improvements</TabsTrigger>
         </TabsList>
@@ -115,7 +116,7 @@ export default function AiInsightsPage() {
                   <Label htmlFor="promptTemplatePQ">Prompt Template Used</Label>
                   <Textarea id="promptTemplatePQ" value={promptTemplatePQ} onChange={e => setPromptTemplatePQ(e.target.value)} placeholder="Paste the prompt template used in the eval run..." rows={3} required />
                 </div>
-                <Button type="submit" disabled={isLoadingQuality}>
+                <Button type="submit" disabled={isLoadingQuality} className="w-full sm:w-auto">
                   {isLoadingQuality ? <BrainCircuit className="mr-2 h-4 w-4 animate-pulse" /> : <Send className="mr-2 h-4 w-4" />}
                   {isLoadingQuality ? 'Analyzing...' : 'Analyze Quality'}
                 </Button>
@@ -170,7 +171,7 @@ export default function AiInsightsPage() {
                   <Label htmlFor="evalResultsSI">Evaluation Results (JSON)</Label>
                   <Textarea id="evalResultsSI" value={evalResultsSI} onChange={e => setEvalResultsSI(e.target.value)} placeholder="Paste JSON data of evaluation results for this prompt..." rows={5} required />
                 </div>
-                <Button type="submit" disabled={isLoadingImprovements}>
+                <Button type="submit" disabled={isLoadingImprovements} className="w-full sm:w-auto">
                   {isLoadingImprovements ? <Wand2 className="mr-2 h-4 w-4 animate-pulse" /> : <Send className="mr-2 h-4 w-4" />}
                   {isLoadingImprovements ? 'Generating...' : 'Get Suggestions'}
                 </Button>

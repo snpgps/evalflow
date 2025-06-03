@@ -14,7 +14,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp, type FieldValue } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Checkbox } from '@/components/ui/checkbox'; // Added Checkbox import
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface CategorizationLabelToStore {
   name: string;
@@ -23,15 +23,15 @@ interface CategorizationLabelToStore {
 }
 
 interface UICategorizationLabel extends CategorizationLabelToStore {
-  tempId: string; // For React key during editing
+  tempId: string;
 }
 
 interface EvalParameter {
-  id: string; // Firestore document ID
+  id: string;
   name: string;
   definition: string;
   categorizationLabels?: CategorizationLabelToStore[];
-  requiresRationale?: boolean; // Added field
+  requiresRationale?: boolean;
   createdAt?: Timestamp;
 }
 
@@ -70,13 +70,13 @@ export default function EvaluationParametersPage() {
 
   const [isParamDialogOpen, setIsParamDialogOpen] = useState(false);
   const [isLabelsDialogOpen, setIsLabelsDialogOpen] = useState(false);
-  
-  const [editingEvalParam, setEditingEvalParam] = useState<EvalParameter | null>(null); 
-  const [editingLabelsForParam, setEditingLabelsForParam] = useState<EvalParameter | null>(null); 
+
+  const [editingEvalParam, setEditingEvalParam] = useState<EvalParameter | null>(null);
+  const [editingLabelsForParam, setEditingLabelsForParam] = useState<EvalParameter | null>(null);
 
   const [paramName, setParamName] = useState('');
   const [paramDefinition, setParamDefinition] = useState('');
-  const [paramRequiresRationale, setParamRequiresRationale] = useState(false); // New state for the checkbox
+  const [paramRequiresRationale, setParamRequiresRationale] = useState(false);
   const [currentCategorizationLabelsInLabelsDialog, setCurrentCategorizationLabelsInLabelsDialog] = useState<UICategorizationLabel[]>([]);
 
 
@@ -86,7 +86,7 @@ export default function EvaluationParametersPage() {
       const dataWithTimestamp = {
         ...newParameterData,
         categorizationLabels: newParameterData.categorizationLabels || [],
-        requiresRationale: newParameterData.requiresRationale || false, // Ensure it's saved
+        requiresRationale: newParameterData.requiresRationale || false,
         createdAt: serverTimestamp(),
       };
       await addDoc(collection(db, 'users', currentUserId, 'evaluationParameters'), dataWithTimestamp);
@@ -113,7 +113,7 @@ export default function EvaluationParametersPage() {
     },
     onError: (error) => console.error("Error updating evaluation parameter:", error)
   });
-  
+
   const updateLabelsMutation = useMutation<void, Error, UpdateLabelsPayload>({
     mutationFn: async ({ parameterId, labels }) => {
       if (!currentUserId) throw new Error("User not identified for updating labels.");
@@ -140,7 +140,7 @@ export default function EvaluationParametersPage() {
   const resetParamForm = () => {
     setParamName('');
     setParamDefinition('');
-    setParamRequiresRationale(false); // Reset the new state
+    setParamRequiresRationale(false);
     setEditingEvalParam(null);
   };
 
@@ -148,17 +148,17 @@ export default function EvaluationParametersPage() {
     setEditingEvalParam(param);
     setParamName(param.name);
     setParamDefinition(param.definition);
-    setParamRequiresRationale(param.requiresRationale || false); // Initialize from param
+    setParamRequiresRationale(param.requiresRationale || false);
     setIsParamDialogOpen(true);
   };
-  
+
   const handleAddNewParameterClick = () => {
     if (!currentUserId) {
       alert("Please log in first to add parameters.");
       return;
     }
-    setEditingEvalParam(null); 
-    resetParamForm(); 
+    setEditingEvalParam(null);
+    resetParamForm();
     setIsParamDialogOpen(true);
   };
 
@@ -179,15 +179,15 @@ export default function EvaluationParametersPage() {
         name: paramName.trim(),
         definition: paramDefinition.trim(),
         categorizationLabels: editingEvalParam.categorizationLabels || [],
-        requiresRationale: paramRequiresRationale, // Include in update
+        requiresRationale: paramRequiresRationale,
       };
       updateParamMutation.mutate(payloadForUpdate);
     } else {
       const newParamData: Omit<EvalParameter, 'id' | 'createdAt'> = {
         name: paramName.trim(),
         definition: paramDefinition.trim(),
-        categorizationLabels: [], 
-        requiresRationale: paramRequiresRationale, // Include in new data
+        categorizationLabels: [],
+        requiresRationale: paramRequiresRationale,
       };
       addMutation.mutate(newParamData);
     }
@@ -201,9 +201,9 @@ export default function EvaluationParametersPage() {
   const openManageLabelsDialog = (param: EvalParameter) => {
     setEditingLabelsForParam(param);
     setCurrentCategorizationLabelsInLabelsDialog(
-      param.categorizationLabels?.map((cl, index) => ({ 
-        ...cl, 
-        tempId: `cl-${param.id}-${index}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` 
+      param.categorizationLabels?.map((cl, index) => ({
+        ...cl,
+        tempId: `cl-${param.id}-${index}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
       })) || []
     );
     setIsLabelsDialogOpen(true);
@@ -211,11 +211,11 @@ export default function EvaluationParametersPage() {
 
   const handleAddNewCategorizationLabelInLabelsDialog = () => {
     setCurrentCategorizationLabelsInLabelsDialog(prev => {
-      const newLabel = { 
-        tempId: `new-cl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, 
-        name: '', 
-        definition: '', 
-        example: '' 
+      const newLabel = {
+        tempId: `new-cl-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        name: '',
+        definition: '',
+        example: ''
       };
       const updatedLabels = [...prev, newLabel];
       return updatedLabels;
@@ -240,10 +240,10 @@ export default function EvaluationParametersPage() {
       alert("No parameter selected for label editing or user not identified.");
       return;
     }
-    
+
     const labelsToSave: CategorizationLabelToStore[] = currentCategorizationLabelsInLabelsDialog
-      .map(({ tempId, ...restOfLabel }) => restOfLabel) 
-      .filter(cl => cl.name.trim() && cl.definition.trim()); 
+      .map(({ tempId, ...restOfLabel }) => restOfLabel)
+      .filter(cl => cl.name.trim() && cl.definition.trim());
 
     updateLabelsMutation.mutate({ parameterId: editingLabelsForParam.id, labels: labelsToSave });
   };
@@ -261,39 +261,39 @@ export default function EvaluationParametersPage() {
 
   if (isLoadingUserId || (isLoadingParameters && currentUserId)) {
     return (
-      <div className="space-y-6">
-        <Card className="shadow-lg"><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-64" /></CardContent></Card>
+      <div className="space-y-6 p-4 md:p-0">
+        <Card className="shadow-lg"><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-full sm:w-64" /></CardContent></Card>
         <Card><CardHeader><Skeleton className="h-8 w-1/2" /></CardHeader><CardContent className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></CardContent></Card>
       </div>
     );
   }
-  
+
   if (fetchError) {
     return (
-      <Card className="shadow-lg">
-        <CardHeader><CardTitle className="text-2xl font-headline text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle></CardHeader>
+      <Card className="shadow-lg m-4 md:m-0">
+        <CardHeader><CardTitle className="text-xl md:text-2xl font-headline text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle></CardHeader>
         <CardContent><p>Could not fetch evaluation parameters: {fetchError.message}</p><p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered a User ID on the login page and have a stable internet connection.</p></CardContent>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-3"><Target className="h-7 w-7 text-primary" />
-            <div><CardTitle className="text-2xl font-headline">Evaluation Parameters</CardTitle><CardDescription>Define the metrics for evaluating your AI model's performance. Each parameter can have detailed categorization labels.</CardDescription></div>
+            <div><CardTitle className="text-xl md:text-2xl font-headline">Evaluation Parameters</CardTitle><CardDescription>Define the metrics for evaluating your AI model's performance. Each parameter can have detailed categorization labels.</CardDescription></div>
           </div>
         </CardHeader>
         <CardContent>
-           <Button onClick={handleAddNewParameterClick} disabled={!currentUserId || addMutation.isPending || updateParamMutation.isPending}>
+           <Button onClick={handleAddNewParameterClick} disabled={!currentUserId || addMutation.isPending || updateParamMutation.isPending} className="w-full sm:w-auto">
             <PlusCircle className="mr-2 h-5 w-5" /> Add New Evaluation Parameter
           </Button>
         </CardContent>
       </Card>
-      
+
       <Dialog open={isParamDialogOpen} onOpenChange={(isOpen) => { setIsParamDialogOpen(isOpen); if(!isOpen) resetParamForm();}}>
-        <DialogContent className="sm:max-w-lg"> 
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingEvalParam ? 'Edit' : 'Add New'} Evaluation Parameter</DialogTitle>
             <DialogDescription>Define the core name and definition for an evaluation criterion.</DialogDescription>
@@ -303,9 +303,9 @@ export default function EvaluationParametersPage() {
               <div><Label htmlFor="eval-name">Parameter Name</Label><Input id="eval-name" value={paramName} onChange={(e) => setParamName(e.target.value)} placeholder="e.g., Hallucination, Relevance" required /></div>
               <div><Label htmlFor="eval-definition">Detailed Definition</Label><Textarea id="eval-definition" value={paramDefinition} onChange={(e) => setParamDefinition(e.target.value)} placeholder="Explain what this parameter measures." required /></div>
               <div className="flex items-center space-x-2 pt-2">
-                <Checkbox 
-                  id="eval-requires-rationale" 
-                  checked={paramRequiresRationale} 
+                <Checkbox
+                  id="eval-requires-rationale"
+                  checked={paramRequiresRationale}
                   onCheckedChange={(checked) => setParamRequiresRationale(checked as boolean)}
                 />
                 <Label htmlFor="eval-requires-rationale" className="font-normal flex items-center gap-1">
@@ -367,7 +367,7 @@ export default function EvaluationParametersPage() {
           </div>
           <DialogFooter className="pt-4 border-t flex-shrink-0">
             <Button type="button" variant="outline" onClick={() => {setIsLabelsDialogOpen(false); resetLabelsDialogForm();}}>Cancel</Button>
-            <Button 
+            <Button
               type="submit"
               form="manage-labels-form"
               disabled={updateLabelsMutation.isPending || !editingLabelsForParam}
@@ -392,35 +392,37 @@ export default function EvaluationParametersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[50px]">Order</TableHead>
+                  <TableHead className="w-[50px] hidden md:table-cell">Order</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Definition</TableHead>
-                  <TableHead>Rationale Req.</TableHead> {/* New Column Header */}
-                  <TableHead className="text-right w-[200px]">Actions</TableHead>
+                  <TableHead className="hidden sm:table-cell">Definition</TableHead>
+                  <TableHead>Rationale Req.</TableHead>
+                  <TableHead className="text-right w-auto md:w-[200px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {evalParameters.map((param) => (
                   <TableRow key={param.id} className="hover:bg-muted/50">
-                    <TableCell className="cursor-grab"><GripVertical className="h-5 w-5 text-muted-foreground" /></TableCell>
+                    <TableCell className="cursor-grab hidden md:table-cell"><GripVertical className="h-5 w-5 text-muted-foreground" /></TableCell>
                     <TableCell className="font-medium">{param.name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-md truncate">{param.definition}</TableCell>
-                    <TableCell> {/* New Cell for Rationale Status */}
-                      {param.requiresRationale ? 
-                        <CheckCircle className="h-5 w-5 text-green-500" title="Rationale requested"/> : 
+                    <TableCell className="text-sm text-muted-foreground max-w-xs sm:max-w-md truncate hidden sm:table-cell">{param.definition}</TableCell>
+                    <TableCell>
+                      {param.requiresRationale ?
+                        <CheckCircle className="h-5 w-5 text-green-500" title="Rationale requested"/> :
                         <XCircle className="h-5 w-5 text-muted-foreground" title="Rationale not requested"/>
                       }
                     </TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Button variant="outline" size="sm" onClick={() => openManageLabelsDialog(param)} disabled={!currentUserId || updateLabelsMutation.isPending && editingLabelsForParam?.id === param.id}>
-                        <Tags className="h-4 w-4 mr-2"/> Manage Labels ({param.categorizationLabels?.length || 0})
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => openEditParamDialog(param)} className="mr-1" disabled={updateParamMutation.isPending || deleteMutation.isPending || !currentUserId}>
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteParameter(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || (updateParamMutation.isPending && editingEvalParam?.id === param.id) || !currentUserId}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <TableCell className="text-right">
+                        <div className="flex flex-col sm:flex-row items-end sm:items-center justify-end gap-1">
+                          <Button variant="outline" size="sm" onClick={() => openManageLabelsDialog(param)} disabled={!currentUserId || updateLabelsMutation.isPending && editingLabelsForParam?.id === param.id}>
+                            <Tags className="h-4 w-4 mr-0 sm:mr-2"/><span className="hidden sm:inline">Labels ({param.categorizationLabels?.length || 0})</span>
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => openEditParamDialog(param)} className="mr-1" disabled={updateParamMutation.isPending || deleteMutation.isPending || !currentUserId}>
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDeleteParameter(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || (updateParamMutation.isPending && editingEvalParam?.id === param.id) || !currentUserId}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -432,4 +434,3 @@ export default function EvaluationParametersPage() {
     </div>
   );
 }
-    

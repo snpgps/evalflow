@@ -1,15 +1,16 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users } from "lucide-react";
 
 export default function TeamPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-3">
             <Users className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-2xl font-headline">Team Management</CardTitle>
+              <CardTitle className="text-xl md:text-2xl font-headline">Team Management</CardTitle>
               <CardDescription>Manage team members and their roles.</CardDescription>
             </div>
           </div>

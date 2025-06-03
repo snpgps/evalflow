@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, type ChangeEvent, type FormEvent, useEffect } from 'react';
@@ -14,8 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2, LinkIcon, Loader2 } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { db, storage } from '@/lib/firebase';
-import { 
-  collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, 
+import {
+  collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp,
   query, orderBy, writeBatch, type Timestamp, type FieldValue, getDoc
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getBlob, deleteObject } from 'firebase/storage';
@@ -31,11 +30,11 @@ interface DatasetVersion {
   fileName: string;
   uploadDate: string; // ISO String
   size: string; // e.g. "2.5MB"
-  records: number; 
-  storagePath?: string; 
-  selectedSheetName?: string | null; 
-  columnMapping?: Record<string, string>; 
-  createdAt?: Timestamp; 
+  records: number;
+  storagePath?: string;
+  selectedSheetName?: string | null;
+  columnMapping?: Record<string, string>;
+  createdAt?: Timestamp;
 }
 
 interface Dataset {
@@ -43,7 +42,7 @@ interface Dataset {
   name: string;
   description: string;
   versions: DatasetVersion[];
-  createdAt?: Timestamp; 
+  createdAt?: Timestamp;
 }
 
 type NewDatasetData = Omit<Dataset, 'id' | 'versions' | 'createdAt'> & { createdAt: FieldValue };
@@ -66,7 +65,7 @@ const fetchDatasetsWithVersions = async (userId: string | null): Promise<Dataset
 
   for (const datasetDoc of datasetsSnapshot.docs) {
     const datasetInfo = datasetDoc.data() as Omit<Dataset, 'id' | 'versions'>;
-    
+
     const versionsCollectionRef = collection(db, 'users', userId, 'datasets', datasetDoc.id, 'versions');
     const versionsQuery = query(versionsCollectionRef, orderBy('versionNumber', 'desc'));
     const versionsSnapshot = await getDocs(versionsQuery);
@@ -91,7 +90,7 @@ const fetchProductParametersForMapping = async (userId: string | null): Promise<
   const snapshot = await getDocs(paramsQuery);
   return snapshot.docs.map(docSnap => ({
     id: docSnap.id,
-    name: docSnap.data().name as string, 
+    name: docSnap.data().name as string,
   }));
 };
 
@@ -127,11 +126,11 @@ export default function DatasetsPage() {
   const [editingDataset, setEditingDataset] = useState<Dataset | null>(null);
   const [datasetName, setDatasetName] = useState('');
   const [datasetDescription, setDatasetDescription] = useState('');
-  
+
   const [isUploadVersionDialogOpen, setIsUploadVersionDialogOpen] = useState(false);
   const [currentDatasetIdForUpload, setCurrentDatasetIdForUpload] = useState<string | null>(null);
   const [selectedFileUpload, setSelectedFileUpload] = useState<File | null>(null);
-  
+
   const [isMappingDialogOpen, setIsMappingDialogOpen] = useState(false);
   const [isLoadingMappingData, setIsLoadingMappingData] = useState(false);
   const [versionBeingMapped, setVersionBeingMapped] = useState<{datasetId: string; version: DatasetVersion} | null>(null);
@@ -170,7 +169,7 @@ export default function DatasetsPage() {
   const deleteDatasetMutation = useMutation<void, Error, string>({
     mutationFn: async (datasetIdToDelete) => {
       if (!currentUserId) throw new Error("User not identified for delete operation.");
-      
+
       const versionsCollectionRef = collection(db, 'users', currentUserId, 'datasets', datasetIdToDelete, 'versions');
       const versionsSnapshot = await getDocs(versionsCollectionRef);
       const batch = writeBatch(db);
@@ -191,10 +190,10 @@ export default function DatasetsPage() {
         }
         batch.delete(versionDoc.ref);
       }
-      await batch.commit(); 
-      
+      await batch.commit();
+
       const datasetDocRef = doc(db, 'users', currentUserId, 'datasets', datasetIdToDelete);
-      await deleteDoc(datasetDocRef); 
+      await deleteDoc(datasetDocRef);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['datasets', currentUserId] }),
     onError: (error, variables) => {
@@ -227,7 +226,7 @@ export default function DatasetsPage() {
       console.error("Error in addDatasetVersionMutation:", error);
     }
   });
-  
+
   const updateVersionMappingMutation = useMutation<void, Error, UpdateVersionMappingPayload>({
     mutationFn: async ({ datasetId, versionId, selectedSheetName, columnMapping }) => {
       if (!currentUserId) throw new Error("User not identified for updating mapping.");
@@ -265,7 +264,7 @@ export default function DatasetsPage() {
     setMappingDialogCurrentColumnMapping({});
     setIsLoadingMappingData(false);
   };
-  
+
   const handleSelectedFileChangeForUpload = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     setSelectedFileUpload(file || null);
@@ -278,8 +277,8 @@ export default function DatasetsPage() {
     const targetDataset = datasets.find(d => d.id === currentDatasetIdForUpload);
     if (!targetDataset) return;
 
-    const newVersionNumber = targetDataset.versions.length > 0 
-      ? Math.max(...targetDataset.versions.map(v => v.versionNumber)) + 1 
+    const newVersionNumber = targetDataset.versions.length > 0
+      ? Math.max(...targetDataset.versions.map(v => v.versionNumber)) + 1
       : 1;
 
     const newVersionFirestoreData: NewDatasetVersionFirestoreData = {
@@ -287,13 +286,13 @@ export default function DatasetsPage() {
       fileName: selectedFileUpload.name,
       uploadDate: new Date().toISOString().split('T')[0],
       size: `${(selectedFileUpload.size / (1024 * 1024)).toFixed(2)}MB`,
-      records: 0, 
+      records: 0,
       createdAt: serverTimestamp(),
     };
-    
+
     addDatasetVersionMutation.mutate({ datasetId: currentDatasetIdForUpload, versionFirestoreData: newVersionFirestoreData, fileToUpload: selectedFileUpload });
   };
-  
+
   const parseFileDataForMapping = async (fileData: {blob: Blob, name: string}) => {
     setMappingDialogSheetNames([]);
     setMappingDialogSelectedSheet('');
@@ -307,7 +306,7 @@ export default function DatasetsPage() {
             const workbook = XLSX.read(arrayBuffer, { type: 'array', sheets: 0, bookFiles: false, bookProps: false, bookDeps: false, bookSheets: false, bookStrings: false, sheetStubs: true });
             const filteredSheetNames = workbook.SheetNames
               .map(name => String(name).trim())
-              .filter(name => name !== ''); 
+              .filter(name => name !== '');
             setMappingDialogSheetNames(filteredSheetNames);
             if (filteredSheetNames.length === 0) {
                 alert("The selected Excel file contains no valid sheet names or no sheets.");
@@ -328,7 +327,7 @@ export default function DatasetsPage() {
                 if (headers.length === 0) {
                      alert("CSV file has a header row, but no valid column names could be extracted or all are empty.");
                 }
-                setMappingDialogSelectedSheet(fileData.name); 
+                setMappingDialogSelectedSheet(fileData.name);
 
                 if (Object.keys(mappingDialogCurrentColumnMapping).length === 0) {
                     const initialMapping: Record<string, string> = {};
@@ -351,7 +350,7 @@ export default function DatasetsPage() {
 
   const handleMappingDialogSheetSelect = async (sheetName: string) => {
     setMappingDialogSelectedSheet(sheetName);
-    setMappingDialogSheetColumnHeaders([]); 
+    setMappingDialogSheetColumnHeaders([]);
 
     if (mappingDialogFileData && mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && sheetName) {
         try {
@@ -371,7 +370,7 @@ export default function DatasetsPage() {
                 } else if (headers.length === 0) {
                      alert(`Sheet '${sheetName}' appears to be empty or has no header row.`);
                 }
-                
+
                 if (Object.keys(mappingDialogCurrentColumnMapping).length === 0 || (versionBeingMapped && versionBeingMapped.version.selectedSheetName !== sheetName)) {
                     const initialMapping: Record<string, string> = {};
                     productParametersForMapping.forEach(param => {
@@ -439,14 +438,14 @@ export default function DatasetsPage() {
       addDatasetMutation.mutate({ name: datasetName.trim(), description: datasetDescription.trim(), createdAt: serverTimestamp() });
     }
   };
-  
+
   const openEditDatasetDialog = (dataset: Dataset) => {
     setEditingDataset(dataset);
     setDatasetName(dataset.name);
     setDatasetDescription(dataset.description);
     setIsDatasetDialogOpen(true);
   };
-  
+
   const handleDeleteDataset = (id: string) => {
     if (!currentUserId) return;
     if (confirm('Are you sure you want to delete this dataset and all its versions and associated files? This action cannot be undone.')) {
@@ -455,13 +454,13 @@ export default function DatasetsPage() {
   };
 
   const openUploadVersionDialog = (datasetId: string) => {
-    resetUploadVersionDialogState(); 
+    resetUploadVersionDialogState();
     setCurrentDatasetIdForUpload(datasetId);
     setIsUploadVersionDialogOpen(true);
   };
-  
+
   const openMappingDialog = async (datasetId: string, version: DatasetVersion) => {
-    resetMappingDialogState(); 
+    resetMappingDialogState();
     setVersionBeingMapped({datasetId, version});
     setIsMappingDialogOpen(true);
 
@@ -470,24 +469,24 @@ export default function DatasetsPage() {
         setIsMappingDialogOpen(false);
         return;
     }
-    
+
     setIsLoadingMappingData(true);
     try {
         const fileRef = storageRef(storage, version.storagePath);
         const blob = await getBlob(fileRef);
-        setMappingDialogFileData({blob, name: version.fileName}); 
+        setMappingDialogFileData({blob, name: version.fileName});
 
         if (version.columnMapping) {
             setMappingDialogCurrentColumnMapping(version.columnMapping);
         }
-        
-        await parseFileDataForMapping({blob, name: version.fileName}); 
+
+        await parseFileDataForMapping({blob, name: version.fileName});
 
         if(version.selectedSheetName && version.fileName.toLowerCase().endsWith('.xlsx')) {
             const currentSheetNames = workbookSheetNames({blob, name: version.fileName}); // Helper to re-get fresh sheet names
             if (currentSheetNames.includes(version.selectedSheetName)) {
                  setMappingDialogSelectedSheet(version.selectedSheetName);
-                 await handleMappingDialogSheetSelect(version.selectedSheetName); 
+                 await handleMappingDialogSheetSelect(version.selectedSheetName);
             } else {
                 console.warn(`Previously selected sheet "${version.selectedSheetName}" not found in the file.`);
                  setMappingDialogSelectedSheet('');
@@ -528,19 +527,19 @@ export default function DatasetsPage() {
     resetDatasetForm();
     setIsDatasetDialogOpen(true);
   };
-  
+
   const showMappingUIInDialog = (
     mappingDialogFileData &&
     productParametersForMapping.length > 0 &&
     (
-      (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet && mappingDialogSheetColumnHeaders.length > 0) || 
+      (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet && mappingDialogSheetColumnHeaders.length > 0) ||
       (mappingDialogFileData.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)
     )
   );
-  
+
   const isInitialUploadButtonDisabled = !selectedFileUpload || !currentUserId || addDatasetVersionMutation.isPending;
-  
-  const isSaveMappingButtonDisabled = 
+
+  const isSaveMappingButtonDisabled =
     !mappingDialogFileData ||
     !versionBeingMapped ||
     !currentUserId ||
@@ -550,24 +549,24 @@ export default function DatasetsPage() {
     (mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData && mappingDialogFileData.blob.size > 0);
 
   if (isLoadingUserId || (isLoadingDatasets && currentUserId) || (isLoadingProdParams && currentUserId)) {
-    return <div className="space-y-6"><Card><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-56" /></CardContent></Card></div>;
+    return <div className="space-y-6 p-4 md:p-0"><Card><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-full sm:w-56" /></CardContent></Card></div>;
   }
   if (fetchDatasetsError) {
-    return <Card><CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2"/>Error</CardTitle></CardHeader><CardContent><p>{fetchDatasetsError.message}</p></CardContent></Card>;
+    return <Card className="m-4 md:m-0"><CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2"/>Error</CardTitle></CardHeader><CardContent><p>{fetchDatasetsError.message}</p></CardContent></Card>;
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-3"><Database className="h-7 w-7 text-primary" />
-            <div><CardTitle className="text-2xl font-headline">Dataset Management</CardTitle><CardDescription>Upload, version, and manage your datasets. Map columns to Product Parameters after uploading.</CardDescription></div>
+            <div><CardTitle className="text-xl md:text-2xl font-headline">Dataset Management</CardTitle><CardDescription>Upload, version, and manage your datasets. Map columns to Product Parameters after uploading.</CardDescription></div>
           </div>
         </CardHeader>
         <CardContent>
            <Dialog open={isDatasetDialogOpen} onOpenChange={(isOpen) => { setIsDatasetDialogOpen(isOpen); if(!isOpen) resetDatasetForm();}}>
              <DialogTrigger asChild>
-                <Button onClick={handleCreateNewDatasetClick} disabled={!currentUserId || addDatasetMutation.isPending || updateDatasetMutation.isPending}>
+                <Button onClick={handleCreateNewDatasetClick} disabled={!currentUserId || addDatasetMutation.isPending || updateDatasetMutation.isPending} className="w-full sm:w-auto">
                     <PlusCircle className="mr-2 h-5 w-5" /> Create New Dataset
                 </Button>
               </DialogTrigger>
@@ -590,37 +589,39 @@ export default function DatasetsPage() {
       ) : (
         datasets.map((dataset) => (
           <Card key={dataset.id}>
-            <CardHeader className="flex flex-row items-start justify-between">
-              <div><CardTitle>{dataset.name}</CardTitle><CardDescription className="mb-1">{dataset.description || "No description."}</CardDescription></div>
-              <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-                 <Button variant="outline" size="sm" onClick={() => openEditDatasetDialog(dataset)} disabled={!currentUserId}><Edit2 className="h-4 w-4 mr-2" /> Edit Info</Button>
-                 <Button size="sm" onClick={() => openUploadVersionDialog(dataset.id)} disabled={!currentUserId}><FileUp className="mr-2 h-4 w-4" /> Upload New Version</Button>
-                 <Button variant="destructive" size="sm" onClick={() => handleDeleteDataset(dataset.id)} disabled={!currentUserId || (deleteDatasetMutation.isPending && deleteDatasetMutation.variables === dataset.id)}><Trash2 className="h-4 w-4 mr-2" /> Delete Dataset</Button>
+            <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+              <div><CardTitle className="text-lg md:text-xl">{dataset.name}</CardTitle><CardDescription className="mb-1">{dataset.description || "No description."}</CardDescription></div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+                 <Button variant="outline" size="sm" onClick={() => openEditDatasetDialog(dataset)} disabled={!currentUserId} className="w-full sm:w-auto"><Edit2 className="h-4 w-4 mr-2" /> Edit Info</Button>
+                 <Button size="sm" onClick={() => openUploadVersionDialog(dataset.id)} disabled={!currentUserId} className="w-full sm:w-auto"><FileUp className="mr-2 h-4 w-4" /> Upload New Version</Button>
+                 <Button variant="destructive" size="sm" onClick={() => handleDeleteDataset(dataset.id)} disabled={!currentUserId || (deleteDatasetMutation.isPending && deleteDatasetMutation.variables === dataset.id)} className="w-full sm:w-auto"><Trash2 className="h-4 w-4 mr-2" /> Delete Dataset</Button>
               </div>
             </CardHeader>
             <CardContent>
               {dataset.versions.length === 0 ? (<p className="text-sm text-muted-foreground">No versions uploaded.</p>) : (
                 <Table>
-                  <TableHeader><TableRow><TableHead>Version</TableHead><TableHead>File Name</TableHead><TableHead>Upload Date</TableHead><TableHead>Size</TableHead><TableHead>Source/Sheet</TableHead><TableHead>Mapping</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Ver.</TableHead><TableHead>File Name</TableHead><TableHead className="hidden sm:table-cell">Date</TableHead><TableHead className="hidden md:table-cell">Size</TableHead><TableHead>Source</TableHead><TableHead>Mapping</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {dataset.versions.map((version) => (
                       <TableRow key={version.id} className="hover:bg-muted/50">
                         <TableCell><Badge variant="secondary">v{version.versionNumber}</Badge></TableCell>
-                        <TableCell className="font-medium">{version.fileName}</TableCell>
-                        <TableCell>{version.uploadDate}</TableCell>
-                        <TableCell>{version.size}</TableCell>
+                        <TableCell className="font-medium max-w-[100px] sm:max-w-[150px] truncate" title={version.fileName}>{version.fileName}</TableCell>
+                        <TableCell className="hidden sm:table-cell">{version.uploadDate}</TableCell>
+                        <TableCell className="hidden md:table-cell">{version.size}</TableCell>
                         <TableCell>{version.selectedSheetName || (version.fileName.toLowerCase().endsWith('.csv') && version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "CSV" : "N/A")}</TableCell>
                         <TableCell>
-                          {version.columnMapping && Object.keys(version.columnMapping).length > 0 
-                            ? <Badge variant="default" className="bg-green-500 hover:bg-green-600">Configured</Badge> 
+                          {version.columnMapping && Object.keys(version.columnMapping).length > 0
+                            ? <Badge variant="default" className="bg-green-500 hover:bg-green-600">Configured</Badge>
                             : <Badge variant="outline">Pending</Badge>}
                         </TableCell>
                         <TableCell className="text-right">
-                           <Button variant="outline" size="sm" className="mr-2" onClick={() => openMappingDialog(dataset.id, version)} disabled={!currentUserId || !version.storagePath}>
-                             <Settings2 className="h-4 w-4 mr-2"/> {version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "Edit Mapping" : "Set Mapping"}
-                           </Button>
-                           <Button variant="ghost" size="icon" className="mr-2" title="Review Data (Not Implemented)"><Eye className="h-4 w-4" /></Button>
-                           <Button variant="ghost" size="icon" title="Download Version (Not Implemented)"><Download className="h-4 w-4" /></Button>
+                            <div className="flex flex-col sm:flex-row justify-end items-end sm:items-center gap-1">
+                               <Button variant="outline" size="sm" onClick={() => openMappingDialog(dataset.id, version)} disabled={!currentUserId || !version.storagePath}>
+                                 <Settings2 className="h-4 w-4 mr-0 sm:mr-2"/> <span className="hidden sm:inline">{version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "Edit Map" : "Set Map"}</span>
+                               </Button>
+                               <Button variant="ghost" size="icon" className="hidden" title="Review Data (Not Implemented)"><Eye className="h-4 w-4" /></Button>
+                               <Button variant="ghost" size="icon" className="hidden" title="Download Version (Not Implemented)"><Download className="h-4 w-4" /></Button>
+                           </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -631,7 +632,7 @@ export default function DatasetsPage() {
           </Card>
         ))
       )}
-      
+
       <Dialog open={isUploadVersionDialogOpen} onOpenChange={(isOpen) => {setIsUploadVersionDialogOpen(isOpen); if(!isOpen) resetUploadVersionDialogState();}}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Upload New Dataset Version</DialogTitle><DialogDescription>Select a .xlsx or .csv file to upload. Mapping will be configured separately.</DialogDescription></DialogHeader>
@@ -661,7 +662,7 @@ export default function DatasetsPage() {
             </div>
           ) : (
             <form onSubmit={handleSaveMappingSubmit} className="space-y-4 py-4">
-              <ScrollArea className="max-h-[70vh] p-1">
+              <ScrollArea className="max-h-[60vh] sm:max-h-[70vh] p-1">
               <div className="space-y-4 pr-4">
                 {mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSheetNames.length > 0 && (
                   <div className="space-y-2 pt-2 border-t">
@@ -670,7 +671,7 @@ export default function DatasetsPage() {
                       <SelectTrigger id="mapping-sheet-select"><SelectValue placeholder="Select a sheet" /></SelectTrigger>
                       <SelectContent>
                         {mappingDialogSheetNames
-                          .filter(name => name && String(name).trim() !== '') 
+                          .filter(name => name && String(name).trim() !== '')
                           .map((name, idx) => <SelectItem key={`map-sheet-${idx}`} value={name}>{name}</SelectItem>)
                         }
                       </SelectContent>
@@ -715,7 +716,7 @@ export default function DatasetsPage() {
                  {((mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet) || (mappingDialogFileData?.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)) && productParametersForMapping.length === 0 && !isLoadingProdParams && (
                    <p className="text-sm text-amber-700 pt-2 border-t">No product parameters found for mapping. Please define them in Schema Definition.</p>
                  )}
-                 {mappingDialogFileData && mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData.blob.size > 0 && 
+                 {mappingDialogFileData && mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData.blob.size > 0 &&
                    ((mappingDialogFileData.name.toLowerCase().endsWith('.csv')) || (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet)) && (
                   <p className="text-sm text-red-600 pt-2 border-t">Could not parse headers from the file/sheet. Ensure a valid header row exists.</p>
                  )}
@@ -734,4 +735,3 @@ export default function DatasetsPage() {
     </div>
   );
 }
-

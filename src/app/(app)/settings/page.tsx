@@ -1,15 +1,16 @@
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Settings as SettingsIcon } from "lucide-react";
 
 export default function SettingsPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-3">
             <SettingsIcon className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-2xl font-headline">Settings</CardTitle>
+              <CardTitle className="text-xl md:text-2xl font-headline">Settings</CardTitle>
               <CardDescription>Manage your application settings and preferences.</CardDescription>
             </div>
           </div>

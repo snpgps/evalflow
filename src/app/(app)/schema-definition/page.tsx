@@ -22,8 +22,8 @@ interface ProductParameter {
   type: 'text' | 'dropdown' | 'textarea';
   definition: string;
   options?: string[];
-  createdAt?: Timestamp; 
-  order?: number; 
+  createdAt?: Timestamp;
+  order?: number;
 }
 
 // Type for update payload, allowing options to be FieldValue for deletion
@@ -48,7 +48,7 @@ export default function SchemaDefinitionPage() {
     if (storedUserId && storedUserId.trim() !== "") {
       setCurrentUserId(storedUserId.trim());
     } else {
-      setCurrentUserId(null); 
+      setCurrentUserId(null);
     }
     setIsLoadingUserId(false);
   }, []);
@@ -56,12 +56,12 @@ export default function SchemaDefinitionPage() {
   const { data: parameters = [], isLoading: isLoadingParameters, error: fetchError } = useQuery<ProductParameter[], Error>({
     queryKey: ['productParameters', currentUserId],
     queryFn: () => fetchProductParameters(currentUserId),
-    enabled: !!currentUserId && !isLoadingUserId, 
+    enabled: !!currentUserId && !isLoadingUserId,
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingParameter, setEditingParameter] = useState<ProductParameter | null>(null);
-  
+
   const [parameterName, setParameterName] = useState('');
   const [parameterType, setParameterType] = useState<'text' | 'dropdown' | 'textarea'>('text');
   const [parameterDefinition, setParameterDefinition] = useState('');
@@ -70,8 +70,8 @@ export default function SchemaDefinitionPage() {
   const addMutation = useMutation<void, Error, Omit<ProductParameter, 'id' | 'createdAt' | 'order'>>({
     mutationFn: async (newParameterDataFromMutate) => {
       if (!currentUserId) throw new Error("User not identified for add operation.");
-      
-      const dataForDoc: any = { 
+
+      const dataForDoc: any = {
         name: newParameterDataFromMutate.name,
         type: newParameterDataFromMutate.type,
         definition: newParameterDataFromMutate.definition,
@@ -82,7 +82,7 @@ export default function SchemaDefinitionPage() {
         dataForDoc.options = newParameterDataFromMutate.options || []; // Ensure options is an array, even if empty
       }
       // If type is not 'dropdown', 'options' field is not added to dataForDoc.
-      
+
       await addDoc(collection(db, 'users', currentUserId, 'productParameters'), dataForDoc);
     },
     onSuccess: () => {
@@ -145,7 +145,7 @@ export default function SchemaDefinitionPage() {
     if (!parameterName.trim() || !parameterDefinition.trim()) {
         alert("Parameter Name and Definition are required.");
         console.warn("Form validation failed: Name or Definition is empty. Name: '"+parameterName+"', Definition: '"+parameterDefinition+"'");
-        return; 
+        return;
     }
 
     if (editingParameter) {
@@ -158,7 +158,7 @@ export default function SchemaDefinitionPage() {
         };
         if (parameterType === 'dropdown') {
             payloadForUpdate.options = dropdownOptions.split(',').map(opt => opt.trim()).filter(Boolean);
-            if (!payloadForUpdate.options) payloadForUpdate.options = []; 
+            if (!payloadForUpdate.options) payloadForUpdate.options = [];
         } else {
             payloadForUpdate.options = deleteField();
         }
@@ -172,7 +172,7 @@ export default function SchemaDefinitionPage() {
       };
       if (parameterType === 'dropdown') {
         (newParamData as any).options = dropdownOptions.split(',').map(opt => opt.trim()).filter(Boolean);
-         if (!(newParamData as any).options) (newParamData as any).options = []; 
+         if (!(newParamData as any).options) (newParamData as any).options = [];
       }
       addMutation.mutate(newParamData);
     }
@@ -217,10 +217,10 @@ export default function SchemaDefinitionPage() {
 
   if (isLoadingUserId || (isLoadingParameters && currentUserId)) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-4 md:p-0">
         <Card className="shadow-lg">
           <CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader>
-          <CardContent><Skeleton className="h-10 w-48" /></CardContent>
+          <CardContent><Skeleton className="h-10 w-full sm:w-48" /></CardContent>
         </Card>
         <Card>
           <CardHeader><Skeleton className="h-8 w-1/2" /></CardHeader>
@@ -233,12 +233,12 @@ export default function SchemaDefinitionPage() {
       </div>
     );
   }
-  
+
   if (fetchError) {
     return (
-      <Card className="shadow-lg">
+      <Card className="shadow-lg m-4 md:m-0">
         <CardHeader>
-            <CardTitle className="text-2xl font-headline text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle>
+            <CardTitle className="text-xl md:text-2xl font-headline text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle>
         </CardHeader>
         <CardContent>
           <p>Could not fetch product parameters: {fetchError.message}</p>
@@ -249,19 +249,19 @@ export default function SchemaDefinitionPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-3">
              <Settings2 className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-2xl font-headline">Product Parameter Schema</CardTitle>
+              <CardTitle className="text-xl md:text-2xl font-headline">Product Parameter Schema</CardTitle>
               <CardDescription>Define the structured fields for your AI product evaluations. These parameters will be used for dataset mapping and prompt templating.</CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <Button onClick={handleAddNewParameterClick} disabled={!currentUserId || addMutation.isPending || updateMutation.isPending}>
+          <Button onClick={handleAddNewParameterClick} disabled={!currentUserId || addMutation.isPending || updateMutation.isPending} className="w-full sm:w-auto">
             <PlusCircle className="mr-2 h-5 w-5" /> Add New Parameter
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
@@ -321,7 +321,6 @@ export default function SchemaDefinitionPage() {
           {!currentUserId && !isLoadingUserId ? (
              <div className="text-center text-muted-foreground py-8">
                 <p>Please log in to see your parameters.</p>
-                {/* Removed the potentially confusing instruction about clicking Add New Parameter here */}
               </div>
           ) : parameters.length === 0 && !isLoadingParameters ? (
             <div className="text-center text-muted-foreground py-8">
@@ -333,24 +332,26 @@ export default function SchemaDefinitionPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead className="hidden sm:table-cell">Type</TableHead>
                   <TableHead>Definition</TableHead>
-                  <TableHead className="text-right w-[120px]">Actions</TableHead>
+                  <TableHead className="text-right w-auto md:w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {parameters.map((param) => (
                   <TableRow key={param.id} className="hover:bg-muted/50">
                     <TableCell className="font-medium">{param.name}</TableCell>
-                    <TableCell className="capitalize">{param.type}</TableCell>
+                    <TableCell className="capitalize hidden sm:table-cell">{param.type}</TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{param.definition}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-2" disabled={updateMutation.isPending || deleteMutation.isPending || !currentUserId}>
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || (updateMutation.isPending && editingParameter?.id === param.id) || !currentUserId}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        <div className="flex justify-end items-center gap-0 sm:gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(param)} className="mr-0 sm:mr-2" disabled={updateMutation.isPending || deleteMutation.isPending || !currentUserId}>
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || (updateMutation.isPending && editingParameter?.id === param.id) || !currentUserId}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -362,4 +363,3 @@ export default function SchemaDefinitionPage() {
     </div>
   );
 }
-

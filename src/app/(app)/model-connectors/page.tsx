@@ -52,7 +52,7 @@ export default function ModelConnectorsPage() {
     }
     setIsLoadingUserId(false);
   }, []);
-  
+
   const { data: connectors = [], isLoading: isLoadingConnectors, error: fetchConnectorsError } = useQuery<ModelConnector[], Error>({
     queryKey: ['modelConnectors', currentUserId],
     queryFn: () => fetchModelConnectors(currentUserId),
@@ -102,7 +102,7 @@ export default function ModelConnectorsPage() {
       toast({ title: "Error", description: `Failed to update connector: ${error.message}`, variant: "destructive" });
     }
   });
-  
+
   const deleteConnectorMutation = useMutation<void, Error, string>({
     mutationFn: async (connectorIdToDelete) => {
       if (!currentUserId) throw new Error("User not identified.");
@@ -132,7 +132,7 @@ export default function ModelConnectorsPage() {
     const connectorData = {
       name: connectorName.trim(),
       provider,
-      apiKey: apiKey.trim(), // Storing API key directly; ensure security measures if used client-side.
+      apiKey: apiKey.trim(),
       config: config.trim(),
     };
 
@@ -155,7 +155,7 @@ export default function ModelConnectorsPage() {
     setEditingConnector(connector);
     setConnectorName(connector.name);
     setProvider(connector.provider);
-    setApiKey(connector.apiKey); 
+    setApiKey(connector.apiKey);
     setConfig(connector.config);
     setIsDialogOpen(true);
   };
@@ -169,7 +169,7 @@ export default function ModelConnectorsPage() {
         deleteConnectorMutation.mutate(id);
     }
   };
-  
+
   const toggleApiKeyVisibility = (id: string) => {
     setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
   };
@@ -185,8 +185,8 @@ export default function ModelConnectorsPage() {
 
   if (isLoadingUserId || (isLoadingConnectors && currentUserId)) {
     return (
-      <div className="space-y-6">
-        <Card className="shadow-lg"><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-52" /></CardContent></Card>
+      <div className="space-y-6 p-4 md:p-0">
+        <Card className="shadow-lg"><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-full sm:w-52" /></CardContent></Card>
         <Card><CardHeader><Skeleton className="h-8 w-1/2" /></CardHeader><CardContent><Skeleton className="h-24 w-full" /></CardContent></Card>
       </div>
     );
@@ -194,8 +194,8 @@ export default function ModelConnectorsPage() {
 
   if (fetchConnectorsError) {
     return (
-        <Card className="shadow-lg">
-            <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle></CardHeader>
+        <Card className="shadow-lg m-4 md:m-0">
+            <CardHeader><CardTitle className="text-xl md:text-2xl text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle></CardHeader>
             <CardContent><p>{fetchConnectorsError.message}</p></CardContent>
         </Card>
     );
@@ -203,13 +203,13 @@ export default function ModelConnectorsPage() {
 
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-3">
             <PlugZap className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-2xl font-headline">Model Connectors</CardTitle>
+              <CardTitle className="text-xl md:text-2xl font-headline">Model Connectors</CardTitle>
               <CardDescription>Manage your Judge LLM connections. API keys and configurations are stored in Firestore.</CardDescription>
             </div>
           </div>
@@ -217,7 +217,7 @@ export default function ModelConnectorsPage() {
         <CardContent>
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={handleOpenNewDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending}>
+              <Button onClick={handleOpenNewDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
                 <PlusCircle className="mr-2 h-5 w-5" /> Add New Connector
               </Button>
             </DialogTrigger>
@@ -290,17 +290,17 @@ export default function ModelConnectorsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Provider</TableHead>
+                  <TableHead className="hidden sm:table-cell">Provider</TableHead>
                   <TableHead>API Key</TableHead>
-                  <TableHead>Configuration</TableHead>
-                  <TableHead className="text-right w-[120px]">Actions</TableHead>
+                  <TableHead className="hidden md:table-cell">Configuration</TableHead>
+                  <TableHead className="text-right w-auto md:w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {connectors.map((conn) => (
                   <TableRow key={conn.id} className="hover:bg-muted/50">
                     <TableCell className="font-medium">{conn.name}</TableCell>
-                    <TableCell>{conn.provider}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{conn.provider}</TableCell>
                     <TableCell>
                       <div className="flex items-center">
                         <span>{showApiKey[conn.id] ? conn.apiKey : '••••••••••••••••'}</span>
@@ -309,14 +309,16 @@ export default function ModelConnectorsPage() {
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate" title={conn.config}>{conn.config || 'N/A'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate hidden md:table-cell" title={conn.config}>{conn.config || 'N/A'}</TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} className="mr-2" disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
-                        <Edit2 className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90" disabled={!currentUserId || deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        <div className="flex justify-end items-center gap-0 sm:gap-1">
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} className="mr-0 sm:mr-2" disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90" disabled={!currentUserId || deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -328,4 +330,3 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
-
