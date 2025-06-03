@@ -27,7 +27,7 @@ import * as XLSX from 'xlsx';
 // Interfaces
 interface EvalRunResultItem {
   inputData: Record<string, any>;
-  judgeLlmOutput: JudgeLlmEvaluationOutput;
+  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string }>; // Updated to match flow output
   fullPromptSent?: string;
   groundTruth?: Record<string, any>;
 }
@@ -73,6 +73,12 @@ interface EvalParamDetailForPrompt {
   definition: string;
   labels: Array<{ name: string; definition?: string; example?: string }>;
   requiresRationale?: boolean;
+}
+
+interface ParameterChartData {
+  parameterId: string;
+  parameterName: string;
+  data: Array<{ labelName: string; count: number }>;
 }
 
 
@@ -133,12 +139,6 @@ const fetchEvaluationParameterDetailsForPrompt = async (userId: string, paramIds
 };
 
 
-const mockPerParameterBreakdown = [
-    { parameter: 'Hallucination', accuracy: 95.2, correct: 9996, incorrect: 524, total: 10520 },
-    { parameter: 'Context Relevance', accuracy: 88.0, correct: 9258, incorrect: 1262, total: 10520 },
-];
-
-
 export default function RunDetailsPage() {
   const reactParams = useParams();
   const runId = reactParams.runId as string;
@@ -156,6 +156,7 @@ export default function RunDetailsPage() {
 
   const [evalParamDetailsForLLM, setEvalParamDetailsForLLM] = useState<EvalParamDetailForPrompt[]>([]);
   const [isLoadingEvalParamDetails, setIsLoadingEvalParamDetails] = useState(false);
+  const [metricsBreakdownData, setMetricsBreakdownData] = useState<ParameterChartData[]>([]);
 
 
   useEffect(() => {
@@ -227,6 +228,46 @@ export default function RunDetailsPage() {
       setIsLoadingEvalParamDetails(false);
     }
   }, [runDetails?.id, runDetails?.selectedEvalParamIds?.join(','), currentUserId]);
+
+
+  useEffect(() => {
+    if (runDetails?.results && runDetails.results.length > 0 && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) {
+      const newMetricsBreakdownData: ParameterChartData[] = evalParamDetailsForLLM.map(paramDetail => {
+        const labelCounts: Record<string, number> = {};
+
+        if (paramDetail.labels && Array.isArray(paramDetail.labels)) {
+          paramDetail.labels.forEach(label => {
+            if (label && typeof label.name === 'string') {
+              labelCounts[label.name] = 0;
+            }
+          });
+        }
+
+        runDetails.results!.forEach(resultItem => {
+          if (resultItem.judgeLlmOutput && typeof resultItem.judgeLlmOutput === 'object') {
+              const llmOutputForParam = resultItem.judgeLlmOutput[paramDetail.id];
+              if (llmOutputForParam?.chosenLabel && typeof llmOutputForParam.chosenLabel === 'string') {
+              labelCounts[llmOutputForParam.chosenLabel] = (labelCounts[llmOutputForParam.chosenLabel] || 0) + 1;
+              }
+          }
+        });
+
+        const chartDataEntries = Object.entries(labelCounts)
+          .map(([labelName, count]) => ({ labelName, count }))
+          .filter(item => item.count > 0 || (paramDetail.labels && paramDetail.labels.some(l => l.name === item.labelName)));
+
+        return {
+          parameterId: paramDetail.id,
+          parameterName: paramDetail.name,
+          data: chartDataEntries.sort((a, b) => b.count - a.count),
+        };
+      }).filter(paramChart => paramChart.data.length > 0); 
+
+      setMetricsBreakdownData(newMetricsBreakdownData);
+    } else {
+      setMetricsBreakdownData([]);
+    }
+  }, [runDetails, evalParamDetailsForLLM]);
 
 
   const handleFetchAndPreviewData = async () => {
@@ -364,9 +405,11 @@ export default function RunDetailsPage() {
       setCurrentSimulationLog([]);
     }
     addLog("LLM Categorization started using previewed data.");
+    let collectedResults: EvalRunResultItem[] = runDetails.results || []; // Initialize with existing results if any
+
 
     try {
-      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, results: [] });
+      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null });
       addLog("Status set to Processing.");
 
       const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
@@ -379,8 +422,7 @@ export default function RunDetailsPage() {
       const datasetToProcess = runDetails.previewedDatasetSample;
       const rowsToProcess = datasetToProcess.length;
       addLog(`Starting LLM categorization for ${rowsToProcess} previewed rows.`);
-
-      const collectedResults: EvalRunResultItem[] = [];
+      
       const parameterIdsRequiringRationale = evalParamDetailsForLLM
         .filter(ep => ep.requiresRationale)
         .map(ep => ep.id);
@@ -398,7 +440,7 @@ export default function RunDetailsPage() {
         evalParamDetailsForLLM.forEach(ep => {
           evalCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`;
           if (ep.requiresRationale) {
-            evalCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST provide a 'rationale' explaining your choice.\n`;
+            evalCriteriaText += `IMPORTANT: For this parameter (${ep.name}), when providing your evaluation, you MUST include a 'rationale' explaining your choice.\n`;
           }
           if (ep.labels && ep.labels.length > 0) {
             evalCriteriaText += "Labels:\n";
@@ -437,7 +479,7 @@ export default function RunDetailsPage() {
             updateRunMutation.mutate({
                 id: runId,
                 progress: currentProgress,
-                results: [...collectedResults],
+                results: [...collectedResults], 
                 status: 'Processing'
             });
         }
@@ -447,10 +489,10 @@ export default function RunDetailsPage() {
       updateRunMutation.mutate({
         id: runId,
         status: 'Completed',
-        results: collectedResults,
+        results: collectedResults, 
         progress: 100,
-        completedAt: serverTimestamp(),
-        overallAccuracy: Math.round(Math.random() * 30 + 70)
+        completedAt: serverTimestamp(), 
+        overallAccuracy: Math.round(Math.random() * 30 + 70) 
       });
       toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
 
@@ -458,7 +500,7 @@ export default function RunDetailsPage() {
       addLog(`Error during LLM categorization: ${error.message}`, "error");
       console.error("LLM Categorization Error: ", error);
       toast({ title: "LLM Categorization Error", description: error.message, variant: "destructive" });
-      updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM Categorization failed: ${error.message}` });
+      updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM Categorization failed: ${error.message}`, results: collectedResults });
     } finally {
       setIsSimulating(false);
     }
@@ -497,7 +539,6 @@ export default function RunDetailsPage() {
     );
   }
 
-  const perParameterChartData = mockPerParameterBreakdown.map(p => ({ name: p.parameter, Accuracy: p.accuracy }));
   const actualResultsToDisplay = runDetails.results || [];
   const displayedPreviewData = runDetails.previewedDatasetSample || [];
   const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]) : [];
@@ -699,22 +740,69 @@ export default function RunDetailsPage() {
         </TabsContent>
 
         <TabsContent value="breakdown">
-          <Card>
-            <CardHeader><CardTitle className="flex items-center"><BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/>Per-Parameter Accuracy</CardTitle><CardDescription>Accuracy breakdown. (Currently mock data)</CardDescription></CardHeader>
-            <CardContent>
-              <ChartContainer config={{ Accuracy: { label: "Accuracy", color: "hsl(var(--primary))" } }} className="h-[300px] sm:h-[400px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsBarChartElement data={perParameterChartData} layout="vertical" margin={{ right: 20, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" /><XAxis type="number" domain={[0, 100]} unit="%" />
-                    <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 10}}/>
-                    <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} />
-                    <Legend wrapperStyle={{fontSize: "0.75rem"}}/>
-                    <RechartsBar dataKey="Accuracy" fill="var(--primary)" radius={[0, 4, 4, 0]} barSize={20} />
-                  </RechartsBarChartElement>
-                </ResponsiveContainer>
-              </ChartContainer>
-            </CardContent>
-          </Card>
+          {metricsBreakdownData.length === 0 && (!runDetails?.results || runDetails.results.length === 0) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/>Metrics Breakdown
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">No results available to generate breakdown. Please complete the run or check configuration.</p>
+              </CardContent>
+            </Card>
+          )}
+          {metricsBreakdownData.map(paramChart => (
+            <Card key={paramChart.parameterId} className="mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/>
+                  {paramChart.parameterName}
+                </CardTitle>
+                <CardDescription>Distribution of chosen labels for this parameter.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {paramChart.data.length === 0 ? (
+                    <p className="text-muted-foreground">No data recorded for this parameter in the results.</p>
+                ) : (
+                  <ChartContainer
+                    config={{ count: { label: "Count" } }}
+                    className="w-full" 
+                    style={{ height: `${Math.max(150, paramChart.data.length * 40 + 60)}px` }} 
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsBarChartElement data={paramChart.data} layout="vertical" margin={{ right: 30, left: 70, top: 5, bottom: 20 }}> 
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
+                        <YAxis
+                          dataKey="labelName"
+                          type="category"
+                          width={120} 
+                          tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                          interval={0} 
+                        />
+                        <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} />
+                        <RechartsBar dataKey="count" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} barSize={20}>
+                        </RechartsBar>
+                      </RechartsBarChartElement>
+                    </ResponsiveContainer>
+                  </ChartContainer>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+          {runDetails?.results && runDetails.results.length > 0 && metricsBreakdownData.length === 0 && (
+             <Card>
+               <CardHeader>
+                 <CardTitle className="flex items-center">
+                   <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/>Metrics Breakdown
+                 </CardTitle>
+               </CardHeader>
+               <CardContent>
+                 <p className="text-muted-foreground">Results are present, but no specific label counts could be generated for the evaluated parameters. This might happen if the LLM responses did not match expected labels or if evaluation parameters were not configured with labels.</p>
+               </CardContent>
+             </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>
