@@ -132,10 +132,11 @@ const fetchSelectablePromptTemplates = async (userId: string): Promise<Selectabl
         id: vDoc.id,
         versionNumber: vDoc.data().versionNumber as number
       }))
-      .filter(v => v.versionNumber);
-    if (versions.length > 0) {
-        promptsData.push({ id: docSnap.id, name: data.name as string, versions });
-    }
+      .filter(v => v.versionNumber); // Ensure versionNumber exists
+    // Only include prompts that have at least one version
+    // if (versions.length > 0) { // Removed this filter
+    promptsData.push({ id: docSnap.id, name: data.name as string, versions });
+    // }
   }
   return promptsData;
 };
@@ -550,8 +551,10 @@ export default function EvalRunsPage() {
                     <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.modelConnectorName || run.modelConnectorId}>{run.modelConnectorName || run.modelConnectorId}</TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.promptName || run.promptId}>{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell>
                     <TableCell>
-                      {run.status === 'Completed' && run.overallAccuracy !== undefined ? `${run.overallAccuracy.toFixed(1)}%` :
-                       (run.status === 'Running' || run.status === 'Processing') && run.progress !== undefined ? <Progress value={run.progress} className="h-2 w-12 sm:w-20" /> : 'N/A'}
+                      {run.runType === 'Product' ? 'N/A' :
+                        (run.status === 'Completed' && run.overallAccuracy !== undefined ? `${run.overallAccuracy.toFixed(1)}%` :
+                        (run.status === 'Running' || run.status === 'Processing') && run.progress !== undefined ? <Progress value={run.progress} className="h-2 w-12 sm:w-20" /> : 'N/A')
+                      }
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{formatTimestamp(run.createdAt)}</TableCell>
                     <TableCell className="text-right">
