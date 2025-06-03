@@ -23,7 +23,8 @@ const MismatchDetailSchema = z.object({
 });
 export type MismatchDetail = z.infer<typeof MismatchDetailSchema>;
 
-export const SuggestRecursivePromptImprovementsInputSchema = z.object({
+// NOT EXPORTED ANYMORE
+const SuggestRecursivePromptImprovementsInputSchema = z.object({
   originalPromptTemplate: z.string().describe("The original prompt template text that was used in the evaluation."),
   mismatchDetails: z.array(MismatchDetailSchema).describe("An array of objects, each detailing a specific instance where the LLM's output did not match the ground truth."),
   productParametersSchema: z.string().optional().describe("A JSON string or textual description of the schema for product parameters used in the prompt (e.g., field names, types, descriptions)."),
@@ -31,7 +32,8 @@ export const SuggestRecursivePromptImprovementsInputSchema = z.object({
 });
 export type SuggestRecursivePromptImprovementsInput = z.infer<typeof SuggestRecursivePromptImprovementsInputSchema>;
 
-export const SuggestRecursivePromptImprovementsOutputSchema = z.object({
+// NOT EXPORTED ANYMORE
+const SuggestRecursivePromptImprovementsOutputSchema = z.object({
   suggestedPromptTemplate: z.string().describe("The full text of the suggested, improved prompt template."),
   reasoning: z.string().describe("A step-by-step explanation of why the suggested changes were made, referencing specific mismatches or patterns observed."),
 });
@@ -95,7 +97,7 @@ const suggestionPrompt = ai.definePrompt({
   output: {schema: SuggestRecursivePromptImprovementsOutputSchema},
   prompt: handlebarsPrompt,
   config: {
-    temperature: 0.4, 
+    temperature: 0.4,
   },
 });
 
@@ -112,6 +114,7 @@ const internalSuggestRecursivePromptImprovementsFlow = ai.defineFlow(
     }
     // console.log('internalSuggestRecursivePromptImprovementsFlow LLM usage:', usage);
     // console.log('internalSuggestRecursivePromptImprovementsFlow LLM output:', JSON.stringify(output, null, 2));
-    return output;
+    return output!;
   }
 );
+
