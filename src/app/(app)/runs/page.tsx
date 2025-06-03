@@ -64,16 +64,15 @@ interface EvalRun {
   runOnNRows: number;
 
   // Results
-  overallAccuracy?: number;
   progress?: number;
-  results?: any[]; // Consider a more specific type later based on EvalRunResultItem from [runId]/page.tsx
+  results?: any[]; 
   previewedDatasetSample?: Array<Record<string, any>>;
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
-  userId?: string; // To ensure user-specific data
+  userId?: string; 
 }
 
-type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'overallAccuracy' | 'errorMessage' | 'status' | 'userId' | 'previewedDatasetSample'> & {
+type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'errorMessage' | 'status' | 'userId' | 'previewedDatasetSample'> & {
   createdAt: FieldValue;
   updatedAt: FieldValue;
   status: 'Pending';
@@ -524,7 +523,6 @@ export default function EvalRunsPage() {
                   <TableHead className="hidden md:table-cell w-auto">Dataset</TableHead>
                   <TableHead className="hidden lg:table-cell w-auto">Model</TableHead>
                   <TableHead className="hidden lg:table-cell w-auto">Prompt</TableHead>
-                  <TableHead className="w-[100px] sm:w-[120px]">Accuracy</TableHead>
                   <TableHead className="hidden sm:table-cell w-[100px]">Created At</TableHead>
                   <TableHead className="text-right w-[80px]">Actions</TableHead>
               </TableRow></TableHeader>
@@ -545,12 +543,6 @@ export default function EvalRunsPage() {
                     <TableCell className="text-sm text-muted-foreground hidden md:table-cell max-w-[100px] truncate" title={run.datasetName || run.datasetId}>{run.datasetName || run.datasetId}{run.datasetVersionNumber ? ` (v${run.datasetVersionNumber})` : ''}</TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.modelConnectorName || run.modelConnectorId}>{run.modelConnectorName || run.modelConnectorId}</TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.promptName || run.promptId}>{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell>
-                    <TableCell>
-                      {run.runType === 'Product' ? 'N/A' :
-                        (run.status === 'Completed' && run.overallAccuracy !== undefined ? `${run.overallAccuracy.toFixed(1)}%` :
-                        (run.status === 'Running' || run.status === 'Processing') && run.progress !== undefined ? <Progress value={run.progress} className="h-2 w-12 sm:w-20" /> : 'N/A')
-                      }
-                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{formatTimestamp(run.createdAt)}</TableCell>
                     <TableCell className="text-right">
                         <div className="flex justify-end items-center gap-0 sm:gap-1">

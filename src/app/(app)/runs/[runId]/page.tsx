@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck } from "lucide-react";
+import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck, Info } from "lucide-react";
 import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBar, ResponsiveContainer } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
@@ -52,7 +52,6 @@ interface EvalRun {
   selectedEvalParamIds: string[];
   selectedEvalParamNames?: string[];
   runOnNRows: number;
-  overallAccuracy?: number;
   progress?: number;
   results?: EvalRunResultItem[];
   previewedDatasetSample?: Array<Record<string, any>>; // Stores raw row from sheet, including prefixed GT columns
@@ -80,6 +79,8 @@ interface ParameterChartData {
   parameterId: string;
   parameterName: string;
   data: Array<{ labelName: string; count: number }>;
+  accuracy?: number;
+  totalCompared?: number;
 }
 
 
@@ -244,12 +245,26 @@ export default function RunDetailsPage() {
             }
           });
         }
+        
+        let correctCountForParam = 0;
+        let totalComparedForParam = 0;
 
         runDetails.results!.forEach(resultItem => {
           if (resultItem.judgeLlmOutput && typeof resultItem.judgeLlmOutput === 'object') {
               const llmOutputForParam = resultItem.judgeLlmOutput[paramDetail.id];
               if (llmOutputForParam?.chosenLabel && typeof llmOutputForParam.chosenLabel === 'string') {
-              labelCounts[llmOutputForParam.chosenLabel] = (labelCounts[llmOutputForParam.chosenLabel] || 0) + 1;
+                const chosenLabel = llmOutputForParam.chosenLabel;
+                labelCounts[chosenLabel] = (labelCounts[chosenLabel] || 0) + 1;
+
+                if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth) {
+                    const gtLabel = resultItem.groundTruth[paramDetail.id];
+                    if (gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '') {
+                        totalComparedForParam++;
+                        if (String(chosenLabel).toLowerCase() === String(gtLabel).toLowerCase()) {
+                            correctCountForParam++;
+                        }
+                    }
+                }
               }
           }
         });
@@ -258,12 +273,18 @@ export default function RunDetailsPage() {
           .map(([labelName, count]) => ({ labelName, count }))
           .filter(item => item.count > 0 || (paramDetail.labels && paramDetail.labels.some(l => l.name === item.labelName)));
 
+        const paramAccuracy = runDetails.runType === 'GroundTruth' && totalComparedForParam > 0
+          ? (correctCountForParam / totalComparedForParam) * 100
+          : undefined;
+
         return {
           parameterId: paramDetail.id,
           parameterName: paramDetail.name,
           data: chartDataEntries.sort((a, b) => b.count - a.count),
+          accuracy: paramAccuracy,
+          totalCompared: runDetails.runType === 'GroundTruth' ? totalComparedForParam : undefined,
         };
-      }).filter(paramChart => paramChart.data.length > 0);
+      });
 
       setMetricsBreakdownData(newMetricsBreakdownData);
     } else {
@@ -426,7 +447,7 @@ export default function RunDetailsPage() {
 
 
     try {
-      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, overallAccuracy: runDetails.runType === 'Product' ? undefined : 0 });
+      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null });
       addLog("Status set to Processing.");
 
       const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
@@ -511,38 +532,12 @@ export default function RunDetailsPage() {
                 id: runId,
                 progress: currentProgress,
                 results: [...collectedResults],
-                status: (i+1) === rowsToProcess ? 'Processing' : 'Processing' // Keep as processing until final update
+                status: (i+1) === rowsToProcess ? 'Processing' : 'Processing' 
             });
         }
       }
-      addLog("LLM Categorization completed for all previewed rows. Calculating metrics...");
+      addLog("LLM Categorization completed for all previewed rows. Metrics will be calculated and shown in Breakdown tab.");
 
-      let finalOverallAccuracy = undefined;
-      if (runDetails.runType === 'GroundTruth') {
-        let totalCorrect = 0;
-        let totalComparisons = 0;
-        collectedResults.forEach(res => {
-          if (res.groundTruth) {
-            for (const evalParamId in res.judgeLlmOutput) {
-              if (res.groundTruth.hasOwnProperty(evalParamId) && 
-                  res.groundTruth[evalParamId] !== undefined && 
-                  res.groundTruth[evalParamId] !== null && 
-                  String(res.groundTruth[evalParamId]).trim() !== '') {
-                totalComparisons++;
-                const llmLabel = res.judgeLlmOutput[evalParamId]?.chosenLabel;
-                const gtLabel = res.groundTruth[evalParamId];
-                if (llmLabel && gtLabel && String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase()) {
-                  totalCorrect++;
-                }
-              }
-            }
-          }
-        });
-        finalOverallAccuracy = totalComparisons > 0 ? (totalCorrect / totalComparisons) * 100 : 0;
-        addLog(`Ground Truth Accuracy: ${finalOverallAccuracy.toFixed(2)}% (${totalCorrect}/${totalComparisons})`);
-      } else {
-        addLog(`Product Run: Accuracy calculation skipped.`);
-      }
 
       updateRunMutation.mutate({
         id: runId,
@@ -550,7 +545,6 @@ export default function RunDetailsPage() {
         results: collectedResults,
         progress: 100,
         completedAt: serverTimestamp(),
-        overallAccuracy: finalOverallAccuracy,
       });
       toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
 
@@ -611,9 +605,9 @@ export default function RunDetailsPage() {
       <div className="space-y-6 p-4 md:p-6">
         <Skeleton className="h-12 w-full md:w-1/3 mb-4" />
         <Skeleton className="h-24 w-full mb-6" />
-        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6">
           <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" />
-          <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
         </div>
         <Skeleton className="h-96 w-full" />
       </div>
@@ -732,9 +726,8 @@ export default function RunDetailsPage() {
         )}
       </Card>
 
-      <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <Card><CardHeader className="pb-2"><CardDescription>{runDetails.runType === 'GroundTruth' ? 'Overall Accuracy (vs GT)' : 'Overall Score (N/A)'}</CardDescription><CardTitle className="text-3xl md:text-4xl">{runDetails.overallAccuracy !== undefined ? `${runDetails.overallAccuracy.toFixed(1)}%` : 'N/A'}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.results?.length || 0} records processed</div></CardContent></Card>
-        <Card><CardHeader className="pb-2"><CardDescription>Status</CardDescription><CardTitle className="text-2xl md:text-3xl">{getStatusBadge(runDetails.status)}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.progress !== undefined && (runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress}% complete` : `Rows to process: ${runDetails.previewedDatasetSample?.length || 'N/A (Fetch sample first)'}`}</div></CardContent></Card>
+      <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <Card><CardHeader className="pb-2"><CardDescription>Status</CardDescription><CardTitle className="text-2xl md:text-3xl">{getStatusBadge(runDetails.status)}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.progress !== undefined && (runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress}% complete` : `Rows in sample: ${runDetails.previewedDatasetSample?.length || 'N/A (Fetch sample first)'}`}</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardDescription>Duration</CardDescription><CardTitle className="text-3xl md:text-3xl">{runDetails.summaryMetrics?.duration || (runDetails.status === 'Completed' && runDetails.createdAt && runDetails.completedAt ? `${((runDetails.completedAt.toMillis() - runDetails.createdAt.toMillis()) / 1000).toFixed(1)}s` : 'N/A')}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">&nbsp;</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardDescription>Estimated Cost</CardDescription><CardTitle className="text-3xl md:text-3xl">{runDetails.summaryMetrics?.cost || 'N/A'}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">&nbsp;</div></CardContent></Card>
       </div>
@@ -879,7 +872,19 @@ export default function RunDetailsPage() {
                   <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/>
                   {paramChart.parameterName}
                 </CardTitle>
-                <CardDescription>Distribution of chosen labels for this parameter.</CardDescription>
+                 {runDetails.runType === 'GroundTruth' && paramChart.accuracy !== undefined && (
+                    <CardDescription className="flex items-center mt-1">
+                      <CheckCheck className="h-4 w-4 mr-1.5 text-green-600" /> 
+                      Accuracy: {paramChart.accuracy.toFixed(1)}% 
+                      {paramChart.totalCompared !== undefined && ` (${(paramChart.accuracy/100 * paramChart.totalCompared).toFixed(0)}/${paramChart.totalCompared} correct)`}
+                    </CardDescription>
+                )}
+                 {runDetails.runType === 'Product' && (
+                    <CardDescription className="flex items-center mt-1">
+                        <Info className="h-4 w-4 mr-1.5 text-blue-600" />
+                        Label distribution for this Product run.
+                    </CardDescription>
+                 )}
               </CardHeader>
               <CardContent>
                 {paramChart.data.length === 0 ? (
