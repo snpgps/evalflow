@@ -599,16 +599,26 @@ export default function DatasetsPage() {
             </CardHeader>
             <CardContent>
               {dataset.versions.length === 0 ? (<p className="text-sm text-muted-foreground">No versions uploaded.</p>) : (
-                <Table>
-                  <TableHeader><TableRow><TableHead>Ver.</TableHead><TableHead>File Name</TableHead><TableHead className="hidden sm:table-cell">Date</TableHead><TableHead className="hidden md:table-cell">Size</TableHead><TableHead>Source</TableHead><TableHead>Mapping</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <Table className="table-fixed">
+                  <TableHeader><TableRow>
+                    <TableHead className="w-[60px] sm:w-[80px]">Ver.</TableHead>
+                    <TableHead className="w-2/5 sm:w-1/3">File Name</TableHead>
+                    <TableHead className="hidden sm:table-cell w-1/5">Date</TableHead>
+                    <TableHead className="hidden md:table-cell w-[100px]">Size</TableHead>
+                    <TableHead className="w-1/5 sm:w-[100px]">Source</TableHead>
+                    <TableHead className="w-[100px] sm:w-[120px]">Mapping</TableHead>
+                    <TableHead className="text-right w-[80px] sm:w-[120px]">Actions</TableHead>
+                  </TableRow></TableHeader>
                   <TableBody>
                     {dataset.versions.map((version) => (
                       <TableRow key={version.id} className="hover:bg-muted/50">
                         <TableCell><Badge variant="secondary">v{version.versionNumber}</Badge></TableCell>
-                        <TableCell className="font-medium max-w-[100px] sm:max-w-[150px] truncate" title={version.fileName}>{version.fileName}</TableCell>
-                        <TableCell className="hidden sm:table-cell">{version.uploadDate}</TableCell>
-                        <TableCell className="hidden md:table-cell">{version.size}</TableCell>
-                        <TableCell>{version.selectedSheetName || (version.fileName.toLowerCase().endsWith('.csv') && version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "CSV" : "N/A")}</TableCell>
+                        <TableCell className="font-medium truncate" title={version.fileName}>{version.fileName}</TableCell>
+                        <TableCell className="hidden sm:table-cell truncate" title={version.uploadDate}>{version.uploadDate}</TableCell>
+                        <TableCell className="hidden md:table-cell truncate" title={version.size}>{version.size}</TableCell>
+                        <TableCell className="truncate" title={version.selectedSheetName || (version.fileName.toLowerCase().endsWith('.csv') && version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "CSV" : "N/A")}>
+                          {version.selectedSheetName || (version.fileName.toLowerCase().endsWith('.csv') && version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "CSV" : "N/A")}
+                        </TableCell>
                         <TableCell>
                           {version.columnMapping && Object.keys(version.columnMapping).length > 0
                             ? <Badge variant="default" className="bg-green-500 hover:bg-green-600">Configured</Badge>
@@ -616,8 +626,8 @@ export default function DatasetsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                             <div className="flex flex-col sm:flex-row justify-end items-end sm:items-center gap-1">
-                               <Button variant="outline" size="sm" onClick={() => openMappingDialog(dataset.id, version)} disabled={!currentUserId || !version.storagePath}>
-                                 <Settings2 className="h-4 w-4 mr-0 sm:mr-2"/> <span className="hidden sm:inline">{version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "Edit Map" : "Set Map"}</span>
+                               <Button variant="outline" size="sm" onClick={() => openMappingDialog(dataset.id, version)} disabled={!currentUserId || !version.storagePath} className="w-full sm:w-auto">
+                                 <Settings2 className="h-4 w-4 mr-0 sm:mr-1"/> <span className="hidden sm:inline">{version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "Edit Map" : "Set Map"}</span>
                                </Button>
                                <Button variant="ghost" size="icon" className="hidden" title="Review Data (Not Implemented)"><Eye className="h-4 w-4" /></Button>
                                <Button variant="ghost" size="icon" className="hidden" title="Download Version (Not Implemented)"><Download className="h-4 w-4" /></Button>

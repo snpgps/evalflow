@@ -286,33 +286,33 @@ export default function ModelConnectorsPage() {
               <p className="text-sm">Click "Add New Connector" to get started.</p>
             </div>
           ) : (
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="hidden sm:table-cell">Provider</TableHead>
-                  <TableHead>API Key</TableHead>
-                  <TableHead className="hidden md:table-cell">Configuration</TableHead>
-                  <TableHead className="text-right w-auto md:w-[120px]">Actions</TableHead>
+                  <TableHead className="w-1/4 sm:w-1/5">Name</TableHead>
+                  <TableHead className="hidden sm:table-cell w-1/5">Provider</TableHead>
+                  <TableHead className="w-2/5 sm:w-1/3">API Key</TableHead>
+                  <TableHead className="hidden md:table-cell w-1/4">Configuration</TableHead>
+                  <TableHead className="text-right w-[80px] sm:w-[100px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {connectors.map((conn) => (
                   <TableRow key={conn.id} className="hover:bg-muted/50">
-                    <TableCell className="font-medium">{conn.name}</TableCell>
-                    <TableCell className="hidden sm:table-cell">{conn.provider}</TableCell>
-                    <TableCell>
+                    <TableCell className="font-medium truncate" title={conn.name}>{conn.name}</TableCell>
+                    <TableCell className="hidden sm:table-cell truncate" title={conn.provider}>{conn.provider}</TableCell>
+                    <TableCell className="truncate">
                       <div className="flex items-center">
-                        <span>{showApiKey[conn.id] ? conn.apiKey : '••••••••••••••••'}</span>
-                        <Button variant="ghost" size="icon" onClick={() => toggleApiKeyVisibility(conn.id)} className="ml-2 h-7 w-7">
+                        <span className="truncate">{showApiKey[conn.id] ? conn.apiKey : '••••••••••••••••'}</span>
+                        <Button variant="ghost" size="icon" onClick={() => toggleApiKeyVisibility(conn.id)} className="ml-1 sm:ml-2 h-7 w-7 shrink-0">
                           {showApiKey[conn.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate hidden md:table-cell" title={conn.config}>{conn.config || 'N/A'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden md:table-cell truncate" title={conn.config}>{conn.config || 'N/A'}</TableCell>
                     <TableCell className="text-right">
-                        <div className="flex justify-end items-center gap-0 sm:gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} className="mr-0 sm:mr-2" disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
+                        <div className="flex justify-end items-center gap-0">
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
                             <Edit2 className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90" disabled={!currentUserId || deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id}>
