@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { PlusCircle, PlayCircle, Eye, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { PlusCircle, PlayCircle, Eye, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, Loader2, TestTube2, CheckCheck } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
@@ -25,7 +26,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
 
 // Interfaces for dropdown data
-interface SelectableDatasetVersion { id: string; versionNumber: number; fileName?: string; }
+interface SelectableDatasetVersion { id: string; versionNumber: number; fileName?: string; groundTruthMapping?: Record<string, string>; }
 interface SelectableDataset { id: string; name: string; versions: SelectableDatasetVersion[]; }
 interface SelectableModelConnector { id: string; name: string; }
 interface SelectablePromptVersion { id: string; versionNumber: number;}
@@ -37,7 +38,8 @@ interface SelectableEvalParameter { id: string; name: string; }
 interface EvalRun {
   id: string; // Firestore document ID
   name: string;
-  status: 'Completed' | 'Running' | 'Pending' | 'Failed' | 'Processing';
+  runType: 'Product' | 'GroundTruth';
+  status: 'Completed' | 'Running' | 'Pending' | 'Failed' | 'Processing' | 'DataPreviewed';
   createdAt: Timestamp;
   updatedAt?: Timestamp;
   completedAt?: Timestamp;
@@ -64,13 +66,14 @@ interface EvalRun {
   // Results
   overallAccuracy?: number;
   progress?: number;
-  results?: any[];
+  results?: any[]; // Consider a more specific type later based on EvalRunResultItem from [runId]/page.tsx
+  previewedDatasetSample?: Array<Record<string, any>>;
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
   userId?: string; // To ensure user-specific data
 }
 
-type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'overallAccuracy' | 'errorMessage' | 'status' | 'userId'> & {
+type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'overallAccuracy' | 'errorMessage' | 'status' | 'userId' | 'previewedDatasetSample'> & {
   createdAt: FieldValue;
   updatedAt: FieldValue;
   status: 'Pending';
@@ -93,12 +96,13 @@ const fetchSelectableDatasets = async (userId: string): Promise<SelectableDatase
     const versions: SelectableDatasetVersion[] = [];
     for (const vDoc of versionsSnapshot.docs) {
         const versionData = vDoc.data();
-        // Only include versions that have a columnMapping
+        // Only include versions that have a columnMapping for product parameters
         if (versionData.columnMapping && Object.keys(versionData.columnMapping).length > 0) {
             versions.push({
                  id: vDoc.id,
                  versionNumber: versionData.versionNumber as number,
-                 fileName: versionData.fileName as string
+                 fileName: versionData.fileName as string,
+                 groundTruthMapping: versionData.groundTruthMapping as Record<string, string> | undefined
             });
         }
     }
@@ -196,13 +200,14 @@ export default function EvalRunsPage() {
 
   const [isNewRunDialogOpen, setIsNewRunDialogOpen] = useState(false);
   const [newRunName, setNewRunName] = useState('');
+  const [newRunType, setNewRunType] = useState<'Product' | 'GroundTruth'>('Product');
   const [selectedDatasetId, setSelectedDatasetId] = useState('');
   const [selectedDatasetVersionId, setSelectedDatasetVersionId] = useState('');
   const [selectedConnectorId, setSelectedConnectorId] = useState('');
   const [selectedPromptId, setSelectedPromptId] = useState('');
   const [selectedPromptVersionId, setSelectedPromptVersionId] = useState('');
   const [selectedEvalParamIds, setSelectedEvalParamIds] = useState<string[]>([]);
-  const [runOnNRows, setRunOnNRows] = useState<number>(0);
+  const [runOnNRows, setRunOnNRows] = useState<number>(0); // 0 means all
 
 
   const addEvalRunMutation = useMutation<string, Error, NewEvalRunPayload>({
@@ -232,8 +237,17 @@ export default function EvalRunsPage() {
 
   const deleteEvalRunMutation = useMutation<void, Error, string>({
     mutationFn: async (runId: string) => {
-        if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) {
+        throw new Error("User not identified for delete operation.");
+      }
+      try {
         await deleteDoc(doc(db, 'users', currentUserId, 'evaluationRuns', runId));
+      } catch (e: unknown) {
+        if (e instanceof Error) {
+          throw new Error(`Failed to delete run from Firestore: ${e.message}`);
+        }
+        throw new Error(`An unknown error occurred while deleting run ${runId} from Firestore.`);
+      }
     },
     onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
@@ -267,10 +281,15 @@ export default function EvalRunsPage() {
       toast({ title: "Validation Error", description: "Number of rows to test cannot be negative.", variant: "destructive" });
       return;
     }
+    if (newRunType === 'GroundTruth' && (!datasetVersion.groundTruthMapping || Object.keys(datasetVersion.groundTruthMapping).length === 0)) {
+      toast({ title: "Configuration Warning", description: "For Ground Truth runs, the selected dataset version should have Ground Truth columns mapped. Please check dataset mapping.", variant: "destructive" });
+      // Allow creation but with a warning, or could prevent it. For now, allow.
+    }
 
 
     const newRunData: NewEvalRunPayload = {
       name: newRunName.trim(),
+      runType: newRunType,
       status: 'Pending',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -294,6 +313,7 @@ export default function EvalRunsPage() {
 
   const resetNewRunForm = () => {
     setNewRunName('');
+    setNewRunType('Product');
     setSelectedDatasetId('');
     setSelectedDatasetVersionId('');
     setSelectedConnectorId('');
@@ -315,6 +335,7 @@ export default function EvalRunsPage() {
       case 'Running': return <Badge variant="default" className="bg-blue-500 hover:bg-blue-600"><Clock className="mr-1 h-3 w-3 animate-spin" />Running</Badge>;
       case 'Processing': return <Badge variant="default" className="bg-purple-500 hover:bg-purple-600"><Loader2 className="mr-1 h-3 w-3 animate-spin" />Processing</Badge>;
       case 'Pending': return <Badge variant="secondary"><Clock className="mr-1 h-3 w-3" />Pending</Badge>;
+      case 'DataPreviewed': return <Badge variant="outline" className="border-blue-500 text-blue-600"><Loader2 className="mr-1 h-3 w-3" />Data Previewed</Badge>;
       case 'Failed': return <Badge variant="destructive"><XCircle className="mr-1 h-3 w-3" />Failed</Badge>;
       default: return <Badge variant="outline">{status}</Badge>;
     }
@@ -338,7 +359,7 @@ export default function EvalRunsPage() {
             <PlayCircle className="h-7 w-7 text-primary" />
             <div>
               <CardTitle className="text-xl md:text-2xl font-headline">Evaluation Runs</CardTitle>
-              <CardDescription>Manage and track your AI model evaluation runs.</CardDescription>
+              <CardDescription>Manage and track your AI model evaluation runs. Choose between Product or Ground Truth comparison.</CardDescription>
             </div>
           </div>
            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
@@ -361,6 +382,24 @@ export default function EvalRunsPage() {
                       <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
 
                       <div>
+                        <Label htmlFor="run-type">Run Type</Label>
+                        <RadioGroup value={newRunType} onValueChange={(value: 'Product' | 'GroundTruth') => setNewRunType(value)} className="flex space-x-4 mt-1">
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="Product" id="type-product" />
+                            <Label htmlFor="type-product" className="font-normal">Product Run</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="GroundTruth" id="type-gt" />
+                            <Label htmlFor="type-gt" className="font-normal">Ground Truth Run</Label>
+                          </div>
+                        </RadioGroup>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Product runs evaluate outputs. Ground Truth runs compare outputs to known correct labels from your dataset.
+                        </p>
+                      </div>
+
+
+                      <div>
                         <Label htmlFor="run-dataset">Dataset (Mapped Versions Only)</Label>
                         <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required>
                           <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger>
@@ -374,6 +413,10 @@ export default function EvalRunsPage() {
                             <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger>
                             <SelectContent>{datasets.find(d => d.id === selectedDatasetId)?.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent>
                           </Select>
+                           {newRunType === 'GroundTruth' && selectedDatasetVersionId && 
+                            !(datasets.find(d => d.id === selectedDatasetId)?.versions.find(v => v.id === selectedDatasetVersionId)?.groundTruthMapping && Object.keys(datasets.find(d => d.id === selectedDatasetId)!.versions.find(v => v.id === selectedDatasetVersionId)!.groundTruthMapping!).length > 0) && (
+                              <p className="text-xs text-amber-600 mt-1">Warning: This version has no Ground Truth columns mapped. Accuracy will be 0%.</p>
+                           )}
                         </div>
                       )}
 
@@ -426,7 +469,7 @@ export default function EvalRunsPage() {
                       <div>
                         <Label htmlFor="run-nrows">Test on first N rows (0 for all)</Label>
                         <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => setRunOnNRows(parseInt(e.target.value, 10))} min="0" />
-                        <p className="text-xs text-muted-foreground mt-1">Enter 1 to test on the first row only. 0 uses all (mock) data or up to default limit.</p>
+                        <p className="text-xs text-muted-foreground mt-1">For Ground Truth runs, this is the number of rows used for comparison. 0 uses all available mapped rows (capped for preview on run details page).</p>
                       </div>
                     </form>
                   </div>
@@ -470,6 +513,7 @@ export default function EvalRunsPage() {
               <TableHeader><TableRow>
                   <TableHead className="w-[120px] sm:w-auto">Name</TableHead>
                   <TableHead className="w-[120px]">Status</TableHead>
+                  <TableHead className="hidden md:table-cell w-[100px]">Type</TableHead>
                   <TableHead className="hidden md:table-cell w-auto">Dataset</TableHead>
                   <TableHead className="hidden lg:table-cell w-auto">Model</TableHead>
                   <TableHead className="hidden lg:table-cell w-auto">Prompt</TableHead>
@@ -484,6 +528,13 @@ export default function EvalRunsPage() {
                       <Link href={`/runs/${run.id}`} className="hover:underline" title={run.name}>{run.name}</Link>
                     </TableCell>
                     <TableCell>{getStatusBadge(run.status)}</TableCell>
+                    <TableCell className="text-sm hidden md:table-cell">
+                      {run.runType === 'GroundTruth' ? (
+                        <Badge variant="outline" className="border-green-500 text-green-700"><CheckCheck className="mr-1 h-3 w-3" />Ground Truth</Badge>
+                      ) : (
+                        <Badge variant="outline"><TestTube2 className="mr-1 h-3 w-3" />Product</Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden md:table-cell max-w-[100px] truncate" title={run.datasetName || run.datasetId}>{run.datasetName || run.datasetId}{run.datasetVersionNumber ? ` (v${run.datasetVersionNumber})` : ''}</TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.modelConnectorName || run.modelConnectorId}>{run.modelConnectorName || run.modelConnectorId}</TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.promptName || run.promptId}>{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell>
@@ -512,3 +563,4 @@ export default function EvalRunsPage() {
     </div>
   );
 }
+

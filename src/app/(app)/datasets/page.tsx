@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2, LinkIcon, Loader2 } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, Database, FileUp, Download, Eye, FileSpreadsheet, AlertTriangle, SheetIcon, Settings2, LinkIcon, Loader2, CheckSquare } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { db, storage } from '@/lib/firebase';
 import {
@@ -22,6 +22,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import * as XLSX from 'xlsx';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import type { EvalParameterForPrompts as EvaluationParameterForMapping } from '@/app/(app)/prompts/page'; // Re-using from prompts for now
 
 // Interfaces for data structure
 interface DatasetVersion {
@@ -33,7 +34,8 @@ interface DatasetVersion {
   records: number;
   storagePath?: string;
   selectedSheetName?: string | null;
-  columnMapping?: Record<string, string>;
+  columnMapping?: Record<string, string>; // Product param name -> Sheet column name
+  groundTruthMapping?: Record<string, string>; // Eval param ID -> Sheet column name
   createdAt?: Timestamp;
 }
 
@@ -47,13 +49,14 @@ interface Dataset {
 
 type NewDatasetData = Omit<Dataset, 'id' | 'versions' | 'createdAt'> & { createdAt: FieldValue };
 type DatasetUpdatePayload = { id: string } & Partial<Omit<Dataset, 'id' | 'versions' | 'createdAt'>>;
-type NewDatasetVersionFirestoreData = Omit<DatasetVersion, 'id' | 'createdAt' | 'selectedSheetName' | 'columnMapping'> & { createdAt: FieldValue };
-type UpdateVersionMappingPayload = { datasetId: string; versionId: string; selectedSheetName: string | null; columnMapping: Record<string, string> };
+type NewDatasetVersionFirestoreData = Omit<DatasetVersion, 'id' | 'createdAt' | 'selectedSheetName' | 'columnMapping' | 'groundTruthMapping'> & { createdAt: FieldValue };
+type UpdateVersionMappingPayload = { datasetId: string; versionId: string; selectedSheetName: string | null; columnMapping: Record<string, string>; groundTruthMapping: Record<string, string> };
 
 interface ProductParameterForMapping {
   id: string;
   name: string;
 }
+
 
 const fetchDatasetsWithVersions = async (userId: string | null): Promise<Dataset[]> => {
   if (!userId) return [];
@@ -94,6 +97,23 @@ const fetchProductParametersForMapping = async (userId: string | null): Promise<
   }));
 };
 
+// Fetch Evaluation Parameters for Ground Truth Mapping
+const fetchEvaluationParametersForGtMapping = async (userId: string | null): Promise<EvaluationParameterForMapping[]> => {
+  if (!userId) return [];
+  const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
+  const q = query(evalParamsCollectionRef, orderBy('createdAt', 'asc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => {
+    const data = docSnap.data();
+    return {
+      id: docSnap.id,
+      name: data.name || 'Unnamed Eval Param',
+      definition: data.definition || '', // Not strictly needed for mapping but good for consistency
+      // categorizationLabels and requiresRationale not needed for mapping UI here
+    };
+  });
+};
+
 
 export default function DatasetsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -122,6 +142,13 @@ export default function DatasetsPage() {
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
+  const { data: evaluationParametersForGtMapping = [], isLoading: isLoadingEvalParamsForGt } = useQuery<EvaluationParameterForMapping[], Error>({
+    queryKey: ['evaluationParametersForGtMapping', currentUserId],
+    queryFn: () => fetchEvaluationParametersForGtMapping(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
+  });
+
+
   const [isDatasetDialogOpen, setIsDatasetDialogOpen] = useState(false);
   const [editingDataset, setEditingDataset] = useState<Dataset | null>(null);
   const [datasetName, setDatasetName] = useState('');
@@ -139,6 +166,8 @@ export default function DatasetsPage() {
   const [mappingDialogSelectedSheet, setMappingDialogSelectedSheet] = useState<string>('');
   const [mappingDialogSheetColumnHeaders, setMappingDialogSheetColumnHeaders] = useState<string[]>([]);
   const [mappingDialogCurrentColumnMapping, setMappingDialogCurrentColumnMapping] = useState<Record<string, string>>({});
+  const [mappingDialogCurrentGtMapping, setMappingDialogCurrentGtMapping] = useState<Record<string, string>>({});
+
 
   const addDatasetMutation = useMutation<void, Error, NewDatasetData>({
     mutationFn: async (newDataset) => {
@@ -228,10 +257,10 @@ export default function DatasetsPage() {
   });
 
   const updateVersionMappingMutation = useMutation<void, Error, UpdateVersionMappingPayload>({
-    mutationFn: async ({ datasetId, versionId, selectedSheetName, columnMapping }) => {
+    mutationFn: async ({ datasetId, versionId, selectedSheetName, columnMapping, groundTruthMapping }) => {
       if (!currentUserId) throw new Error("User not identified for updating mapping.");
       const versionDocRef = doc(db, 'users', currentUserId, 'datasets', datasetId, 'versions', versionId);
-      await updateDoc(versionDocRef, { selectedSheetName, columnMapping });
+      await updateDoc(versionDocRef, { selectedSheetName, columnMapping, groundTruthMapping });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['datasets', currentUserId] });
@@ -262,6 +291,7 @@ export default function DatasetsPage() {
     setMappingDialogSelectedSheet('');
     setMappingDialogSheetColumnHeaders([]);
     setMappingDialogCurrentColumnMapping({});
+    setMappingDialogCurrentGtMapping({}); // Reset GT mapping
     setIsLoadingMappingData(false);
   };
 
@@ -286,7 +316,7 @@ export default function DatasetsPage() {
       fileName: selectedFileUpload.name,
       uploadDate: new Date().toISOString().split('T')[0],
       size: `${(selectedFileUpload.size / (1024 * 1024)).toFixed(2)}MB`,
-      records: 0,
+      records: 0, // This might be updated after parsing if needed, or kept simple
       createdAt: serverTimestamp(),
     };
 
@@ -297,6 +327,8 @@ export default function DatasetsPage() {
     setMappingDialogSheetNames([]);
     setMappingDialogSelectedSheet('');
     setMappingDialogSheetColumnHeaders([]);
+    // Do NOT reset mappingDialogCurrentColumnMapping or mappingDialogCurrentGtMapping here
+    // as they might be pre-filled from existing version data.
 
     const fileName = fileData.name.toLowerCase();
 
@@ -327,8 +359,9 @@ export default function DatasetsPage() {
                 if (headers.length === 0) {
                      alert("CSV file has a header row, but no valid column names could be extracted or all are empty.");
                 }
-                setMappingDialogSelectedSheet(fileData.name);
+                setMappingDialogSelectedSheet(fileData.name); // For CSV, sheet name is essentially file name
 
+                // Auto-map product parameters if no existing mapping or if sheet changed
                 if (Object.keys(mappingDialogCurrentColumnMapping).length === 0) {
                     const initialMapping: Record<string, string> = {};
                     productParametersForMapping.forEach(param => {
@@ -337,6 +370,16 @@ export default function DatasetsPage() {
                     });
                     setMappingDialogCurrentColumnMapping(initialMapping);
                 }
+                // Auto-map ground truth parameters if no existing mapping
+                if (Object.keys(mappingDialogCurrentGtMapping).length === 0) {
+                    const initialGtMapping: Record<string, string> = {};
+                    evaluationParametersForGtMapping.forEach(evalParam => {
+                        const foundColumn = headers.find(h => String(h).toLowerCase() === evalParam.name.toLowerCase());
+                        if (foundColumn) initialGtMapping[evalParam.id] = String(foundColumn);
+                    });
+                    setMappingDialogCurrentGtMapping(initialGtMapping);
+                }
+
 
             } else {
                  alert("CSV file appears to be empty or has no header row.");
@@ -350,7 +393,7 @@ export default function DatasetsPage() {
 
   const handleMappingDialogSheetSelect = async (sheetName: string) => {
     setMappingDialogSelectedSheet(sheetName);
-    setMappingDialogSheetColumnHeaders([]);
+    setMappingDialogSheetColumnHeaders([]); // Reset headers when sheet changes
 
     if (mappingDialogFileData && mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && sheetName) {
         try {
@@ -371,6 +414,7 @@ export default function DatasetsPage() {
                      alert(`Sheet '${sheetName}' appears to be empty or has no header row.`);
                 }
 
+                // Auto-map product parameters if no existing mapping or if sheet changed
                 if (Object.keys(mappingDialogCurrentColumnMapping).length === 0 || (versionBeingMapped && versionBeingMapped.version.selectedSheetName !== sheetName)) {
                     const initialMapping: Record<string, string> = {};
                     productParametersForMapping.forEach(param => {
@@ -378,6 +422,15 @@ export default function DatasetsPage() {
                         if (foundColumn) initialMapping[param.name] = String(foundColumn);
                     });
                     setMappingDialogCurrentColumnMapping(initialMapping);
+                }
+                 // Auto-map ground truth parameters if no existing mapping or if sheet changed
+                if (Object.keys(mappingDialogCurrentGtMapping).length === 0 || (versionBeingMapped && versionBeingMapped.version.selectedSheetName !== sheetName)) {
+                    const initialGtMapping: Record<string, string> = {};
+                    evaluationParametersForGtMapping.forEach(evalParam => {
+                        const foundColumn = headers.find(h => String(h).toLowerCase() === evalParam.name.toLowerCase());
+                        if (foundColumn) initialGtMapping[evalParam.id] = String(foundColumn);
+                    });
+                    setMappingDialogCurrentGtMapping(initialGtMapping);
                 }
 
             } else {
@@ -393,7 +446,7 @@ export default function DatasetsPage() {
   const handleMappingDialogColumnMappingChange = (schemaParamName: string, sheetColumnName: string | undefined) => {
     setMappingDialogCurrentColumnMapping(prev => {
         const newMapping = { ...prev };
-        if (sheetColumnName === undefined || sheetColumnName === null) { // Check for undefined or null to clear
+        if (sheetColumnName === undefined || sheetColumnName === null) {
             delete newMapping[schemaParamName];
         } else {
             newMapping[schemaParamName] = sheetColumnName;
@@ -401,6 +454,19 @@ export default function DatasetsPage() {
         return newMapping;
     });
   };
+
+  const handleMappingDialogGtMappingChange = (evalParamId: string, sheetColumnName: string | undefined) => {
+    setMappingDialogCurrentGtMapping(prev => {
+        const newMapping = { ...prev };
+        if (sheetColumnName === undefined || sheetColumnName === null) {
+            delete newMapping[evalParamId];
+        } else {
+            newMapping[evalParamId] = sheetColumnName;
+        }
+        return newMapping;
+    });
+  };
+
 
   const handleSaveMappingSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -422,6 +488,7 @@ export default function DatasetsPage() {
         versionId: versionBeingMapped.version.id,
         selectedSheetName: mappingDialogFileData.name.toLowerCase().endsWith('.csv') ? null : mappingDialogSelectedSheet,
         columnMapping: mappingDialogCurrentColumnMapping,
+        groundTruthMapping: mappingDialogCurrentGtMapping,
     };
     updateVersionMappingMutation.mutate(payload);
   };
@@ -460,7 +527,7 @@ export default function DatasetsPage() {
   };
 
   const openMappingDialog = async (datasetId: string, version: DatasetVersion) => {
-    resetMappingDialogState();
+    resetMappingDialogState(); // This now also resets GT mapping state
     setVersionBeingMapped({datasetId, version});
     setIsMappingDialogOpen(true);
 
@@ -479,17 +546,22 @@ export default function DatasetsPage() {
         if (version.columnMapping) {
             setMappingDialogCurrentColumnMapping(version.columnMapping);
         }
+        if (version.groundTruthMapping) { // Load existing GT mapping
+            setMappingDialogCurrentGtMapping(version.groundTruthMapping);
+        }
 
         await parseFileDataForMapping({blob, name: version.fileName});
 
         if(version.selectedSheetName && version.fileName.toLowerCase().endsWith('.xlsx')) {
-            const currentSheetNames = workbookSheetNames({blob, name: version.fileName}); // Helper to re-get fresh sheet names
+            const currentSheetNames = await getWorkbookSheetNamesAsync({blob, name: version.fileName});
             if (currentSheetNames.includes(version.selectedSheetName)) {
                  setMappingDialogSelectedSheet(version.selectedSheetName);
+                 // Re-trigger sheet select to load headers and potentially auto-map if current mappings are empty
                  await handleMappingDialogSheetSelect(version.selectedSheetName);
             } else {
                 console.warn(`Previously selected sheet "${version.selectedSheetName}" not found in the file.`);
                  setMappingDialogSelectedSheet('');
+                 // If sheet was invalid, don't auto-map, let user pick a new one
             }
         }
     } catch (error) {
@@ -501,15 +573,11 @@ export default function DatasetsPage() {
         setIsLoadingMappingData(false);
     }
   };
-  // Helper to get sheet names without setting state, used in openMappingDialog
-  const workbookSheetNames = (fileData: {blob: Blob, name: string}): string[] => {
+
+  const getWorkbookSheetNamesAsync = async (fileData: {blob: Blob, name: string}): Promise<string[]> => {
     if (!fileData.name.toLowerCase().endsWith('.xlsx')) return [];
     try {
-      const arrayBuffer = fileData.blob.constructor.name === 'ArrayBuffer' ? fileData.blob as ArrayBuffer : null; // This is a simplification, proper conversion needed
-      if (!arrayBuffer) { // Fallback if blob is not already ArrayBuffer (this part needs robust ArrayBuffer conversion)
-          console.warn("Blob to ArrayBuffer conversion needed for workbookSheetNames");
-          return []; // Or implement async conversion here
-      }
+      const arrayBuffer = await fileData.blob.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: 'array', sheets: 0, bookFiles: false, bookProps: false, bookDeps: false, bookSheets: false, bookStrings: false, sheetStubs: true });
       return workbook.SheetNames.map(name => String(name).trim()).filter(name => name !== '');
     } catch (e) {
@@ -528,7 +596,7 @@ export default function DatasetsPage() {
     setIsDatasetDialogOpen(true);
   };
 
-  const showMappingUIInDialog = (
+  const showProductParamMappingUI = (
     mappingDialogFileData &&
     productParametersForMapping.length > 0 &&
     (
@@ -536,6 +604,16 @@ export default function DatasetsPage() {
       (mappingDialogFileData.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)
     )
   );
+
+  const showGtParamMappingUI = (
+    mappingDialogFileData &&
+    evaluationParametersForGtMapping.length > 0 &&
+    (
+      (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet && mappingDialogSheetColumnHeaders.length > 0) ||
+      (mappingDialogFileData.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)
+    )
+  );
+
 
   const isInitialUploadButtonDisabled = !selectedFileUpload || !currentUserId || addDatasetVersionMutation.isPending;
 
@@ -548,7 +626,7 @@ export default function DatasetsPage() {
     (mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSheetNames.length > 0 && !mappingDialogSelectedSheet) ||
     (mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData && mappingDialogFileData.blob.size > 0);
 
-  if (isLoadingUserId || (isLoadingDatasets && currentUserId) || (isLoadingProdParams && currentUserId)) {
+  if (isLoadingUserId || (isLoadingDatasets && currentUserId) || (isLoadingProdParams && currentUserId) || (isLoadingEvalParamsForGt && currentUserId)) {
     return <div className="space-y-6 p-4 md:p-0"><Card><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-full sm:w-56" /></CardContent></Card></div>;
   }
   if (fetchDatasetsError) {
@@ -560,7 +638,7 @@ export default function DatasetsPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-3"><Database className="h-7 w-7 text-primary" />
-            <div><CardTitle className="text-xl md:text-2xl font-headline">Dataset Management</CardTitle><CardDescription>Upload, version, and manage your datasets. Map columns to Product Parameters after uploading.</CardDescription></div>
+            <div><CardTitle className="text-xl md:text-2xl font-headline">Dataset Management</CardTitle><CardDescription>Upload, version, and manage your datasets. Map columns to Product Parameters and optionally to Evaluation Parameters for Ground Truth.</CardDescription></div>
           </div>
         </CardHeader>
         <CardContent>
@@ -620,14 +698,14 @@ export default function DatasetsPage() {
                           {version.selectedSheetName || (version.fileName.toLowerCase().endsWith('.csv') && version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "CSV" : "N/A")}
                         </TableCell>
                         <TableCell>
-                          {version.columnMapping && Object.keys(version.columnMapping).length > 0
+                          {(version.columnMapping && Object.keys(version.columnMapping).length > 0) || (version.groundTruthMapping && Object.keys(version.groundTruthMapping).length > 0)
                             ? <Badge variant="default" className="bg-green-500 hover:bg-green-600">Configured</Badge>
                             : <Badge variant="outline">Pending</Badge>}
                         </TableCell>
                         <TableCell className="text-right">
                             <div className="flex flex-col sm:flex-row justify-end items-end sm:items-center gap-1">
                                <Button variant="outline" size="sm" onClick={() => openMappingDialog(dataset.id, version)} disabled={!currentUserId || !version.storagePath} className="w-full sm:w-auto">
-                                 <Settings2 className="h-4 w-4 mr-0 sm:mr-1"/> <span className="hidden sm:inline">{version.columnMapping && Object.keys(version.columnMapping).length > 0 ? "Edit Map" : "Set Map"}</span>
+                                 <Settings2 className="h-4 w-4 mr-0 sm:mr-1"/> <span className="hidden sm:inline">{ (version.columnMapping && Object.keys(version.columnMapping).length > 0) || (version.groundTruthMapping && Object.keys(version.groundTruthMapping).length > 0) ? "Edit Map" : "Set Map"}</span>
                                </Button>
                                <Button variant="ghost" size="icon" className="hidden" title="Review Data (Not Implemented)"><Eye className="h-4 w-4" /></Button>
                                <Button variant="ghost" size="icon" className="hidden" title="Download Version (Not Implemented)"><Download className="h-4 w-4" /></Button>
@@ -660,10 +738,10 @@ export default function DatasetsPage() {
       </Dialog>
 
       <Dialog open={isMappingDialogOpen} onOpenChange={(isOpen) => {setIsMappingDialogOpen(isOpen); if(!isOpen) resetMappingDialogState();}}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl"> {/* Increased width for more space */}
           <DialogHeader>
             <DialogTitle>Configure Mapping for {versionBeingMapped?.version.fileName} (v{versionBeingMapped?.version.versionNumber})</DialogTitle>
-            <DialogDescription>Select a sheet (for Excel) and map Product Parameters to columns from the file.</DialogDescription>
+            <DialogDescription>Select a sheet (for Excel) and map Product Parameters to columns, and optionally Evaluation Parameters to Ground Truth columns.</DialogDescription>
           </DialogHeader>
           {isLoadingMappingData ? (
             <div className="flex items-center justify-center h-40">
@@ -673,7 +751,7 @@ export default function DatasetsPage() {
           ) : (
             <form onSubmit={handleSaveMappingSubmit} className="space-y-4 py-4">
               <ScrollArea className="max-h-[60vh] sm:max-h-[70vh] p-1">
-              <div className="space-y-4 pr-4">
+              <div className="space-y-6 pr-4"> {/* Increased space-y */}
                 {mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSheetNames.length > 0 && (
                   <div className="space-y-2 pt-2 border-t">
                      <Label htmlFor="mapping-sheet-select" className="flex items-center"><SheetIcon className="mr-2 h-4 w-4 text-green-600"/>Select Sheet</Label>
@@ -692,11 +770,11 @@ export default function DatasetsPage() {
                   <p className="text-sm text-amber-700 pt-2 border-t">No sheets found in the Excel file. Check file.</p>
                 )}
 
-                { showMappingUIInDialog && (
+                { showProductParamMappingUI && (
                   <div className="space-y-3 pt-3 border-t">
-                    <Label className="flex items-center"><LinkIcon className="mr-2 h-4 w-4 text-blue-600"/>Map Product Parameters to Columns</Label>
+                    <Label className="flex items-center"><LinkIcon className="mr-2 h-4 w-4 text-blue-600"/>Map Product Parameters to File Columns</Label>
                     <p className="text-xs text-muted-foreground">
-                      Map parameters to columns in '{mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') ? mappingDialogSelectedSheet : 'your CSV file'}'.
+                      Map parameters to columns in '{mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') ? mappingDialogSelectedSheet : 'your CSV file'}'. These are inputs to your model.
                     </p>
                     <Card className="p-4 bg-muted/30 max-h-60 overflow-y-auto">
                        <div className="space-y-3">
@@ -704,7 +782,7 @@ export default function DatasetsPage() {
                           <div key={param.id} className="grid grid-cols-2 gap-2 items-center">
                             <Label htmlFor={`map-dialog-${param.id}`} className="text-sm font-medium truncate" title={param.name}>{param.name}:</Label>
                             <Select
-                              value={mappingDialogCurrentColumnMapping[param.name]} // Default to undefined
+                              value={mappingDialogCurrentColumnMapping[param.name]}
                               onValueChange={(value) => handleMappingDialogColumnMappingChange(param.name, value === '' ? undefined : value)}
                             >
                               <SelectTrigger id={`map-dialog-${param.id}`} className="h-9 text-xs">
@@ -726,6 +804,44 @@ export default function DatasetsPage() {
                  {((mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet) || (mappingDialogFileData?.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)) && productParametersForMapping.length === 0 && !isLoadingProdParams && (
                    <p className="text-sm text-amber-700 pt-2 border-t">No product parameters found for mapping. Please define them in Schema Definition.</p>
                  )}
+
+                {/* Ground Truth Mapping Section */}
+                { showGtParamMappingUI && (
+                  <div className="space-y-3 pt-3 border-t">
+                    <Label className="flex items-center"><CheckSquare className="mr-2 h-4 w-4 text-green-600"/>Map Evaluation Parameters to Ground Truth Columns (Optional)</Label>
+                     <p className="text-xs text-muted-foreground">
+                      For "Ground Truth Runs", map Evaluation Parameters to columns in your file that contain the correct/expected labels.
+                    </p>
+                    <Card className="p-4 bg-muted/30 max-h-60 overflow-y-auto">
+                       <div className="space-y-3">
+                        {evaluationParametersForGtMapping.map(evalParam => (
+                          <div key={`gt-${evalParam.id}`} className="grid grid-cols-2 gap-2 items-center">
+                            <Label htmlFor={`gt-map-dialog-${evalParam.id}`} className="text-sm font-medium truncate" title={evalParam.name}>{evalParam.name}:</Label>
+                            <Select
+                              value={mappingDialogCurrentGtMapping[evalParam.id]}
+                              onValueChange={(value) => handleMappingDialogGtMappingChange(evalParam.id, value === '' ? undefined : value)}
+                            >
+                              <SelectTrigger id={`gt-map-dialog-${evalParam.id}`} className="h-9 text-xs">
+                                <SelectValue placeholder="Select GT column" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {mappingDialogSheetColumnHeaders
+                                  .filter(col => col && String(col).trim() !== '')
+                                  .map((col, index) => <SelectItem key={`gt-map-col-header-${index}`} value={col}>{col}</SelectItem>)
+                                }
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  </div>
+                )}
+                {((mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet) || (mappingDialogFileData?.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)) && evaluationParametersForGtMapping.length === 0 && !isLoadingEvalParamsForGt && (
+                   <p className="text-sm text-amber-700 pt-2 border-t">No evaluation parameters found for ground truth mapping. Please define them in Evaluation Parameters.</p>
+                 )}
+
+
                  {mappingDialogFileData && mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData.blob.size > 0 &&
                    ((mappingDialogFileData.name.toLowerCase().endsWith('.csv')) || (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet)) && (
                   <p className="text-sm text-red-600 pt-2 border-t">Could not parse headers from the file/sheet. Ensure a valid header row exists.</p>
@@ -745,3 +861,4 @@ export default function DatasetsPage() {
     </div>
   );
 }
+

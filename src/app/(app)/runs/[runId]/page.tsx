@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download } from "lucide-react";
+import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck } from "lucide-react";
 import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBar, ResponsiveContainer } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
@@ -26,15 +26,15 @@ import * as XLSX from 'xlsx';
 
 // Interfaces
 interface EvalRunResultItem {
-  inputData: Record<string, any>;
-  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string }>;
-  // fullPromptSent?: string; // Removed as per user request
-  groundTruth?: Record<string, any>;
+  inputData: Record<string, any>; // Mapped product parameters
+  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string }>; // LLM's choices
+  groundTruth?: Record<string, string>; // Mapped ground truth labels, evalParamId -> groundTruthLabel
 }
 
 interface EvalRun {
   id: string;
   name: string;
+  runType: 'Product' | 'GroundTruth';
   status: 'Completed' | 'Running' | 'Pending' | 'Failed' | 'Processing' | 'DataPreviewed';
   createdAt: Timestamp;
   updatedAt?: Timestamp;
@@ -55,7 +55,7 @@ interface EvalRun {
   overallAccuracy?: number;
   progress?: number;
   results?: EvalRunResultItem[];
-  previewedDatasetSample?: Array<Record<string, any>>;
+  previewedDatasetSample?: Array<Record<string, any>>; // Stores raw row from sheet, including prefixed GT columns
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
   userId?: string;
@@ -63,7 +63,8 @@ interface EvalRun {
 
 interface DatasetVersionConfig {
     storagePath?: string;
-    columnMapping?: Record<string, string>;
+    columnMapping?: Record<string, string>; // Product param name -> Sheet column name
+    groundTruthMapping?: Record<string, string>; // Eval param ID -> Sheet column name
     selectedSheetName?: string | null;
 }
 
@@ -99,6 +100,7 @@ const fetchDatasetVersionConfig = async (userId: string, datasetId: string, vers
         return {
             storagePath: data.storagePath,
             columnMapping: data.columnMapping,
+            groundTruthMapping: data.groundTruthMapping,
             selectedSheetName: data.selectedSheetName,
         };
     }
@@ -284,10 +286,15 @@ export default function RunDetailsPage() {
         addLog("Data Preview: Fetching dataset version configuration...");
         const versionConfig = await fetchDatasetVersionConfig(currentUserId, runDetails.datasetId, runDetails.datasetVersionId);
         if (!versionConfig || !versionConfig.storagePath || !versionConfig.columnMapping || Object.keys(versionConfig.columnMapping).length === 0) {
-            throw new Error("Dataset version configuration (storage path or column mapping) is incomplete or missing.");
+            throw new Error("Dataset version configuration (storage path or product column mapping) is incomplete or missing.");
         }
         addLog(`Data Preview: Storage path: ${versionConfig.storagePath}`);
-        addLog(`Data Preview: Column mapping: ${JSON.stringify(versionConfig.columnMapping)}`);
+        addLog(`Data Preview: Product Column mapping: ${JSON.stringify(versionConfig.columnMapping)}`);
+        if (versionConfig.groundTruthMapping && Object.keys(versionConfig.groundTruthMapping).length > 0) {
+          addLog(`Data Preview: Ground Truth Mapping: ${JSON.stringify(versionConfig.groundTruthMapping)}`);
+        } else if (runDetails.runType === 'GroundTruth') {
+          addLog(`Data Preview: Warning: Run type is Ground Truth, but no ground truth mapping found for this dataset version.`);
+        }
         if (versionConfig.selectedSheetName) addLog(`Data Preview: Selected sheet: ${versionConfig.selectedSheetName}`);
 
         addLog("Data Preview: Downloading dataset file from storage...");
@@ -340,30 +347,48 @@ export default function RunDetailsPage() {
         const actualRowsToPreview = parsedRows.slice(0, numRowsToFetch);
         addLog(`Data Preview: Taking first ${actualRowsToPreview.length} rows for preview (Config N: ${runDetails.runOnNRows}, Max Preview: ${maxRowsForPreview}).`);
 
-        const mappedSampleData: Array<Record<string, any>> = [];
+        const sampleForStorage: Array<Record<string, any>> = [];
         const productParamToOriginalColMap = versionConfig.columnMapping;
+        const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
 
         actualRowsToPreview.forEach((originalRow, index) => {
-            const mappedRow: Record<string, any> = {};
-            let rowHasMappedData = false;
+            const mappedRowForStorage: Record<string, any> = {};
+            let rowHasAnyMappedData = false;
+
+            // Map product parameters
             for (const productParamName in productParamToOriginalColMap) {
                 const originalColName = productParamToOriginalColMap[productParamName];
                 if (originalRow.hasOwnProperty(originalColName)) {
-                    mappedRow[productParamName] = originalRow[originalColName];
-                    rowHasMappedData = true;
+                    mappedRowForStorage[productParamName] = originalRow[originalColName];
+                    rowHasAnyMappedData = true;
                 } else {
-                    mappedRow[productParamName] = undefined;
+                    mappedRowForStorage[productParamName] = undefined; // Explicitly set as undefined
                     addLog(`Data Preview: Warning: Row ${index+1} missing original column "${originalColName}" for product parameter "${productParamName}".`);
                 }
             }
-            if(rowHasMappedData) mappedSampleData.push(mappedRow);
-            else addLog(`Data Preview: Skipping row ${index+1} as no mapped data was found for it.`)
+
+            // Map ground truth parameters if run type is GroundTruth
+            if (runDetails.runType === 'GroundTruth') {
+              for (const evalParamId in evalParamIdToGtColMap) {
+                  const gtColName = evalParamIdToGtColMap[evalParamId];
+                  if (originalRow.hasOwnProperty(gtColName)) {
+                      // Use a prefix to avoid clashes and clearly identify ground truth columns
+                      mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[gtColName];
+                      rowHasAnyMappedData = true; // GT data also counts as mapped data
+                  } else {
+                      mappedRowForStorage[`_gt_${evalParamId}`] = undefined;
+                       addLog(`Data Preview: Warning: Row ${index+1} missing ground truth column "${gtColName}" for eval parameter ID "${evalParamId}".`);
+                  }
+              }
+            }
+            if(rowHasAnyMappedData) sampleForStorage.push(mappedRowForStorage);
+            else addLog(`Data Preview: Skipping row ${index+1} as no mapped data (product or GT) was found for it.`)
         });
 
-        addLog(`Data Preview: Successfully mapped ${mappedSampleData.length} rows for preview.`);
+        addLog(`Data Preview: Successfully processed ${sampleForStorage.length} rows for preview storage.`);
 
-        updateRunMutation.mutate({ id: runId, previewedDatasetSample: mappedSampleData, status: 'DataPreviewed', errorMessage: null, results: [] });
-        toast({ title: "Data Preview Ready", description: `${mappedSampleData.length} rows fetched and mapped.`});
+        updateRunMutation.mutate({ id: runId, previewedDatasetSample: sampleForStorage, status: 'DataPreviewed', errorMessage: null, results: [] });
+        toast({ title: "Data Preview Ready", description: `${sampleForStorage.length} rows fetched and mapped.`});
 
     } catch (error: any) {
         addLog(`Data Preview: Error fetching/previewing data: ${error.message}`, "error");
@@ -380,15 +405,7 @@ export default function RunDetailsPage() {
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || evalParamDetailsForLLM.length === 0) {
       const errorMsg = "Missing critical run configuration or evaluation parameter details.";
       toast({ title: "Cannot start LLM Categorization", description: errorMsg, variant: "destructive" });
-      console.error("Pre-simulation check failed:", {
-        runDetailsExists: !!runDetails,
-        userIdExists: !!currentUserId,
-        promptIdExists: !!runDetails?.promptId,
-        promptVersionIdExists: !!runDetails?.promptVersionId,
-        evalParamDetailsLength: evalParamDetailsForLLM.length,
-        evalParamDetailsActual: JSON.parse(JSON.stringify(evalParamDetailsForLLM)),
-        selectedEvalParamIdsFromRun: runDetails?.selectedEvalParamIds
-      });
+      console.error("Pre-simulation check failed:", { runDetailsExists: !!runDetails, userIdExists: !!currentUserId, promptIdExists: !!runDetails?.promptId, promptVersionIdExists: !!runDetails?.promptVersionId, evalParamDetailsLength: evalParamDetailsForLLM.length });
       addLog(errorMsg, "error");
       return;
     }
@@ -409,7 +426,7 @@ export default function RunDetailsPage() {
 
 
     try {
-      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null });
+      updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, overallAccuracy: runDetails.runType === 'Product' ? undefined : 0 });
       addLog("Status set to Processing.");
 
       const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
@@ -428,12 +445,23 @@ export default function RunDetailsPage() {
         .map(ep => ep.id);
 
       for (let i = 0; i < rowsToProcess; i++) {
-        const currentMappedRow = datasetToProcess[i];
-        addLog(`Processing row ${i + 1}/${rowsToProcess}: ${JSON.stringify(currentMappedRow).substring(0, 100)}...`);
+        const rawRowFromPreview = datasetToProcess[i];
+        const inputDataForRow: Record<string, any> = {};
+        const groundTruthDataForRow: Record<string, string> = {};
+
+        for (const key in rawRowFromPreview) {
+          if (key.startsWith('_gt_')) {
+            const evalParamId = key.substring('_gt_'.length);
+            groundTruthDataForRow[evalParamId] = String(rawRowFromPreview[key]);
+          } else {
+            inputDataForRow[key] = rawRowFromPreview[key];
+          }
+        }
+        addLog(`Processing row ${i + 1}/${rowsToProcess}: Inputs: ${JSON.stringify(inputDataForRow).substring(0,70)}... GT: ${JSON.stringify(groundTruthDataForRow).substring(0,50)}...`);
 
         let fullPromptForLLM = promptTemplateText;
-        for (const productParamName in currentMappedRow) {
-          fullPromptForLLM = fullPromptForLLM.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(currentMappedRow[productParamName] === null || currentMappedRow[productParamName] === undefined ? "" : currentMappedRow[productParamName]));
+        for (const productParamName in inputDataForRow) {
+          fullPromptForLLM = fullPromptForLLM.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName]));
         }
 
         let evalCriteriaText = "\n\n--- EVALUATION CRITERIA ---\n";
@@ -453,7 +481,6 @@ export default function RunDetailsPage() {
           evalCriteriaText += "\n";
         });
         evalCriteriaText += "--- END EVALUATION CRITERIA ---\n";
-
         fullPromptForLLM += evalCriteriaText;
 
         const genkitInput: JudgeLlmEvaluationInput = {
@@ -462,37 +489,63 @@ export default function RunDetailsPage() {
             parameterIdsRequiringRationale: parameterIdsRequiringRationale,
         };
 
-        addLog(`Sending prompt for row ${i+1} to Genkit flow...`); // Removed prompt length for brevity
+        addLog(`Sending prompt for row ${i+1} to Genkit flow...`);
         const judgeOutput = await judgeLlmEvaluation(genkitInput);
         addLog(`Genkit flow for row ${i+1} responded: ${JSON.stringify(judgeOutput)}`);
 
-        collectedResults.push({
-          inputData: currentMappedRow,
+        const resultItem: EvalRunResultItem = {
+          inputData: inputDataForRow,
           judgeLlmOutput: judgeOutput,
-          // fullPromptSent: fullPromptForLLM.substring(0, 1500) + (fullPromptForLLM.length > 1500 ? "... (truncated)" : "") // Removed
-        });
+        };
+        if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) {
+          resultItem.groundTruth = groundTruthDataForRow;
+        }
+        collectedResults.push(resultItem);
+
 
         const currentProgress = Math.round(((i + 1) / rowsToProcess) * 100);
         setSimulationProgress(currentProgress);
 
-        if ((i + 1) % Math.max(1, Math.floor(rowsToProcess / 10)) === 0) {
+        if ((i + 1) % Math.max(1, Math.floor(rowsToProcess / 10)) === 0 || (i+1) === rowsToProcess) {
             updateRunMutation.mutate({
                 id: runId,
                 progress: currentProgress,
-                results: [...collectedResults], // Send a copy to ensure current state
-                status: 'Processing'
+                results: [...collectedResults],
+                status: (i+1) === rowsToProcess ? 'Processing' : 'Processing' // Keep as processing until final update
             });
         }
       }
+      addLog("LLM Categorization completed for all previewed rows. Calculating metrics...");
 
-      addLog("LLM Categorization completed for all previewed rows.");
+      let finalOverallAccuracy = undefined;
+      if (runDetails.runType === 'GroundTruth') {
+        let totalCorrect = 0;
+        let totalComparisons = 0;
+        collectedResults.forEach(res => {
+          if (res.groundTruth) {
+            for (const evalParamId in res.judgeLlmOutput) {
+              if (res.groundTruth.hasOwnProperty(evalParamId) && res.groundTruth[evalParamId] !== undefined && res.groundTruth[evalParamId] !== null && String(res.groundTruth[evalParamId]).trim() !== '') {
+                totalComparisons++;
+                if (res.judgeLlmOutput[evalParamId]?.chosenLabel === res.groundTruth[evalParamId]) {
+                  totalCorrect++;
+                }
+              }
+            }
+          }
+        });
+        finalOverallAccuracy = totalComparisons > 0 ? (totalCorrect / totalComparisons) * 100 : 0;
+        addLog(`Ground Truth Accuracy: ${finalOverallAccuracy.toFixed(2)}% (${totalCorrect}/${totalComparisons})`);
+      } else {
+        addLog(`Product Run: Accuracy calculation skipped.`);
+      }
+
       updateRunMutation.mutate({
         id: runId,
         status: 'Completed',
-        results: collectedResults, // Final complete results
+        results: collectedResults,
         progress: 100,
-        completedAt: serverTimestamp(), // Set completion timestamp
-        overallAccuracy: Math.round(Math.random() * 30 + 70) // Mock accuracy
+        completedAt: serverTimestamp(),
+        overallAccuracy: finalOverallAccuracy,
       });
       toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
 
@@ -513,8 +566,6 @@ export default function RunDetailsPage() {
     }
 
     const dataForExcel: any[] = [];
-
-    // Determine all possible inputData keys (product parameter names)
     const inputDataKeys = new Set<string>();
     runDetails.results.forEach(item => {
       Object.keys(item.inputData).forEach(key => inputDataKeys.add(key));
@@ -523,17 +574,19 @@ export default function RunDetailsPage() {
 
     runDetails.results.forEach(item => {
       const row: Record<string, any> = {};
-
-      // Add inputData fields
       sortedInputDataKeys.forEach(key => {
         row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : '';
       });
 
-      // Add evaluation parameter outputs
       evalParamDetailsForLLM.forEach(paramDetail => {
         const output = item.judgeLlmOutput[paramDetail.id];
-        row[`${paramDetail.name} - Label`] = output?.chosenLabel || 'N/A';
-        row[`${paramDetail.name} - Rationale`] = output?.rationale || '';
+        row[`${paramDetail.name} - LLM Label`] = output?.chosenLabel || 'N/A';
+        if (runDetails.runType === 'GroundTruth') {
+          const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A';
+          row[`${paramDetail.name} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A';
+          row[`${paramDetail.name} - Match`] = (output?.chosenLabel && gtValue !== 'N/A' && output.chosenLabel === gtValue) ? 'Yes' : 'No';
+        }
+        row[`${paramDetail.name} - LLM Rationale`] = output?.rationale || '';
       });
       dataForExcel.push(row);
     });
@@ -541,7 +594,6 @@ export default function RunDetailsPage() {
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results");
-
     const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`;
     XLSX.writeFile(workbook, fileName);
     toast({ title: "Download Started", description: `Results are being downloaded as ${fileName}.` });
@@ -582,7 +634,7 @@ export default function RunDetailsPage() {
 
   const actualResultsToDisplay = runDetails.results || [];
   const displayedPreviewData = runDetails.previewedDatasetSample || [];
-  const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]) : [];
+  const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
 
 
   const getStatusBadge = (status: EvalRun['status']) => {
@@ -618,7 +670,7 @@ export default function RunDetailsPage() {
               <CardTitle className="text-2xl md:text-3xl font-headline">{runDetails.name}</CardTitle>
             </div>
             <CardDescription className="mt-1 ml-0 md:ml-11 text-xs md:text-sm">
-              Run ID: {runDetails.id} | Created: {formatTimestamp(runDetails.createdAt, true)}
+              Run ID: {runDetails.id} | Type: {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'} | Created: {formatTimestamp(runDetails.createdAt, true)}
               {runDetails.status === 'Completed' && runDetails.completedAt && ` | Completed: ${formatTimestamp(runDetails.completedAt, true)}`}
             </CardDescription>
           </div>
@@ -675,7 +727,7 @@ export default function RunDetailsPage() {
       </Card>
 
       <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <Card><CardHeader className="pb-2"><CardDescription>Overall Accuracy</CardDescription><CardTitle className="text-3xl md:text-4xl">{runDetails.overallAccuracy ? `${runDetails.overallAccuracy.toFixed(1)}%` : 'N/A'}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.results?.length || 0} records processed</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><CardDescription>{runDetails.runType === 'GroundTruth' ? 'Overall Accuracy (vs GT)' : 'Overall Score (N/A)'}</CardDescription><CardTitle className="text-3xl md:text-4xl">{runDetails.overallAccuracy !== undefined ? `${runDetails.overallAccuracy.toFixed(1)}%` : 'N/A'}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.results?.length || 0} records processed</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardDescription>Status</CardDescription><CardTitle className="text-2xl md:text-3xl">{getStatusBadge(runDetails.status)}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.progress !== undefined && (runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress}% complete` : `Rows to process: ${runDetails.previewedDatasetSample?.length || 'N/A (Fetch sample first)'}`}</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardDescription>Duration</CardDescription><CardTitle className="text-3xl md:text-3xl">{runDetails.summaryMetrics?.duration || (runDetails.status === 'Completed' && runDetails.createdAt && runDetails.completedAt ? `${((runDetails.completedAt.toMillis() - runDetails.createdAt.toMillis()) / 1000).toFixed(1)}s` : 'N/A')}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">&nbsp;</div></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardDescription>Estimated Cost</CardDescription><CardTitle className="text-3xl md:text-3xl">{runDetails.summaryMetrics?.cost || 'N/A'}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">&nbsp;</div></CardContent></Card>
@@ -684,8 +736,8 @@ export default function RunDetailsPage() {
       {displayedPreviewData.length > 0 && (
         <Card>
             <CardHeader>
-                <CardTitle>Dataset Sample Preview</CardTitle>
-                <CardDescription>Showing first {displayedPreviewData.length} mapped rows from the dataset ({runDetails.datasetName} v{runDetails.datasetVersionNumber}).</CardDescription>
+                <CardTitle>Dataset Sample Preview (Input Data Only)</CardTitle>
+                <CardDescription>Showing first {displayedPreviewData.length} mapped input rows from the dataset ({runDetails.datasetName} v{runDetails.datasetVersionNumber}). Ground truth data (if any) is used internally.</CardDescription>
             </CardHeader>
             <CardContent>
                  <div className="max-h-96 overflow-auto">
@@ -717,6 +769,7 @@ export default function RunDetailsPage() {
             <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p>
                 <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p>
                 <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId}</p>
                 <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p>
@@ -748,7 +801,7 @@ export default function RunDetailsPage() {
                 <Table>
                   <TableHeader><TableRow>
                     <TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>
-                    {evalParamDetailsForLLM?.map(paramDetail => <TableHead key={paramDetail.id} className="min-w-[120px] sm:min-w-[150px]">{paramDetail.name}</TableHead>)}
+                    {evalParamDetailsForLLM?.map(paramDetail => <TableHead key={paramDetail.id} className="min-w-[150px] sm:min-w-[200px]">{paramDetail.name}</TableHead>)}
                   </TableRow></TableHeader>
                   <TableBody>
                     {actualResultsToDisplay.map((item, index) => (
@@ -759,13 +812,24 @@ export default function RunDetailsPage() {
                         {evalParamDetailsForLLM?.map(paramDetail => {
                             const paramId = paramDetail.id;
                             const output = item.judgeLlmOutput[paramId];
+                            const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined;
+                            const isMatch = runDetails.runType === 'GroundTruth' && groundTruthValue !== undefined && output?.chosenLabel === groundTruthValue;
+                            const showGroundTruth = runDetails.runType === 'GroundTruth' && groundTruthValue !== undefined && groundTruthValue !== null && String(groundTruthValue).trim() !== '';
                             return (
                               <TableCell key={paramId} className="text-xs align-top">
-                                <div>{output?.chosenLabel || 'N/A'}</div>
+                                <div><strong>LLM:</strong> {output?.chosenLabel || 'N/A'}</div>
+                                {showGroundTruth && (
+                                  <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}>
+                                    <div className="flex items-center">
+                                      <strong>GT:</strong>&nbsp;{groundTruthValue}
+                                      {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>}
+                                    </div>
+                                  </div>
+                                )}
                                 {output?.rationale && (
                                   <details className="mt-1">
                                     <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center">
-                                      <MessageSquareText className="h-3 w-3 mr-1"/> Rationale
+                                      <MessageSquareText className="h-3 w-3 mr-1"/> LLM Rationale
                                     </summary>
                                     <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{output.rationale}</p>
                                   </details>
@@ -852,3 +916,4 @@ export default function RunDetailsPage() {
     </div>
   );
 }
+

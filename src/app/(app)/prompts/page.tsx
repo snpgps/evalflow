@@ -29,12 +29,12 @@ interface ProductParameterForPrompts {
 }
 
 // Firestore-aligned interfaces for Evaluation Parameters
-interface CategorizationLabelForPrompts {
+export interface CategorizationLabelForPrompts { // Exported for use in datasets/page.tsx
     name: string;
     definition: string;
     example?: string;
 }
-interface EvalParameterForPrompts {
+export interface EvalParameterForPrompts { // Exported for use in datasets/page.tsx
   id: string;
   name: string;
   definition: string;
@@ -770,7 +770,7 @@ export default function PromptsPage() {
 
   return (
     <div className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-theme(spacing.28))] gap-6 p-4 md:p-0">
-      <Card className="w-full md:w-1/4 md:min-w-[300px] flex flex-col shadow-lg md:max-h-none"> {/* Removed max-h-[50vh] for mobile */}
+      <Card className="w-full md:w-1/4 md:min-w-[300px] flex flex-col shadow-lg md:max-h-none">
         <CardHeader className="border-b">
           <CardTitle>Prompt Templates</CardTitle>
           <CardDescription>Manage your Judge LLM prompts.</CardDescription>
@@ -815,3 +815,4 @@ export default function PromptsPage() {
     </div>
   );
 }
+
