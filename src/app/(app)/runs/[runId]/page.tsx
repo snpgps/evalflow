@@ -33,7 +33,7 @@ import * as XLSX from 'xlsx';
 // Interfaces
 interface EvalRunResultItem {
   inputData: Record<string, any>;
-  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string }>;
+  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string; error?: string }>; // Added error field
   groundTruth?: Record<string, string>;
 }
 
@@ -231,11 +231,25 @@ export default function RunDetailsPage() {
   });
 
   const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & { id: string; updatedAt?: FieldValue } >({
-    mutationFn: async (updateData) => {
+    mutationFn: async (updatePayload) => {
       if (!currentUserId) throw new Error("User not identified.");
-      const { id, ...dataToUpdate } = updateData;
+      const { id, ...dataFromPayload } = updatePayload; 
+
+      const updateForFirestore: Record<string, any> = {};
+
+      for (const key in dataFromPayload) {
+        if (Object.prototype.hasOwnProperty.call(dataFromPayload, key)) {
+          const value = (dataFromPayload as any)[key];
+          if (value !== undefined) { // Filter out undefined values
+            updateForFirestore[key] = value;
+          }
+        }
+      }
+      
+      updateForFirestore.updatedAt = serverTimestamp();
+
       const runDocRef = doc(db, 'users', currentUserId, 'evaluationRuns', id);
-      await updateDoc(runDocRef, { ...dataToUpdate, updatedAt: serverTimestamp() });
+      await updateDoc(runDocRef, updateForFirestore);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['evalRunDetails', currentUserId, runId] });
@@ -244,7 +258,15 @@ export default function RunDetailsPage() {
     onError: (error) => {
       toast({ title: "Error updating run", description: error.message, variant: "destructive" });
       if(runDetails?.status === 'Processing' || runDetails?.status === 'Running') {
-         updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `Update during run failed: ${error.message}` });
+         const errorUpdatePayload: Partial<EvalRun> & { id: string } = { 
+            id: runId, 
+            status: 'Failed', 
+            errorMessage: `Update during run failed: ${error.message}` 
+         };
+         if (errorUpdatePayload.errorMessage === undefined) {
+           errorUpdatePayload.errorMessage = "Undefined error occurred during update.";
+         }
+         updateRunMutation.mutate(errorUpdatePayload);
       }
       if(isPreviewDataLoading) setIsPreviewDataLoading(false);
     }
@@ -259,6 +281,9 @@ export default function RunDetailsPage() {
             if (label && typeof label.name === 'string') labelCounts[label.name] = 0;
           });
         }
+        // Also account for error labels if they occur
+        labelCounts['ERROR_PROCESSING_ROW'] = 0;
+
 
         let correctCountForParam = 0;
         let totalComparedForParam = 0;
@@ -270,7 +295,7 @@ export default function RunDetailsPage() {
                 const chosenLabel = llmOutputForParam.chosenLabel;
                 labelCounts[chosenLabel] = (labelCounts[chosenLabel] || 0) + 1;
 
-                if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth) {
+                if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth && !llmOutputForParam.error) { // only compare if not an error row for this param
                     const gtLabel = resultItem.groundTruth[paramDetail.id];
                     if (gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '') {
                         totalComparedForParam++;
@@ -279,13 +304,16 @@ export default function RunDetailsPage() {
                         }
                     }
                 }
+              } else if (llmOutputForParam?.error) {
+                labelCounts['ERROR_PROCESSING_ROW'] = (labelCounts['ERROR_PROCESSING_ROW'] || 0) + 1;
               }
           }
         });
 
         const chartDataEntries = Object.entries(labelCounts)
           .map(([labelName, count]) => ({ labelName, count }))
-          .filter(item => item.count > 0 || (paramDetail.labels && paramDetail.labels.some(l => l.name === item.labelName)));
+          .filter(item => item.count > 0 || (paramDetail.labels && paramDetail.labels.some(l => l.name === item.labelName)) || item.labelName === 'ERROR_PROCESSING_ROW');
+
 
         const paramAccuracy = runDetails.runType === 'GroundTruth' && totalComparedForParam > 0
           ? (correctCountForParam / totalComparedForParam) * 100
@@ -404,7 +432,7 @@ export default function RunDetailsPage() {
                     mappedRowForStorage[productParamName] = originalRow[originalColName];
                     rowHasAnyMappedData = true;
                 } else {
-                    mappedRowForStorage[productParamName] = undefined;
+                    mappedRowForStorage[productParamName] = undefined; // Will be handled by Firestore (omitted) or by rules
                     addLog(`Data Preview: Warning: Row ${index+1} missing original column "${originalColName}" for product parameter "${productParamName}".`);
                 }
             }
@@ -415,7 +443,7 @@ export default function RunDetailsPage() {
                       mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[gtColName];
                       rowHasAnyMappedData = true;
                   } else {
-                      mappedRowForStorage[`_gt_${evalParamId}`] = undefined;
+                      mappedRowForStorage[`_gt_${evalParamId}`] = undefined; // Will be handled by Firestore or rules
                        addLog(`Data Preview: Warning: Row ${index+1} missing ground truth column "${gtColName}" for eval parameter ID "${evalParamId}".`);
                   }
               }
@@ -450,7 +478,7 @@ export default function RunDetailsPage() {
         return;
     }
 
-    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, results: [] }); // Clear previous results
+    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, results: [] }); 
     setSimulationLog([]);
     addLog("LLM Categorization process initialized.");
     let collectedResults: EvalRunResultItem[] = [];
@@ -517,25 +545,30 @@ export default function RunDetailsPage() {
             };
           } catch(flowError: any) {
             addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error");
-            return { error: flowError.message, originalIndex: overallRowIndex, inputData: inputDataForRow }; 
+            const errorOutputForAllParams: Record<string, { chosenLabel: string; rationale?: string; error?: string }> = {};
+            runDetails.selectedEvalParamIds.forEach(paramId => {
+              errorOutputForAllParams[paramId] = {
+                chosenLabel: 'ERROR_PROCESSING_ROW', // Consistent label for error
+                error: flowError.message || 'Unknown error processing row with LLM.'
+              };
+            });
+            return { 
+              inputData: inputDataForRow, 
+              judgeLlmOutput: errorOutputForAllParams, 
+              groundTruth: runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0 ? groundTruthDataForRow : undefined,
+              originalIndex: overallRowIndex
+            };
           }
         });
 
         const settledBatchResults = await Promise.all(batchPromises);
         
-        settledBatchResults.forEach(itemOrError => {
-          if (itemOrError && !(itemOrError as any).error) {
-            const { originalIndex, ...resultItem } = itemOrError as EvalRunResultItem & { originalIndex: number };
+        settledBatchResults.forEach(item => {
+            const { originalIndex, ...resultItem } = item as EvalRunResultItem & { originalIndex: number };
             collectedResults.push(resultItem);
-          } else if (itemOrError && (itemOrError as any).error) {
-            collectedResults.push({
-                inputData: (itemOrError as any).inputData,
-                judgeLlmOutput: { error: `Failed: ${(itemOrError as any).error}` },
-                groundTruth: runDetails.runType === 'GroundTruth' ? (datasetToProcess[(itemOrError as any).originalIndex] as any)._gt_ : undefined
-            });
-          }
         });
-        addLog(`Batch from row ${batchStartIndex + 1} to ${batchEndIndex} processed. Collected ${settledBatchResults.filter(r => !(r as any).error).length} successful results from this batch.`);
+
+        addLog(`Batch from row ${batchStartIndex + 1} to ${batchEndIndex} processed. Collected ${settledBatchResults.length} results/errors from this batch.`);
         
         const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
         updateRunMutation.mutate({
@@ -572,14 +605,15 @@ export default function RunDetailsPage() {
       sortedInputDataKeys.forEach(key => { row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : ''; });
       evalParamDetailsForLLM.forEach(paramDetail => {
         const output = item.judgeLlmOutput[paramDetail.id];
-        row[`${paramDetail.name} - LLM Label`] = output?.chosenLabel || (output as any)?.error || 'N/A';
+        row[`${paramDetail.name} - LLM Label`] = output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A');
         if (runDetails.runType === 'GroundTruth') {
           const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A';
           row[`${paramDetail.name} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A';
           const llmLabel = output?.chosenLabel;
-          row[`${paramDetail.name} - Match`] = (llmLabel && gtValue !== 'N/A' && String(llmLabel).toLowerCase() === String(gtValue).toLowerCase()) ? 'Yes' : 'No';
+          row[`${paramDetail.name} - Match`] = (llmLabel && gtValue !== 'N/A' && !output?.error && String(llmLabel).toLowerCase() === String(gtValue).toLowerCase()) ? 'Yes' : 'No';
         }
         row[`${paramDetail.name} - LLM Rationale`] = output?.rationale || '';
+        if(output?.error) row[`${paramDetail.name} - LLM Error`] = output.error;
       });
       dataForExcel.push(row);
     });
@@ -617,7 +651,7 @@ export default function RunDetailsPage() {
           const llmOutput = item.judgeLlmOutput[paramDetail.id];
           const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
           
-          if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !(llmOutput as any).error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase()) {
+          if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase()) {
             mismatchDetails.push({
               inputData: item.inputData,
               evaluationParameterName: paramDetail.name,
@@ -674,7 +708,7 @@ export default function RunDetailsPage() {
       evalParamDetailsForLLM.some(paramDetail => {
         const llmOutput = item.judgeLlmOutput[paramDetail.id];
         const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
-        return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !(llmOutput as any).error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase();
+        return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase();
       })
     );
   }, [runDetails, evalParamDetailsForLLM]);
@@ -809,13 +843,14 @@ export default function RunDetailsPage() {
                             const gtLabel = groundTruthValue;
                             const isMatch = runDetails.runType === 'GroundTruth' && 
                                             gtLabel !== undefined && 
-                                            llmLabel && 
+                                            llmLabel && !output?.error &&
                                             String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase();
                             const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
                             return (
                               <TableCell key={paramId} className="text-xs align-top">
-                                <div><strong>LLM:</strong> {output?.chosenLabel || (output as any)?.error || 'N/A'}</div>
-                                {showGroundTruth && (
+                                <div><strong>LLM:</strong> {output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A')}</div>
+                                {output?.error && <div className="text-destructive text-[10px]">Error: {output.error}</div>}
+                                {showGroundTruth && !output?.error && (
                                   <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}>
                                     <div className="flex items-center">
                                       <strong>GT:</strong>&nbsp;{gtLabel}
@@ -917,5 +952,3 @@ export default function RunDetailsPage() {
     </div>
   );
 }
-
-      
