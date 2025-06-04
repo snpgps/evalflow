@@ -230,23 +230,30 @@ export default function EvalRunsPage() {
   const [showContextDocSelector, setShowContextDocSelector] = useState(false);
 
   useEffect(() => {
+    let shouldShowSelector = false;
     if (selectedConnectorId && modelConnectors) {
       const connector = modelConnectors.find(c => c.id === selectedConnectorId);
       if (connector && connector.provider === 'Vertex AI' && connector.config) {
         try {
           const configJson = JSON.parse(connector.config);
           if (configJson.model && GEMINI_CONTEXT_CACHING_MODELS.includes(configJson.model)) {
-            setShowContextDocSelector(true);
-            return;
+            shouldShowSelector = true;
           }
         } catch (e) {
           console.warn("Could not parse model connector config to check for Gemini model:", e);
+          // shouldShowSelector remains false
         }
       }
     }
-    setShowContextDocSelector(false);
-    setSelectedContextDocIds([]); // Reset if not applicable
-  }, [selectedConnectorId, modelConnectors]);
+
+    if (showContextDocSelector !== shouldShowSelector) {
+      setShowContextDocSelector(shouldShowSelector);
+    }
+
+    if (!shouldShowSelector && selectedContextDocIds.length > 0) {
+      setSelectedContextDocIds([]); // Reset if not applicable
+    }
+  }, [selectedConnectorId, modelConnectors, showContextDocSelector, selectedContextDocIds]);
 
 
   const addEvalRunMutation = useMutation<string, Error, NewEvalRunPayload>({
