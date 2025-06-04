@@ -241,7 +241,6 @@ export default function EvalRunsPage() {
           }
         } catch (e) {
           console.warn("Could not parse model connector config to check for Gemini model:", e);
-          // shouldShowSelector remains false
         }
       }
     }
@@ -251,7 +250,7 @@ export default function EvalRunsPage() {
     }
 
     if (!shouldShowSelector && selectedContextDocIds.length > 0) {
-      setSelectedContextDocIds([]); // Reset if not applicable
+      setSelectedContextDocIds([]);
     }
   }, [selectedConnectorId, modelConnectors, showContextDocSelector, selectedContextDocIds]);
 
@@ -261,7 +260,6 @@ export default function EvalRunsPage() {
       if (!currentUserId) throw new Error("User not identified.");
       
       const newRunDataForFirestore: Record<string, any> = {};
-      // Iterate over keys of newRunRawData to filter out undefined values
       for (const key in newRunRawData) {
         if (Object.prototype.hasOwnProperty.call(newRunRawData, key)) {
           const value = (newRunRawData as any)[key];
@@ -375,7 +373,7 @@ export default function EvalRunsPage() {
         <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-3"> <PlayCircle className="h-7 w-7 text-primary" /> <div> <CardTitle className="text-xl md:text-2xl font-headline">Evaluation Runs</CardTitle> <CardDescription>Manage and track your AI model evaluation runs. Choose between Product or Ground Truth comparison.</CardDescription> </div> </div>
            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
-            <DialogTrigger asChild><Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending} className="w-full sm:w-auto"> <PlusCircle className="mr-2 h-5 w-5" /> New Evaluation Run </Button></DialogTrigger>
+            <DialogTrigger asChild><Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending} className="w-full sm:w-auto"><PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run</Button></DialogTrigger>
             <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh]">
               <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b"> <DialogTitle>Configure New Evaluation Run</DialogTitle> <DialogDescription>Select components and parameters for your new eval run.</DialogDescription> </DialogHeader>
               {isLoadingDialogData ? ( <div className="py-8 flex justify-center items-center flex-grow"><Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading options...</span></div> ) : (
@@ -427,8 +425,8 @@ export default function EvalRunsPage() {
           {!isLoadingEvalRuns && !fetchEvalRunsError && evalRuns.length === 0 && ( <div className="text-center text-muted-foreground py-8"> <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" /> <p>No evaluation runs found.</p> <p className="text-sm">Click "New Evaluation Run" to get started.</p> </div> )}
           {!isLoadingEvalRuns && !fetchEvalRunsError && evalRuns.length > 0 && (
             <Table className="table-fixed">
-              <TableHeader><TableRow><TableHead className="w-[120px] sm:w-auto">Name</TableHead> <TableHead className="w-[120px]">Status</TableHead> <TableHead className="hidden md:table-cell w-[100px]">Type</TableHead> <TableHead className="hidden md:table-cell w-auto">Dataset</TableHead> <TableHead className="hidden lg:table-cell w-auto">Model</TableHead> <TableHead className="hidden lg:table-cell w-auto">Prompt</TableHead> <TableHead className="hidden sm:table-cell w-[100px]">Created At</TableHead> <TableHead className="text-right w-[80px]">Actions</TableHead> </TableRow></TableHeader>
-              <TableBody> {evalRuns.map((run) => ( <TableRow key={run.id} className="hover:bg-muted/50"> <TableCell className="font-medium max-w-[100px] sm:max-w-xs truncate"> <Link href={`/runs/${run.id}`} className="hover:underline" title={run.name}>{run.name}</Link> </TableCell> <TableCell>{getStatusBadge(run.status)}</TableCell> <TableCell className="text-sm hidden md:table-cell"> {run.runType === 'GroundTruth' ? ( <Badge variant="outline" className="border-green-500 text-green-700"><CheckCheck className="mr-1 h-3 w-3" />Ground Truth</Badge> ) : ( <Badge variant="outline"><TestTube2 className="mr-1 h-3 w-3" />Product</Badge> )} </TableCell> <TableCell className="text-sm text-muted-foreground hidden md:table-cell max-w-[100px] truncate" title={run.datasetName || run.datasetId}>{run.datasetName || run.datasetId}{run.datasetVersionNumber ? ` (v${run.datasetVersionNumber})` : ''}</TableCell> <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.modelConnectorName || run.modelConnectorId}>{run.modelConnectorName || run.modelConnectorId}</TableCell> <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.promptName || run.promptId}>{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell> <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{formatTimestamp(run.createdAt)}</TableCell> <TableCell className="text-right"> <div className="flex justify-end items-center gap-0 sm:gap-1"> <Link href={`/runs/${run.id}`} passHref> <Button variant="ghost" size="icon" title="View Details"><Eye className="h-4 w-4" /></Button> </Link> <Button variant="ghost" size="icon" title="Delete Run" className="text-destructive hover:text-destructive/90" onClick={() => handleDeleteRun(run.id)} disabled={deleteEvalRunMutation.isPending && deleteEvalRunMutation.variables === run.id}> <Trash2 className="h-4 w-4" /> </Button> </div> </TableCell> </TableRow> ))} </TableBody>
+              <TableHeader><TableRow><TableHead className="w-[120px] sm:w-auto">Name</TableHead><TableHead className="w-[120px]">Status</TableHead><TableHead className="hidden md:table-cell w-[100px]">Type</TableHead><TableHead className="hidden md:table-cell w-auto">Dataset</TableHead><TableHead className="hidden lg:table-cell w-auto">Model</TableHead><TableHead className="hidden lg:table-cell w-auto">Prompt</TableHead><TableHead className="hidden sm:table-cell w-[100px]">Created At</TableHead><TableHead className="text-right w-[80px]">Actions</TableHead></TableRow></TableHeader>
+              <TableBody>{evalRuns.map((run) => (<TableRow key={run.id} className="hover:bg-muted/50"><TableCell className="font-medium max-w-[100px] sm:max-w-xs truncate"><Link href={`/runs/${run.id}`} className="hover:underline" title={run.name}>{run.name}</Link></TableCell><TableCell>{getStatusBadge(run.status)}</TableCell><TableCell className="text-sm hidden md:table-cell">{run.runType === 'GroundTruth' ? (<Badge variant="outline" className="border-green-500 text-green-700"><CheckCheck className="mr-1 h-3 w-3" />Ground Truth</Badge>) : (<Badge variant="outline"><TestTube2 className="mr-1 h-3 w-3" />Product</Badge>)}</TableCell><TableCell className="text-sm text-muted-foreground hidden md:table-cell max-w-[100px] truncate" title={run.datasetName || run.datasetId}>{run.datasetName || run.datasetId}{run.datasetVersionNumber ? ` (v${run.datasetVersionNumber})` : ''}</TableCell><TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.modelConnectorName || run.modelConnectorId}>{run.modelConnectorName || run.modelConnectorId}</TableCell><TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.promptName || run.promptId}>{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell><TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{formatTimestamp(run.createdAt)}</TableCell><TableCell className="text-right"><div className="flex justify-end items-center gap-0 sm:gap-1"><Link href={`/runs/${run.id}`} passHref><Button variant="ghost" size="icon" title="View Details"><Eye className="h-4 w-4" /></Button></Link><Button variant="ghost" size="icon" title="Delete Run" className="text-destructive hover:text-destructive/90" onClick={() => handleDeleteRun(run.id)} disabled={deleteEvalRunMutation.isPending && deleteEvalRunMutation.variables === run.id}><Trash2 className="h-4 w-4" /></Button></div></TableCell></TableRow>))}</TableBody>
             </Table>
           )}
         </CardContent>
