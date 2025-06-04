@@ -62,15 +62,15 @@ interface EvalRun {
   selectedEvalParamNames?: string[];
 
   runOnNRows: number;
-  concurrencyLimit: number; // Added concurrency limit
+  concurrencyLimit: number;
 
   // Results
   progress?: number;
-  results?: any[]; 
+  results?: any[];
   previewedDatasetSample?: Array<Record<string, any>>;
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
-  userId?: string; 
+  userId?: string;
 }
 
 type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'errorMessage' | 'status' | 'userId' | 'previewedDatasetSample'> & {
@@ -206,9 +206,27 @@ export default function EvalRunsPage() {
 
 
   const addEvalRunMutation = useMutation<string, Error, NewEvalRunPayload>({
-    mutationFn: async (newRunData) => {
+    mutationFn: async (newRunRawData) => { // Renamed for clarity
       if (!currentUserId) throw new Error("User not identified.");
-      const docRef = await addDoc(collection(db, 'users', currentUserId, 'evaluationRuns'), newRunData);
+
+      const newRunDataForFirestore: Record<string, any> = {};
+      // Explicitly filter out undefined values from the payload for addDoc
+      for (const key in newRunRawData) {
+        if (Object.prototype.hasOwnProperty.call(newRunRawData, key)) {
+          const value = (newRunRawData as any)[key];
+          if (value !== undefined) {
+            newRunDataForFirestore[key] = value;
+          }
+        }
+      }
+      // Ensure required fields for NewEvalRunPayload type are set (some are already in type)
+      newRunDataForFirestore.createdAt = serverTimestamp();
+      newRunDataForFirestore.updatedAt = serverTimestamp();
+      newRunDataForFirestore.status = 'Pending';
+      newRunDataForFirestore.userId = currentUserId;
+
+
+      const docRef = await addDoc(collection(db, 'users', currentUserId, 'evaluationRuns'), newRunDataForFirestore);
       return docRef.id;
     },
     onSuccess: (newRunId) => {
@@ -280,7 +298,7 @@ export default function EvalRunsPage() {
       toast({ title: "Validation Error", description: "Concurrency limit must be at least 1.", variant: "destructive" });
       return;
     }
-    
+
     if (!datasetVersion.columnMapping || Object.keys(datasetVersion.columnMapping).length === 0) {
       toast({ title: "Dataset Version Not Ready", description: "The selected dataset version must have product parameters mapped. Please configure it on the Datasets page.", variant: "destructive" });
       return;
@@ -294,22 +312,27 @@ export default function EvalRunsPage() {
     const newRunData: NewEvalRunPayload = {
       name: newRunName.trim(),
       runType: newRunType,
-      status: 'Pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      userId: currentUserId,
+      status: 'Pending', // Status will be set by the mutationFn
+      createdAt: serverTimestamp(), // Will be set by mutationFn
+      updatedAt: serverTimestamp(), // Will be set by mutationFn
+      userId: currentUserId,     // Will be set by mutationFn
+
       datasetId: selectedDatasetId,
       datasetName: dataset?.name,
       datasetVersionId: selectedDatasetVersionId,
       datasetVersionNumber: datasetVersion?.versionNumber,
+
       modelConnectorId: selectedConnectorId,
       modelConnectorName: connector?.name,
+
       promptId: selectedPromptId,
       promptName: prompt?.name,
       promptVersionId: selectedPromptVersionId,
       promptVersionNumber: promptVersion?.versionNumber,
+
       selectedEvalParamIds: selectedEvalParamIds,
       selectedEvalParamNames: selEvalParams.map(ep => ep.name),
+
       runOnNRows: Number(runOnNRows) || 0,
       concurrencyLimit: Number(newRunConcurrencyLimit) || 3,
     };
@@ -424,7 +447,7 @@ export default function EvalRunsPage() {
                            {selectedDatasetVersionForWarnings && (!selectedDatasetVersionForWarnings.columnMapping || Object.keys(selectedDatasetVersionForWarnings.columnMapping).length === 0) && (
                              <p className="text-xs text-destructive mt-1">Warning: This version has no Product Parameters mapped. Run creation will fail.</p>
                            )}
-                           {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings && 
+                           {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings &&
                             !(selectedDatasetVersionForWarnings.groundTruthMapping && Object.keys(selectedDatasetVersionForWarnings.groundTruthMapping).length > 0) && (
                               <p className="text-xs text-amber-600 mt-1">Warning: This version has no Ground Truth columns mapped. Accuracy may be 0%.</p>
                            )}
@@ -485,7 +508,7 @@ export default function EvalRunsPage() {
                         <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => setRunOnNRows(parseInt(e.target.value, 10))} min="0" />
                         <p className="text-xs text-muted-foreground mt-1">For Ground Truth runs, this is the number of rows used for comparison. 0 uses all available mapped rows (capped for preview on run details page).</p>
                       </div>
-                      
+
                       <div>
                         <Label htmlFor="run-concurrency">LLM Concurrency Limit</Label>
                         <Input id="run-concurrency" type="number" value={newRunConcurrencyLimit} onChange={(e) => setNewRunConcurrencyLimit(Math.max(1, parseInt(e.target.value, 10) || 1))} min="1" max="20" />
@@ -579,6 +602,3 @@ export default function EvalRunsPage() {
     </div>
   );
 }
-    
-
-    
