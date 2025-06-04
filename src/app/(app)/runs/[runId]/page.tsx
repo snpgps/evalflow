@@ -33,7 +33,7 @@ import * as XLSX from 'xlsx';
 // Interfaces
 interface EvalRunResultItem {
   inputData: Record<string, any>;
-  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string; error?: string }>; // Added error field
+  judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string; error?: string }>;
   groundTruth?: Record<string, string>;
 }
 
@@ -58,7 +58,7 @@ interface EvalRun {
   selectedEvalParamIds: string[];
   selectedEvalParamNames?: string[];
   runOnNRows: number;
-  concurrencyLimit?: number; 
+  concurrencyLimit?: number;
   progress?: number;
   results?: EvalRunResultItem[];
   previewedDatasetSample?: Array<Record<string, any>>;
@@ -233,7 +233,7 @@ export default function RunDetailsPage() {
   const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & { id: string; updatedAt?: FieldValue } >({
     mutationFn: async (updatePayload) => {
       if (!currentUserId) throw new Error("User not identified.");
-      const { id, ...dataFromPayload } = updatePayload; 
+      const { id, ...dataFromPayload } = updatePayload;
 
       const updateForFirestore: Record<string, any> = {};
 
@@ -245,7 +245,7 @@ export default function RunDetailsPage() {
           }
         }
       }
-      
+
       updateForFirestore.updatedAt = serverTimestamp();
 
       const runDocRef = doc(db, 'users', currentUserId, 'evaluationRuns', id);
@@ -258,10 +258,10 @@ export default function RunDetailsPage() {
     onError: (error) => {
       toast({ title: "Error updating run", description: error.message, variant: "destructive" });
       if(runDetails?.status === 'Processing' || runDetails?.status === 'Running') {
-         const errorUpdatePayload: Partial<EvalRun> & { id: string } = { 
-            id: runId, 
-            status: 'Failed', 
-            errorMessage: `Update during run failed: ${error.message}` 
+         const errorUpdatePayload: Partial<EvalRun> & { id: string } = {
+            id: runId,
+            status: 'Failed',
+            errorMessage: `Update during run failed: ${error.message}`
          };
          if (errorUpdatePayload.errorMessage === undefined) {
            errorUpdatePayload.errorMessage = "Undefined error occurred during update.";
@@ -281,7 +281,7 @@ export default function RunDetailsPage() {
             if (label && typeof label.name === 'string') labelCounts[label.name] = 0;
           });
         }
-        // Also account for error labels if they occur
+
         labelCounts['ERROR_PROCESSING_ROW'] = 0;
 
 
@@ -295,7 +295,7 @@ export default function RunDetailsPage() {
                 const chosenLabel = llmOutputForParam.chosenLabel;
                 labelCounts[chosenLabel] = (labelCounts[chosenLabel] || 0) + 1;
 
-                if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth && !llmOutputForParam.error) { // only compare if not an error row for this param
+                if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth && !llmOutputForParam.error) {
                     const gtLabel = resultItem.groundTruth[paramDetail.id];
                     if (gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '') {
                         totalComparedForParam++;
@@ -400,11 +400,11 @@ export default function RunDetailsPage() {
             setIsPreviewDataLoading(false);
             return;
         }
-        
+
         let rowsToAttemptFromConfig: number;
         if (runDetails.runOnNRows > 0) {
             rowsToAttemptFromConfig = Math.min(runDetails.runOnNRows, parsedRows.length);
-        } else { 
+        } else {
             rowsToAttemptFromConfig = parsedRows.length;
         }
 
@@ -432,7 +432,7 @@ export default function RunDetailsPage() {
                     mappedRowForStorage[productParamName] = originalRow[originalColName];
                     rowHasAnyMappedData = true;
                 } else {
-                    mappedRowForStorage[productParamName] = undefined; // Will be handled by Firestore (omitted) or by rules
+                    mappedRowForStorage[productParamName] = undefined;
                     addLog(`Data Preview: Warning: Row ${index+1} missing original column "${originalColName}" for product parameter "${productParamName}".`);
                 }
             }
@@ -443,7 +443,7 @@ export default function RunDetailsPage() {
                       mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[gtColName];
                       rowHasAnyMappedData = true;
                   } else {
-                      mappedRowForStorage[`_gt_${evalParamId}`] = undefined; // Will be handled by Firestore or rules
+                      mappedRowForStorage[`_gt_${evalParamId}`] = undefined;
                        addLog(`Data Preview: Warning: Row ${index+1} missing ground truth column "${gtColName}" for eval parameter ID "${evalParamId}".`);
                   }
               }
@@ -478,7 +478,7 @@ export default function RunDetailsPage() {
         return;
     }
 
-    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, results: [] }); 
+    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, results: [] });
     setSimulationLog([]);
     addLog("LLM Categorization process initialized.");
     let collectedResults: EvalRunResultItem[] = [];
@@ -490,15 +490,15 @@ export default function RunDetailsPage() {
 
       const datasetToProcess = runDetails.previewedDatasetSample;
       const rowsToProcess = datasetToProcess.length;
-      const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); 
+      const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3);
       addLog(`Starting LLM categorization for ${rowsToProcess} previewed rows with concurrency: ${effectiveConcurrencyLimit}.`);
-      
+
       const parameterIdsRequiringRationale = evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id);
 
       for (let batchStartIndex = 0; batchStartIndex < rowsToProcess; batchStartIndex += effectiveConcurrencyLimit) {
         const batchEndIndex = Math.min(batchStartIndex + effectiveConcurrencyLimit, rowsToProcess);
         const currentBatchRows = datasetToProcess.slice(batchStartIndex, batchEndIndex);
-        
+
         addLog(`Preparing batch: Rows ${batchStartIndex + 1} to ${batchEndIndex}. Size: ${currentBatchRows.length}.`);
 
         const batchPromises = currentBatchRows.map(async (rawRowFromPreview, indexInBatch) => {
@@ -532,49 +532,55 @@ export default function RunDetailsPage() {
           fullPromptForLLM += evalCriteriaText;
 
           const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: evalParamDetailsForLLM.map(ep => ep.id), parameterIdsRequiringRationale: parameterIdsRequiringRationale };
-          
+
+          const itemResultShell: {
+            inputData: Record<string, any>;
+            judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string; error?: string }>;
+            groundTruth?: Record<string, string>;
+            originalIndex: number;
+          } = {
+            inputData: inputDataForRow,
+            judgeLlmOutput: {}, // will be overwritten
+            originalIndex: overallRowIndex,
+          };
+
+          if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) {
+            itemResultShell.groundTruth = groundTruthDataForRow;
+          }
+
           try {
             addLog(`Sending prompt for row ${overallRowIndex + 1} to Genkit flow...`);
             const judgeOutput = await judgeLlmEvaluation(genkitInput);
             addLog(`Genkit flow for row ${overallRowIndex + 1} responded successfully.`);
-            return { 
-              inputData: inputDataForRow, 
-              judgeLlmOutput: judgeOutput, 
-              groundTruth: runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0 ? groundTruthDataForRow : undefined,
-              originalIndex: overallRowIndex 
-            };
+            itemResultShell.judgeLlmOutput = judgeOutput;
           } catch(flowError: any) {
             addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error");
             const errorOutputForAllParams: Record<string, { chosenLabel: string; rationale?: string; error?: string }> = {};
             runDetails.selectedEvalParamIds.forEach(paramId => {
               errorOutputForAllParams[paramId] = {
-                chosenLabel: 'ERROR_PROCESSING_ROW', // Consistent label for error
+                chosenLabel: 'ERROR_PROCESSING_ROW',
                 error: flowError.message || 'Unknown error processing row with LLM.'
               };
             });
-            return { 
-              inputData: inputDataForRow, 
-              judgeLlmOutput: errorOutputForAllParams, 
-              groundTruth: runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0 ? groundTruthDataForRow : undefined,
-              originalIndex: overallRowIndex
-            };
+            itemResultShell.judgeLlmOutput = errorOutputForAllParams;
           }
+          return itemResultShell;
         });
 
         const settledBatchResults = await Promise.all(batchPromises);
-        
-        settledBatchResults.forEach(item => {
-            const { originalIndex, ...resultItem } = item as EvalRunResultItem & { originalIndex: number };
-            collectedResults.push(resultItem);
+
+        settledBatchResults.forEach(itemWithIndex => {
+            const { originalIndex, ...resultItem } = itemWithIndex;
+            collectedResults.push(resultItem as EvalRunResultItem);
         });
 
         addLog(`Batch from row ${batchStartIndex + 1} to ${batchEndIndex} processed. Collected ${settledBatchResults.length} results/errors from this batch.`);
-        
+
         const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
         updateRunMutation.mutate({
           id: runId,
           progress: currentProgress,
-          results: [...collectedResults],
+          results: [...collectedResults], // Send a new array reference for reactivity if needed
           status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing'
         });
       }
@@ -650,7 +656,7 @@ export default function RunDetailsPage() {
         evalParamDetailsForLLM.forEach(paramDetail => {
           const llmOutput = item.judgeLlmOutput[paramDetail.id];
           const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
-          
+
           if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase()) {
             mismatchDetails.push({
               inputData: item.inputData,
@@ -746,7 +752,7 @@ export default function RunDetailsPage() {
       default: return <Badge variant="outline" className="text-base">{status}</Badge>;
     }
   };
-  
+
   return (
     <div className="space-y-6 p-4 md:p-6">
       <Card className="shadow-lg">
@@ -841,8 +847,8 @@ export default function RunDetailsPage() {
                             const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined;
                             const llmLabel = output?.chosenLabel;
                             const gtLabel = groundTruthValue;
-                            const isMatch = runDetails.runType === 'GroundTruth' && 
-                                            gtLabel !== undefined && 
+                            const isMatch = runDetails.runType === 'GroundTruth' &&
+                                            gtLabel !== undefined &&
                                             llmLabel && !output?.error &&
                                             String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase();
                             const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
