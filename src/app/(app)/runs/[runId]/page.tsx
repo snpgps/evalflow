@@ -397,7 +397,7 @@ export default function RunDetailsPage() {
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex };
           if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
           try { addLog(`Sending prompt for row ${overallRowIndex + 1} to Genkit flow...`); const judgeOutput = await judgeLlmEvaluation(genkitInput); addLog(`Genkit flow for row ${overallRowIndex + 1} responded.`); itemResultShell.judgeLlmOutput = judgeOutput;
-          } catch(flowError: any) { addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error"); const errorOutputForAllParams: Record<string, { chosenLabel: string; rationale?: string; error?: string }> = {}; runDetails.selectedEvalParamIds.forEach(paramId => { errorOutputForAllParams[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: flowError.message || 'Unknown error.' }; }); itemResultShell.judgeLlmOutput = errorOutputForAllParams; }
+          } catch(flowError: any) { addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error"); const errorOutputForAllParams: Record<string, { chosenLabel: string; rationale?: string; error?: string }> = {}; runDetails.selectedEvalParamIds.forEach(paramId => { errorOutputForAllParams[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: flowError.message || 'Unknown error processing row with LLM.' }; }); itemResultShell.judgeLlmOutput = errorOutputForAllParams; }
           return itemResultShell;
         });
         const settledBatchResults = await Promise.all(batchPromises);
@@ -489,8 +489,8 @@ export default function RunDetailsPage() {
 
       {displayedPreviewData.length > 0 && (
         <Card>
-          <CardHeader> <CardTitle>Dataset Sample Preview (Input Data Only)</CardTitle> <CardDescription>Showing {displayedPreviewData.length} rows that will be processed. (Configured N: {runDetails.runOnNRows === 0 ? 'All' : runDetails.runOnNRows}, System processing limit: {MAX_ROWS_FOR_PROCESSING} rows). Ground truth data (if any) is used internally.</CardDescription> </CardHeader>
-          <CardContent> <div className="max-h-96 overflow-auto"> <Table> <TableHeader><TableRow>{previewTableHeaders.map(header => <TableHead key={header}>{header}</TableHead>)}</TableRow></TableHeader> <TableBody> {displayedPreviewData.map((row, rowIndex) => ( <TableRow key={`preview-row-${rowIndex}`}> {previewTableHeaders.map(header => <TableCell key={`preview-cell-${rowIndex}-${header}`} className="text-xs max-w-[150px] sm:max-w-[200px] truncate" title={String(row[header])}>{String(row[header])}</TableCell>)} </TableRow> ))} </TableBody> </Table> </div> </CardContent>
+          <CardHeader><CardTitle>Dataset Sample Preview (Input Data Only)</CardTitle><CardDescription>Showing {displayedPreviewData.length} rows that will be processed. (Configured N: {runDetails.runOnNRows === 0 ? 'All' : runDetails.runOnNRows}, System processing limit: {MAX_ROWS_FOR_PROCESSING} rows). Ground truth data (if any) is used internally.</CardDescription></CardHeader>
+          <CardContent><div className="max-h-96 overflow-auto"><Table><TableHeader><TableRow>{previewTableHeaders.map(header => <TableHead key={header}>{header}</TableHead>)}</TableRow></TableHeader><TableBody>{displayedPreviewData.map((row, rowIndex) => (<TableRow key={`preview-row-${rowIndex}`}>{previewTableHeaders.map(header => <TableCell key={`preview-cell-${rowIndex}-${header}`} className="text-xs max-w-[150px] sm:max-w-[200px] truncate" title={String(row[header])}>{String(row[header])}</TableCell>)}</TableRow>))}</TableBody></Table></div></CardContent>
         </Card>
       )}
 
@@ -516,13 +516,12 @@ export default function RunDetailsPage() {
             <CardContent>
               {actualResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization.' : (runDetails.status === 'Pending' ? 'Fetch data sample.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : 'Run may have failed.'))}</p> ) : (
                 <div className="max-h-[600px] overflow-auto">
-                  <Table>
-                    <TableHeader> <TableRow> <TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead> {evalParamDetailsForLLM?.map(paramDetail => ( <TableHead key={paramDetail.id} className="min-w-[150px] sm:min-w-[200px]"> {paramDetail.name} </TableHead> ))} </TableRow> </TableHeader>
-                    <TableBody> {actualResultsToDisplay.map((item, index) => ( <TableRow key={`result-${index}`}> <TableCell className="text-xs align-top"> <pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre> </TableCell>
+                  <Table><TableHeader><TableRow><TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>{evalParamDetailsForLLM?.map(paramDetail => (<TableHead key={paramDetail.id} className="min-w-[150px] sm:min-w-[200px]">{paramDetail.name}</TableHead>))}</TableRow></TableHeader>
+                    <TableBody>{actualResultsToDisplay.map((item, index) => (<TableRow key={`result-${index}`}><TableCell className="text-xs align-top"><pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre></TableCell>
                       {evalParamDetailsForLLM?.map(paramDetail => {
                         const paramId = paramDetail.id; const output = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = output?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && !output?.error && String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
                         return ( <TableCell key={paramId} className="text-xs align-top"> <div><strong>LLM:</strong> {output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A')}</div> {output?.error && <div className="text-destructive text-[10px]">Error: {output.error}</div>} {showGroundTruth && !output?.error && ( <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}> <div className="flex items-center"> <strong>GT:</strong>&nbsp;{gtLabel} {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>} </div> </div> )} {output?.rationale && ( <details className="mt-1"> <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center"> <MessageSquareText className="h-3 w-3 mr-1"/> LLM Rationale </summary> <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{output.rationale}</p> </details> )} </TableCell> );
-                      })} </TableRow> ))} </TableBody>
+                      })}</TableRow>))}</TableBody>
                   </Table>
                 </div>
               )}
