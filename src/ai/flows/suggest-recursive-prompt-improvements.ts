@@ -11,7 +11,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { z } from 'genkit'; // Corrected import
 
 const MismatchDetailSchema = z.object({
   inputData: z.record(z.string(), z.any()).describe("The product parameters input for the row that had a mismatch."),
@@ -117,4 +117,3 @@ const internalSuggestRecursivePromptImprovementsFlow = ai.defineFlow(
     return output!;
   }
 );
-
