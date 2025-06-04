@@ -240,7 +240,7 @@ export default function RunDetailsPage() {
       for (const key in dataFromPayload) {
         if (Object.prototype.hasOwnProperty.call(dataFromPayload, key)) {
           const value = (dataFromPayload as any)[key];
-          if (value !== undefined) { // Filter out undefined values
+          if (value !== undefined) { 
             updateForFirestore[key] = value;
           }
         }
@@ -274,7 +274,7 @@ export default function RunDetailsPage() {
 
   useEffect(() => {
     if (runDetails?.results && runDetails.results.length > 0 && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) {
-      const newMetricsBreakdownData: ParameterChartData[] = evalParamDetailsForLLM.map(paramDetail => {
+      const newComputedMetrics: ParameterChartData[] = evalParamDetailsForLLM.map(paramDetail => {
         const labelCounts: Record<string, number> = {};
         if (paramDetail.labels && Array.isArray(paramDetail.labels)) {
           paramDetail.labels.forEach(label => {
@@ -327,11 +327,16 @@ export default function RunDetailsPage() {
           totalCompared: runDetails.runType === 'GroundTruth' ? totalComparedForParam : undefined,
         };
       });
-      setMetricsBreakdownData(newMetricsBreakdownData);
+      
+      if (JSON.stringify(newComputedMetrics) !== JSON.stringify(metricsBreakdownData)) {
+        setMetricsBreakdownData(newComputedMetrics);
+      }
     } else {
-      setMetricsBreakdownData([]);
+      if (metricsBreakdownData.length > 0) {
+        setMetricsBreakdownData([]);
+      }
     }
-  }, [runDetails, evalParamDetailsForLLM]);
+  }, [runDetails, evalParamDetailsForLLM, metricsBreakdownData]);
 
 
   const handleFetchAndPreviewData = async () => {
@@ -532,21 +537,22 @@ export default function RunDetailsPage() {
           fullPromptForLLM += evalCriteriaText;
 
           const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: evalParamDetailsForLLM.map(ep => ep.id), parameterIdsRequiringRationale: parameterIdsRequiringRationale };
-
+          
           const itemResultShell: {
             inputData: Record<string, any>;
             judgeLlmOutput: Record<string, { chosenLabel: string; rationale?: string; error?: string }>;
-            groundTruth?: Record<string, string>;
+            groundTruth?: Record<string, string>; // Keep it optional
             originalIndex: number;
           } = {
             inputData: inputDataForRow,
-            judgeLlmOutput: {}, // will be overwritten
+            judgeLlmOutput: {},
             originalIndex: overallRowIndex,
           };
 
           if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) {
             itemResultShell.groundTruth = groundTruthDataForRow;
           }
+
 
           try {
             addLog(`Sending prompt for row ${overallRowIndex + 1} to Genkit flow...`);
@@ -580,7 +586,7 @@ export default function RunDetailsPage() {
         updateRunMutation.mutate({
           id: runId,
           progress: currentProgress,
-          results: [...collectedResults], // Send a new array reference for reactivity if needed
+          results: [...collectedResults], 
           status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing'
         });
       }
@@ -752,6 +758,7 @@ export default function RunDetailsPage() {
       default: return <Badge variant="outline" className="text-base">{status}</Badge>;
     }
   };
+  ;
 
   return (
     <div className="space-y-6 p-4 md:p-6">
