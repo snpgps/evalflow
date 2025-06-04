@@ -211,8 +211,8 @@ export default function IterativePromptImproverPage() {
     if (selectedEvalRunDetails && targetEvalParamId && desiredTargetLabel && allEvalParamsDetails.length > 0) {
       const currentParamDetails = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
       if (!currentParamDetails) {
-        setMismatchDisplayData([]);
-        setMismatchDetailsForFlow([]);
+        if (mismatchDisplayData.length > 0) setMismatchDisplayData([]);
+        if (mismatchDetailsForFlow.length > 0) setMismatchDetailsForFlow([]);
         return;
       }
 
@@ -240,13 +240,19 @@ export default function IterativePromptImproverPage() {
           });
         }
       });
-      setMismatchDisplayData(newMismatchesForDisplay);
-      setMismatchDetailsForFlow(newMismatchesForFlow);
+      
+      if (JSON.stringify(newMismatchesForDisplay) !== JSON.stringify(mismatchDisplayData)) {
+        setMismatchDisplayData(newMismatchesForDisplay);
+      }
+      if (JSON.stringify(newMismatchesForFlow) !== JSON.stringify(mismatchDetailsForFlow)) {
+        setMismatchDetailsForFlow(newMismatchesForFlow);
+      }
+
     } else {
-      setMismatchDisplayData([]);
-      setMismatchDetailsForFlow([]);
+      if (mismatchDisplayData.length > 0) setMismatchDisplayData([]);
+      if (mismatchDetailsForFlow.length > 0) setMismatchDetailsForFlow([]);
     }
-  }, [selectedEvalRunDetails, targetEvalParamId, desiredTargetLabel, allEvalParamsDetails]);
+  }, [selectedEvalRunDetails, targetEvalParamId, desiredTargetLabel, allEvalParamsDetails, mismatchDisplayData, mismatchDetailsForFlow]);
 
 
   const handleSuggestImprovements = async (e: FormEvent) => {
@@ -502,5 +508,7 @@ export default function IterativePromptImproverPage() {
     </div>
   );
 }
+
+    
 
     
