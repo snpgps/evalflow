@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input'; // Added Input
+import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from '@/components/ui/textarea';
@@ -58,6 +58,7 @@ interface EvalRun {
   selectedEvalParamIds: string[];
   selectedEvalParamNames?: string[];
   runOnNRows: number;
+  concurrencyLimit?: number; // Concurrency limit is now part of the run
   progress?: number;
   results?: EvalRunResultItem[];
   previewedDatasetSample?: Array<Record<string, any>>;
@@ -192,7 +193,6 @@ export default function RunDetailsPage() {
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [suggestionResult, setSuggestionResult] = useState<SuggestRecursivePromptImprovementsOutput | null>(null);
-  const [concurrencyLimit, setConcurrencyLimit] = useState<number>(3);
 
 
   useEffect(() => {
@@ -462,7 +462,7 @@ export default function RunDetailsPage() {
 
       const datasetToProcess = runDetails.previewedDatasetSample;
       const rowsToProcess = datasetToProcess.length;
-      const effectiveConcurrencyLimit = Math.max(1, concurrencyLimit);
+      const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); // Use run's concurrency, default to 3
       addLog(`Starting LLM categorization for ${rowsToProcess} previewed rows with concurrency: ${effectiveConcurrencyLimit}.`);
       
       const parameterIdsRequiringRationale = evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id);
@@ -734,20 +734,6 @@ export default function RunDetailsPage() {
                 )}
                 <Button variant="outline" onClick={handleDownloadResults} disabled={!canDownloadResults} className="w-full sm:w-auto"> <Download className="mr-2 h-4 w-4" /> Download Results </Button>
             </div>
-            <div className="flex items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto md:self-end">
-                <Label htmlFor="concurrency-limit" className="text-xs whitespace-nowrap shrink-0">LLM Concurrency:</Label>
-                <Input
-                    id="concurrency-limit"
-                    type="number"
-                    value={concurrencyLimit}
-                    onChange={(e) => setConcurrencyLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    min="1"
-                    max="20" 
-                    className="h-8 w-20 text-xs"
-                    disabled={runDetails.status === 'Running' || runDetails.status === 'Processing'}
-                    title="Number of LLM calls to make in parallel."
-                />
-            </div>
           </div>
         </CardHeader>
         {(isPreviewDataLoading || (runDetails.status === 'Running' || runDetails.status === 'Processing') || isLoadingEvalParamsForLLMHook) && (
@@ -788,7 +774,7 @@ export default function RunDetailsPage() {
 
       <Tabs defaultValue="results_table">
         <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 mb-4"> <TabsTrigger value="config">Run Configuration</TabsTrigger> <TabsTrigger value="results_table">LLM Results Table</TabsTrigger> <TabsTrigger value="breakdown">Metrics Breakdown</TabsTrigger> </TabsList>
-        <TabsContent value="config"> <Card> <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader> <CardContent className="space-y-3 text-sm"> <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"> <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p> <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p> <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId}</p> <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p> <p><strong>Test on Rows Config (from dataset):</strong> {runDetails.runOnNRows === 0 ? 'All (capped for processing)' : `First ${runDetails.runOnNRows} (capped for processing)`}</p> <div><strong>Evaluation Parameters Used:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected or details not loaded.")} </div> </div> </CardContent> </Card> </TabsContent>
+        <TabsContent value="config"> <Card> <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader> <CardContent className="space-y-3 text-sm"> <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"> <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p> <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p> <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId}</p> <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p> <p><strong>Test on Rows Config (from dataset):</strong> {runDetails.runOnNRows === 0 ? 'All (capped for processing)' : `First ${runDetails.runOnNRows} (capped for processing)`}</p> <p><strong>LLM Concurrency Limit:</strong> {runDetails.concurrencyLimit || 'Default (3)'}</p> <div><strong>Evaluation Parameters Used:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected or details not loaded.")} </div> </div> </CardContent> </Card> </TabsContent>
         <TabsContent value="results_table">
           <Card>
             <CardHeader>

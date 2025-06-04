@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { PlusCircle, PlayCircle, Eye, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, Loader2, TestTube2, CheckCheck } from "lucide-react";
+import { PlusCircle, PlayCircle, Eye, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, Loader2, TestTube2, CheckCheck, Zap } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -62,6 +62,7 @@ interface EvalRun {
   selectedEvalParamNames?: string[];
 
   runOnNRows: number;
+  concurrencyLimit: number; // Added concurrency limit
 
   // Results
   progress?: number;
@@ -201,6 +202,7 @@ export default function EvalRunsPage() {
   const [selectedPromptVersionId, setSelectedPromptVersionId] = useState('');
   const [selectedEvalParamIds, setSelectedEvalParamIds] = useState<string[]>([]);
   const [runOnNRows, setRunOnNRows] = useState<number>(0); // 0 means all
+  const [newRunConcurrencyLimit, setNewRunConcurrencyLimit] = useState<number>(3);
 
 
   const addEvalRunMutation = useMutation<string, Error, NewEvalRunPayload>({
@@ -274,6 +276,10 @@ export default function EvalRunsPage() {
       toast({ title: "Validation Error", description: "Number of rows to test cannot be negative.", variant: "destructive" });
       return;
     }
+    if (newRunConcurrencyLimit < 1) {
+      toast({ title: "Validation Error", description: "Concurrency limit must be at least 1.", variant: "destructive" });
+      return;
+    }
     
     if (!datasetVersion.columnMapping || Object.keys(datasetVersion.columnMapping).length === 0) {
       toast({ title: "Dataset Version Not Ready", description: "The selected dataset version must have product parameters mapped. Please configure it on the Datasets page.", variant: "destructive" });
@@ -305,6 +311,7 @@ export default function EvalRunsPage() {
       selectedEvalParamIds: selectedEvalParamIds,
       selectedEvalParamNames: selEvalParams.map(ep => ep.name),
       runOnNRows: Number(runOnNRows) || 0,
+      concurrencyLimit: Number(newRunConcurrencyLimit) || 3,
     };
     addEvalRunMutation.mutate(newRunData);
   };
@@ -319,6 +326,7 @@ export default function EvalRunsPage() {
     setSelectedPromptVersionId('');
     setSelectedEvalParamIds([]);
     setRunOnNRows(0);
+    setNewRunConcurrencyLimit(3);
   };
 
   const handleDeleteRun = (runId: string) => {
@@ -477,6 +485,13 @@ export default function EvalRunsPage() {
                         <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => setRunOnNRows(parseInt(e.target.value, 10))} min="0" />
                         <p className="text-xs text-muted-foreground mt-1">For Ground Truth runs, this is the number of rows used for comparison. 0 uses all available mapped rows (capped for preview on run details page).</p>
                       </div>
+                      
+                      <div>
+                        <Label htmlFor="run-concurrency">LLM Concurrency Limit</Label>
+                        <Input id="run-concurrency" type="number" value={newRunConcurrencyLimit} onChange={(e) => setNewRunConcurrencyLimit(Math.max(1, parseInt(e.target.value, 10) || 1))} min="1" max="20" />
+                        <p className="text-xs text-muted-foreground mt-1">Number of LLM calls to make in parallel (e.g., 3-5). Max suggested: 20.</p>
+                      </div>
+
                     </form>
                   </div>
                   <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
