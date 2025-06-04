@@ -58,7 +58,7 @@ interface EvalRun {
   selectedEvalParamIds: string[];
   selectedEvalParamNames?: string[];
   runOnNRows: number;
-  concurrencyLimit?: number; // Concurrency limit is now part of the run
+  concurrencyLimit?: number; 
   progress?: number;
   results?: EvalRunResultItem[];
   previewedDatasetSample?: Array<Record<string, any>>;
@@ -462,7 +462,7 @@ export default function RunDetailsPage() {
 
       const datasetToProcess = runDetails.previewedDatasetSample;
       const rowsToProcess = datasetToProcess.length;
-      const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); // Use run's concurrency, default to 3
+      const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); 
       addLog(`Starting LLM categorization for ${rowsToProcess} previewed rows with concurrency: ${effectiveConcurrencyLimit}.`);
       
       const parameterIdsRequiringRationale = evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id);
@@ -513,11 +513,11 @@ export default function RunDetailsPage() {
               inputData: inputDataForRow, 
               judgeLlmOutput: judgeOutput, 
               groundTruth: runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0 ? groundTruthDataForRow : undefined,
-              originalIndex: overallRowIndex // Keep track for ordering if needed, though Promise.all preserves order
+              originalIndex: overallRowIndex 
             };
           } catch(flowError: any) {
             addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error");
-            return { error: flowError.message, originalIndex: overallRowIndex, inputData: inputDataForRow }; // Return error object
+            return { error: flowError.message, originalIndex: overallRowIndex, inputData: inputDataForRow }; 
           }
         });
 
@@ -528,8 +528,6 @@ export default function RunDetailsPage() {
             const { originalIndex, ...resultItem } = itemOrError as EvalRunResultItem & { originalIndex: number };
             collectedResults.push(resultItem);
           } else if (itemOrError && (itemOrError as any).error) {
-            // Log error for specific row, but allow run to continue for other rows
-            // Potentially create a placeholder result or skip
             collectedResults.push({
                 inputData: (itemOrError as any).inputData,
                 judgeLlmOutput: { error: `Failed: ${(itemOrError as any).error}` },
@@ -618,7 +616,7 @@ export default function RunDetailsPage() {
         evalParamDetailsForLLM.forEach(paramDetail => {
           const llmOutput = item.judgeLlmOutput[paramDetail.id];
           const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
-          // Ensure llmOutput exists and chosenLabel is not an error placeholder
+          
           if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !(llmOutput as any).error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase()) {
             mismatchDetails.push({
               inputData: item.inputData,
@@ -800,7 +798,7 @@ export default function RunDetailsPage() {
                     <TableBody>
                       {actualResultsToDisplay.map((item, index) => (
                         <TableRow key={`result-${index}`}>
-                          <TableCell className="max-w-xs text-xs align-top">
+                          <TableCell className="text-xs align-top">
                             <pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre>
                           </TableCell>
                           {evalParamDetailsForLLM?.map(paramDetail => {
@@ -919,3 +917,5 @@ export default function RunDetailsPage() {
     </div>
   );
 }
+
+      
