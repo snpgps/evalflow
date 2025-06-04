@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input'; // Added Input
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from '@/components/ui/textarea';
@@ -191,6 +192,7 @@ export default function RunDetailsPage() {
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [suggestionResult, setSuggestionResult] = useState<SuggestRecursivePromptImprovementsOutput | null>(null);
+  const [concurrencyLimit, setConcurrencyLimit] = useState<number>(3);
 
 
   useEffect(() => {
@@ -370,7 +372,7 @@ export default function RunDetailsPage() {
             setIsPreviewDataLoading(false);
             return;
         }
-
+        
         let rowsToAttemptFromConfig: number;
         if (runDetails.runOnNRows > 0) {
             rowsToAttemptFromConfig = Math.min(runDetails.runOnNRows, parsedRows.length);
@@ -448,9 +450,10 @@ export default function RunDetailsPage() {
         return;
     }
 
-    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null });
-    addLog("LLM Categorization started using previewed data.");
-    let collectedResults: EvalRunResultItem[] = runDetails.results || [];
+    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: null, results: [] }); // Clear previous results
+    setSimulationLog([]);
+    addLog("LLM Categorization process initialized.");
+    let collectedResults: EvalRunResultItem[] = [];
     try {
       const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
       if (!promptTemplateText) throw new Error("Failed to fetch prompt template text.");
@@ -459,51 +462,92 @@ export default function RunDetailsPage() {
 
       const datasetToProcess = runDetails.previewedDatasetSample;
       const rowsToProcess = datasetToProcess.length;
-      addLog(`Starting LLM categorization for ${rowsToProcess} previewed rows.`);
+      const effectiveConcurrencyLimit = Math.max(1, concurrencyLimit);
+      addLog(`Starting LLM categorization for ${rowsToProcess} previewed rows with concurrency: ${effectiveConcurrencyLimit}.`);
+      
       const parameterIdsRequiringRationale = evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id);
 
-      for (let i = 0; i < rowsToProcess; i++) {
-        const rawRowFromPreview = datasetToProcess[i];
-        const inputDataForRow: Record<string, any> = {};
-        const groundTruthDataForRow: Record<string, string> = {};
-        for (const key in rawRowFromPreview) {
-          if (key.startsWith('_gt_')) {
-            groundTruthDataForRow[key.substring('_gt_'.length)] = String(rawRowFromPreview[key]);
-          } else {
-            inputDataForRow[key] = rawRowFromPreview[key];
+      for (let batchStartIndex = 0; batchStartIndex < rowsToProcess; batchStartIndex += effectiveConcurrencyLimit) {
+        const batchEndIndex = Math.min(batchStartIndex + effectiveConcurrencyLimit, rowsToProcess);
+        const currentBatchRows = datasetToProcess.slice(batchStartIndex, batchEndIndex);
+        
+        addLog(`Preparing batch: Rows ${batchStartIndex + 1} to ${batchEndIndex}. Size: ${currentBatchRows.length}.`);
+
+        const batchPromises = currentBatchRows.map(async (rawRowFromPreview, indexInBatch) => {
+          const overallRowIndex = batchStartIndex + indexInBatch;
+          const inputDataForRow: Record<string, any> = {};
+          const groundTruthDataForRow: Record<string, string> = {};
+
+          for (const key in rawRowFromPreview) {
+            if (key.startsWith('_gt_')) {
+              groundTruthDataForRow[key.substring('_gt_'.length)] = String(rawRowFromPreview[key]);
+            } else {
+              inputDataForRow[key] = rawRowFromPreview[key];
+            }
           }
-        }
-        addLog(`Processing row ${i + 1}/${rowsToProcess}: Inputs: ${JSON.stringify(inputDataForRow).substring(0,70)}... GT: ${JSON.stringify(groundTruthDataForRow).substring(0,50)}...`);
 
-        let fullPromptForLLM = promptTemplateText;
-        for (const productParamName in inputDataForRow) {
-          fullPromptForLLM = fullPromptForLLM.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName]));
-        }
-        let evalCriteriaText = "\n\n--- EVALUATION CRITERIA ---\n";
-        evalParamDetailsForLLM.forEach(ep => {
-          evalCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`;
-          if (ep.requiresRationale) evalCriteriaText += `IMPORTANT: For this parameter (${ep.name}), when providing your evaluation, you MUST include a 'rationale' explaining your choice.\n`;
-          if (ep.labels && ep.labels.length > 0) {
-            evalCriteriaText += "Labels:\n";
-            ep.labels.forEach(label => { evalCriteriaText += `  - "${label.name}": ${label.definition || 'No definition.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; });
-          } else { evalCriteriaText += " (No specific categorization labels defined for this parameter)\n"; }
-          evalCriteriaText += "\n";
+          let fullPromptForLLM = promptTemplateText;
+          for (const productParamName in inputDataForRow) {
+            fullPromptForLLM = fullPromptForLLM.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName]));
+          }
+          let evalCriteriaText = "\n\n--- EVALUATION CRITERIA ---\n";
+          evalParamDetailsForLLM.forEach(ep => {
+            evalCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`;
+            if (ep.requiresRationale) evalCriteriaText += `IMPORTANT: For this parameter (${ep.name}), when providing your evaluation, you MUST include a 'rationale' explaining your choice.\n`;
+            if (ep.labels && ep.labels.length > 0) {
+              evalCriteriaText += "Labels:\n";
+              ep.labels.forEach(label => { evalCriteriaText += `  - "${label.name}": ${label.definition || 'No definition.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; });
+            } else { evalCriteriaText += " (No specific categorization labels defined for this parameter)\n"; }
+            evalCriteriaText += "\n";
+          });
+          evalCriteriaText += "--- END EVALUATION CRITERIA ---\n";
+          fullPromptForLLM += evalCriteriaText;
+
+          const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: evalParamDetailsForLLM.map(ep => ep.id), parameterIdsRequiringRationale: parameterIdsRequiringRationale };
+          
+          try {
+            addLog(`Sending prompt for row ${overallRowIndex + 1} to Genkit flow...`);
+            const judgeOutput = await judgeLlmEvaluation(genkitInput);
+            addLog(`Genkit flow for row ${overallRowIndex + 1} responded successfully.`);
+            return { 
+              inputData: inputDataForRow, 
+              judgeLlmOutput: judgeOutput, 
+              groundTruth: runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0 ? groundTruthDataForRow : undefined,
+              originalIndex: overallRowIndex // Keep track for ordering if needed, though Promise.all preserves order
+            };
+          } catch(flowError: any) {
+            addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error");
+            return { error: flowError.message, originalIndex: overallRowIndex, inputData: inputDataForRow }; // Return error object
+          }
         });
-        evalCriteriaText += "--- END EVALUATION CRITERIA ---\n";
-        fullPromptForLLM += evalCriteriaText;
 
-        const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: evalParamDetailsForLLM.map(ep => ep.id), parameterIdsRequiringRationale: parameterIdsRequiringRationale };
-        addLog(`Sending prompt for row ${i+1} to Genkit flow...`);
-        const judgeOutput = await judgeLlmEvaluation(genkitInput);
-        addLog(`Genkit flow for row ${i+1} responded: ${JSON.stringify(judgeOutput)}`);
-        const resultItem: EvalRunResultItem = { inputData: inputDataForRow, judgeLlmOutput: judgeOutput };
-        if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) resultItem.groundTruth = groundTruthDataForRow;
-        collectedResults.push(resultItem);
-        const currentProgress = Math.round(((i + 1) / rowsToProcess) * 100);
-        if ((i + 1) % Math.max(1, Math.floor(rowsToProcess / 10)) === 0 || (i+1) === rowsToProcess) {
-            updateRunMutation.mutate({ id: runId, progress: currentProgress, results: [...collectedResults], status: (i+1) === rowsToProcess ? 'Completed' : 'Processing' });
-        }
+        const settledBatchResults = await Promise.all(batchPromises);
+        
+        settledBatchResults.forEach(itemOrError => {
+          if (itemOrError && !(itemOrError as any).error) {
+            const { originalIndex, ...resultItem } = itemOrError as EvalRunResultItem & { originalIndex: number };
+            collectedResults.push(resultItem);
+          } else if (itemOrError && (itemOrError as any).error) {
+            // Log error for specific row, but allow run to continue for other rows
+            // Potentially create a placeholder result or skip
+            collectedResults.push({
+                inputData: (itemOrError as any).inputData,
+                judgeLlmOutput: { error: `Failed: ${(itemOrError as any).error}` },
+                groundTruth: runDetails.runType === 'GroundTruth' ? (datasetToProcess[(itemOrError as any).originalIndex] as any)._gt_ : undefined
+            });
+          }
+        });
+        addLog(`Batch from row ${batchStartIndex + 1} to ${batchEndIndex} processed. Collected ${settledBatchResults.filter(r => !(r as any).error).length} successful results from this batch.`);
+        
+        const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
+        updateRunMutation.mutate({
+          id: runId,
+          progress: currentProgress,
+          results: [...collectedResults],
+          status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing'
+        });
       }
+
       addLog("LLM Categorization completed for all previewed rows.");
       updateRunMutation.mutate({ id: runId, status: 'Completed', results: collectedResults, progress: 100, completedAt: serverTimestamp() });
       toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
@@ -514,6 +558,7 @@ export default function RunDetailsPage() {
       updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM Categorization failed: ${error.message}`, results: collectedResults });
     }
   };
+
 
   const handleDownloadResults = () => {
     if (!runDetails || !runDetails.results || runDetails.results.length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) {
@@ -529,7 +574,7 @@ export default function RunDetailsPage() {
       sortedInputDataKeys.forEach(key => { row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : ''; });
       evalParamDetailsForLLM.forEach(paramDetail => {
         const output = item.judgeLlmOutput[paramDetail.id];
-        row[`${paramDetail.name} - LLM Label`] = output?.chosenLabel || 'N/A';
+        row[`${paramDetail.name} - LLM Label`] = output?.chosenLabel || (output as any)?.error || 'N/A';
         if (runDetails.runType === 'GroundTruth') {
           const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A';
           row[`${paramDetail.name} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A';
@@ -573,7 +618,8 @@ export default function RunDetailsPage() {
         evalParamDetailsForLLM.forEach(paramDetail => {
           const llmOutput = item.judgeLlmOutput[paramDetail.id];
           const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
-          if (gtLabel !== undefined && llmOutput && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase()) {
+          // Ensure llmOutput exists and chosenLabel is not an error placeholder
+          if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !(llmOutput as any).error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase()) {
             mismatchDetails.push({
               inputData: item.inputData,
               evaluationParameterName: paramDetail.name,
@@ -630,7 +676,7 @@ export default function RunDetailsPage() {
       evalParamDetailsForLLM.some(paramDetail => {
         const llmOutput = item.judgeLlmOutput[paramDetail.id];
         const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
-        return gtLabel !== undefined && llmOutput && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase();
+        return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !(llmOutput as any).error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase();
       })
     );
   }, [runDetails, evalParamDetailsForLLM]);
@@ -668,24 +714,40 @@ export default function RunDetailsPage() {
       default: return <Badge variant="outline" className="text-base">{status}</Badge>;
     }
   };
-
+  
   return (
     <div className="space-y-6 p-4 md:p-6">
       <Card className="shadow-lg">
         <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-           <div>
+           <div className="flex-grow">
             <div className="flex items-center gap-3"> <FileSearch className="h-8 w-8 text-primary" /> <CardTitle className="text-2xl md:text-3xl font-headline">{runDetails.name}</CardTitle> </div>
             <CardDescription className="mt-1 ml-0 md:ml-11 text-xs md:text-sm"> Run ID: {runDetails.id} | Type: {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'} | Created: {formatTimestamp(runDetails.createdAt, true)} {runDetails.status === 'Completed' && runDetails.completedAt && ` | Completed: ${formatTimestamp(runDetails.completedAt, true)}`} </CardDescription>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto self-start md:self-center">
-             <Button variant="outline" onClick={handleFetchAndPreviewData} disabled={isLoadingEvalParamsForLLMHook || isPreviewDataLoading || (runDetails.status === 'Running' || runDetails.status === 'Processing') || !canFetchData || isRunTerminal} className="w-full sm:w-auto"> {isPreviewDataLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <DatabaseZap className="mr-2 h-4 w-4" />} {runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0 ? 'Refetch Sample' : 'Fetch & Preview Sample'} </Button>
-             <Button variant="default" onClick={simulateRunExecution} disabled={isLoadingEvalParamsForLLMHook || (runDetails.status === 'Running' || runDetails.status === 'Processing') || !canStartLLMCategorization || isRunTerminal } className="w-full sm:w-auto"> {(runDetails.status === 'Running' || runDetails.status === 'Processing') || isLoadingEvalParamsForLLMHook ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />} {(runDetails.status === 'Running' || runDetails.status === 'Processing') ? 'Categorizing...' : (isLoadingEvalParamsForLLMHook ? 'Loading Config...' : (runDetails.status === 'Failed' ? 'Retry LLM Categorization' : 'Start LLM Categorization'))} </Button>
-             {canSuggestImprovements && (
-                <Button variant="outline" onClick={handleSuggestImprovementsClick} disabled={isLoadingSuggestion} className="w-full sm:w-auto">
-                    <Wand2 className="mr-2 h-4 w-4" /> Suggest Prompt Improvements
-                </Button>
-             )}
-             <Button variant="outline" onClick={handleDownloadResults} disabled={!canDownloadResults} className="w-full sm:w-auto"> <Download className="mr-2 h-4 w-4" /> Download Results </Button>
+          <div className="flex flex-col items-start md:items-end gap-2 w-full md:w-auto">
+            <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto self-start md:self-center">
+                <Button variant="outline" onClick={handleFetchAndPreviewData} disabled={isLoadingEvalParamsForLLMHook || isPreviewDataLoading || (runDetails.status === 'Running' || runDetails.status === 'Processing') || !canFetchData || isRunTerminal} className="w-full sm:w-auto"> {isPreviewDataLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <DatabaseZap className="mr-2 h-4 w-4" />} {runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0 ? 'Refetch Sample' : 'Fetch & Preview Sample'} </Button>
+                <Button variant="default" onClick={simulateRunExecution} disabled={isLoadingEvalParamsForLLMHook || (runDetails.status === 'Running' || runDetails.status === 'Processing') || !canStartLLMCategorization || isRunTerminal } className="w-full sm:w-auto"> {(runDetails.status === 'Running' || runDetails.status === 'Processing') || isLoadingEvalParamsForLLMHook ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />} {(runDetails.status === 'Running' || runDetails.status === 'Processing') ? 'Categorizing...' : (isLoadingEvalParamsForLLMHook ? 'Loading Config...' : (runDetails.status === 'Failed' ? 'Retry LLM Categorization' : 'Start LLM Categorization'))} </Button>
+                {canSuggestImprovements && (
+                    <Button variant="outline" onClick={handleSuggestImprovementsClick} disabled={isLoadingSuggestion} className="w-full sm:w-auto">
+                        <Wand2 className="mr-2 h-4 w-4" /> Suggest Prompt Improvements
+                    </Button>
+                )}
+                <Button variant="outline" onClick={handleDownloadResults} disabled={!canDownloadResults} className="w-full sm:w-auto"> <Download className="mr-2 h-4 w-4" /> Download Results </Button>
+            </div>
+            <div className="flex items-center gap-2 mt-2 md:mt-0 w-full sm:w-auto md:self-end">
+                <Label htmlFor="concurrency-limit" className="text-xs whitespace-nowrap shrink-0">LLM Concurrency:</Label>
+                <Input
+                    id="concurrency-limit"
+                    type="number"
+                    value={concurrencyLimit}
+                    onChange={(e) => setConcurrencyLimit(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    min="1"
+                    max="20" 
+                    className="h-8 w-20 text-xs"
+                    disabled={runDetails.status === 'Running' || runDetails.status === 'Processing'}
+                    title="Number of LLM calls to make in parallel."
+                />
+            </div>
           </div>
         </CardHeader>
         {(isPreviewDataLoading || (runDetails.status === 'Running' || runDetails.status === 'Processing') || isLoadingEvalParamsForLLMHook) && (
@@ -768,7 +830,7 @@ export default function RunDetailsPage() {
                             const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
                             return (
                               <TableCell key={paramId} className="text-xs align-top">
-                                <div><strong>LLM:</strong> {output?.chosenLabel || 'N/A'}</div>
+                                <div><strong>LLM:</strong> {output?.chosenLabel || (output as any)?.error || 'N/A'}</div>
                                 {showGroundTruth && (
                                   <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}>
                                     <div className="flex items-center">
