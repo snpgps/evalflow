@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy } from "lucide-react";
+import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Lightbulb, ListChecks } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, query, orderBy, type Timestamp } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -18,10 +19,16 @@ import {
   suggestRecursivePromptImprovements,
   type SuggestRecursivePromptImprovementsInput,
   type SuggestRecursivePromptImprovementsOutput,
-  type MismatchDetail
+  type MismatchDetail // Re-using this type
 } from '@/ai/flows/suggest-recursive-prompt-improvements';
-import type { EvalParameterForPrompts, CategorizationLabelForPrompts } from '@/app/(app)/prompts/page'; // Re-using type
-import type { ProductParameterForPrompts } from '@/app/(app)/prompts/page'; // Re-using type
+import {
+  analyzeEvalProblemCategories,
+  type AnalyzeEvalProblemCategoriesInput,
+  type AnalyzeEvalProblemCategoriesOutput,
+  type ProblemCategory,
+} from '@/ai/flows/analyze-eval-problem-categories'; // New flow
+import type { EvalParameterForPrompts, CategorizationLabelForPrompts } from '@/app/(app)/prompts/page';
+import type { ProductParameterForPrompts } from '@/app/(app)/prompts/page';
 
 
 interface EvalRunResultItemForInsights {
@@ -44,7 +51,6 @@ interface EvalRunDetailFromDB {
   selectedEvalParamIds: string[];
   promptId: string;
   promptVersionId: string;
-  // Add other fields if needed for context, e.g. datasetId, datasetVersionId
 }
 
 const fetchEvalRunsList = async (userId: string | null): Promise<EvalRunSummary[]> => {
@@ -111,26 +117,34 @@ const fetchAllProductParamsSchema = async (userId: string | null): Promise<Produ
         id: docSnap.id,
         name: docSnap.data().name as string,
         description: docSnap.data().description as string,
-        // No need for type or options for schema string here
     }));
 };
 
 
-export default function IterativePromptImproverPage() {
+export default function AiInsightsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
 
-  const [currentProductPrompt, setCurrentProductPrompt] = useState('');
+  // Shared state for input selections
+  const [currentProductPrompt, setCurrentProductPrompt] = useState(''); // Primarily for "Iterative Improver"
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [targetEvalParamId, setTargetEvalParamId] = useState<string | null>(null);
   const [desiredTargetLabel, setDesiredTargetLabel] = useState<string | null>(null);
 
+  // Shared state for mismatch data derived from selections
   const [mismatchDisplayData, setMismatchDisplayData] = useState<any[]>([]);
   const [mismatchDetailsForFlow, setMismatchDetailsForFlow] = useState<MismatchDetail[]>([]);
   
+  // State for "Iterative Prompt Improver" tab
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
   const [suggestionResult, setSuggestionResult] = useState<SuggestRecursivePromptImprovementsOutput | null>(null);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
+
+  // State for "Insights from Evals" tab
+  const [isLoadingProblemAnalysis, setIsLoadingProblemAnalysis] = useState(false);
+  const [problemAnalysisResult, setProblemAnalysisResult] = useState<AnalyzeEvalProblemCategoriesOutput | null>(null);
+  const [problemAnalysisError, setProblemAnalysisError] = useState<string | null>(null);
+
 
   useEffect(() => {
     const storedUserId = localStorage.getItem('currentUserId');
@@ -138,6 +152,7 @@ export default function IterativePromptImproverPage() {
     setIsLoadingUserId(false);
   }, []);
 
+  // Shared Queries
   const { data: evalRunsList = [], isLoading: isLoadingRunsList } = useQuery<EvalRunSummary[], Error>({
     queryKey: ['evalRunsListForInsights', currentUserId],
     queryFn: () => fetchEvalRunsList(currentUserId),
@@ -150,18 +165,17 @@ export default function IterativePromptImproverPage() {
     enabled: !!currentUserId && !!selectedRunId,
     onSuccess: (data) => {
       if (data?.promptId && data.promptVersionId) {
-        // Prefill currentProductPrompt if not already manually set
-        // This logic could be refined if user has already typed something.
-        if (!currentProductPrompt) {
+        if (!currentProductPrompt) { // Only prefill if empty, to respect user edits
              fetchOriginalPromptText(currentUserId, data.promptId, data.promptVersionId)
                 .then(text => { if(text) setCurrentProductPrompt(text); });
         }
       }
-      // Reset subsequent selections if run changes
       setTargetEvalParamId(null);
       setDesiredTargetLabel(null);
       setMismatchDisplayData([]);
       setMismatchDetailsForFlow([]);
+      setSuggestionResult(null);
+      setProblemAnalysisResult(null);
     }
   });
 
@@ -177,6 +191,7 @@ export default function IterativePromptImproverPage() {
       enabled: !!currentUserId,
   });
 
+  // Shared derived data
   const productParametersSchemaText = useMemo(() => {
     if (!allProductParams || allProductParams.length === 0) return "No product parameters defined.";
     return "Product Parameters Schema:\n" + allProductParams.map(p => `- ${p.name}: ${p.description || 'No definition'}`).join("\n");
@@ -184,7 +199,7 @@ export default function IterativePromptImproverPage() {
 
   const evaluationParametersSchemaText = useMemo(() => {
     if (!allEvalParamsDetails || allEvalParamsDetails.length === 0) return "No evaluation parameters defined.";
-     return "Full Evaluation Parameters Schema:\n" + allEvalParamsDetails.map(ep => {
+     return "Full Evaluation Parameters Schema (all available to project):\n" + allEvalParamsDetails.map(ep => {
         let schema = `- ID: ${ep.id}, Name: ${ep.name}\n  Definition: ${ep.definition}\n`;
         if (ep.requiresRationale) schema += `  (Requires Rationale)\n`;
         if (ep.categorizationLabels && ep.categorizationLabels.length > 0) {
@@ -216,36 +231,36 @@ export default function IterativePromptImproverPage() {
         return;
       }
 
-      const newMismatchesForDisplay: any[] = [];
-      const newMismatchesForFlow: MismatchDetail[] = [];
+      const newMismatchesDisplay: any[] = [];
+      const newMismatchesFlow: MismatchDetail[] = [];
 
       selectedEvalRunDetails.results?.forEach(item => {
         const llmOutput = item.judgeLlmOutput?.[targetEvalParamId];
         if (llmOutput && llmOutput.chosenLabel !== desiredTargetLabel && !llmOutput.error) {
-          if (newMismatchesForDisplay.length < 5) { // Limit display to 5 for UI
-            newMismatchesForDisplay.push({
+          if (newMismatchesDisplay.length < 5) { 
+            newMismatchesDisplay.push({
               inputData: item.inputData,
               llmChosenLabel: llmOutput.chosenLabel,
               llmRationale: llmOutput.rationale,
               desiredTargetLabel: desiredTargetLabel,
             });
           }
-          newMismatchesForFlow.push({
+          newMismatchesFlow.push({
             inputData: item.inputData,
             evaluationParameterName: currentParamDetails.name,
             evaluationParameterDefinition: currentParamDetails.definition,
             llmChosenLabel: llmOutput.chosenLabel,
-            groundTruthLabel: desiredTargetLabel, // User's target is the "ground truth" for improvement
+            groundTruthLabel: desiredTargetLabel, 
             llmRationale: llmOutput.rationale,
           });
         }
       });
       
-      if (JSON.stringify(newMismatchesForDisplay) !== JSON.stringify(mismatchDisplayData)) {
-        setMismatchDisplayData(newMismatchesForDisplay);
+      if (JSON.stringify(newMismatchesDisplay) !== JSON.stringify(mismatchDisplayData)) {
+        setMismatchDisplayData(newMismatchesDisplay);
       }
-      if (JSON.stringify(newMismatchesForFlow) !== JSON.stringify(mismatchDetailsForFlow)) {
-        setMismatchDetailsForFlow(newMismatchesForFlow);
+      if (JSON.stringify(newMismatchesFlow) !== JSON.stringify(mismatchDetailsForFlow)) {
+        setMismatchDetailsForFlow(newMismatchesFlow);
       }
 
     } else {
@@ -288,227 +303,363 @@ export default function IterativePromptImproverPage() {
     }
   };
 
+  const handleAnalyzeProblems = async (e: FormEvent) => {
+    e.preventDefault();
+     if (mismatchDetailsForFlow.length === 0) {
+      toast({ title: "No Mismatches", description: "No rows found where the LLM output differs from your desired target label for the selected parameter. Nothing to analyze for problems.", variant: "default" }); return;
+    }
+    const currentEvalParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
+    if (!currentEvalParam || !desiredTargetLabel) {
+      toast({ title: "Input Error", description: "Target parameter or desired label not fully selected.", variant: "destructive"}); return;
+    }
+
+    setIsLoadingProblemAnalysis(true);
+    setProblemAnalysisResult(null);
+    setProblemAnalysisError(null);
+
+    try {
+      const input: AnalyzeEvalProblemCategoriesInput = {
+        mismatchDetails: mismatchDetailsForFlow,
+        targetEvaluationParameterName: currentEvalParam.name,
+        targetEvaluationParameterDefinition: currentEvalParam.definition,
+        desiredTargetLabel: desiredTargetLabel,
+        productSchemaDescription: productParametersSchemaText,
+      };
+      const result = await analyzeEvalProblemCategories(input);
+      setProblemAnalysisResult(result);
+      toast({ title: "Problem Analysis Complete!", description: "Review the categorized problems below." });
+    } catch (error) {
+      console.error("Error analyzing problems:", error);
+      const errorMessage = (error as Error).message || "Failed to analyze problems.";
+      setProblemAnalysisError(errorMessage);
+      toast({ title: "Analysis Error", description: errorMessage, variant: "destructive" });
+    } finally {
+      setIsLoadingProblemAnalysis(false);
+    }
+  };
+
+
+  // Shared handlers for select changes
   const handleRunSelectChange = (runId: string) => {
     setSelectedRunId(runId);
-    // Reset subsequent fields when run changes
     setTargetEvalParamId(null);
     setDesiredTargetLabel(null);
     setSuggestionResult(null);
     setSuggestionError(null);
+    setProblemAnalysisResult(null);
+    setProblemAnalysisError(null);
   };
 
   const handleParamSelectChange = (paramId: string) => {
     setTargetEvalParamId(paramId);
-    setDesiredTargetLabel(null); // Reset label when param changes
+    setDesiredTargetLabel(null); 
     setSuggestionResult(null);
     setSuggestionError(null);
+    setProblemAnalysisResult(null);
+    setProblemAnalysisError(null);
   };
   
   const handleLabelSelectChange = (label: string) => {
     setDesiredTargetLabel(label);
     setSuggestionResult(null);
     setSuggestionError(null);
+    setProblemAnalysisResult(null);
+    setProblemAnalysisError(null);
   };
+
 
   if (isLoadingUserId) {
     return <div className="p-6"><Skeleton className="h-screen w-full"/></div>;
   }
   if (!currentUserId) {
-    return <Card className="m-4"><CardContent className="p-6 text-center text-muted-foreground">Please log in to use the Iterative Prompt Improver.</CardContent></Card>;
+    return <Card className="m-4"><CardContent className="p-6 text-center text-muted-foreground">Please log in to use AI Insights.</CardContent></Card>;
   }
+
+  const sharedInputSelectionUI = (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Target Your Analysis</CardTitle>
+        <CardDescription>Select an evaluation run and specify which parameter and label you want to focus on.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <Label htmlFor="evalRunSelectCommon" className="font-semibold">Evaluation Run to Analyze</Label>
+            <Select value={selectedRunId || ''} onValueChange={handleRunSelectChange} required>
+              <SelectTrigger id="evalRunSelectCommon" disabled={isLoadingRunsList}>
+                <SelectValue placeholder={isLoadingRunsList ? "Loading runs..." : "Select an Eval Run"} />
+              </SelectTrigger>
+              <SelectContent>
+                {evalRunsList.map(run => (
+                  <SelectItem key={run.id} value={run.id}>{run.name} ({new Date(run.createdAt.toDate()).toLocaleDateString()})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="targetEvalParamSelectCommon" className="font-semibold">Target Evaluation Parameter</Label>
+            <Select
+              value={targetEvalParamId || ''}
+              onValueChange={handleParamSelectChange}
+              required
+              disabled={!selectedRunId || isLoadingSelectedRunDetails || isLoadingAllEvalParams || availableEvalParamsForSelectedRun.length === 0}
+            >
+              <SelectTrigger id="targetEvalParamSelectCommon">
+                <SelectValue placeholder={
+                  !selectedRunId ? "Select a run first" :
+                  isLoadingSelectedRunDetails || isLoadingAllEvalParams ? "Loading params..." :
+                  availableEvalParamsForSelectedRun.length === 0 ? "No params in run" :
+                  "Select Target Parameter"
+                } />
+              </SelectTrigger>
+              <SelectContent>
+                {availableEvalParamsForSelectedRun.map(param => (
+                  <SelectItem key={param.id} value={param.id}>{param.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="desiredTargetLabelSelectCommon" className="font-semibold">Desired Target Label</Label>
+            <Select
+              value={desiredTargetLabel || ''}
+              onValueChange={handleLabelSelectChange}
+              required
+              disabled={!targetEvalParamId || availableLabelsForSelectedParam.length === 0}
+            >
+              <SelectTrigger id="desiredTargetLabelSelectCommon">
+                <SelectValue placeholder={
+                    !targetEvalParamId ? "Select a parameter first" :
+                    availableLabelsForSelectedParam.length === 0 ? "No labels for param" :
+                    "Select Desired Label"
+                }/>
+              </SelectTrigger>
+              <SelectContent>
+                {availableLabelsForSelectedParam.map(label => (
+                  <SelectItem key={label.name} value={label.name}>{label.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const mismatchReviewUI = (
+    <>
+    {mismatchDisplayData.length > 0 && (
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-lg">Review Mismatches (Auto-Generated for AI)</CardTitle>
+          <CardDescription>
+            Showing up to 5 examples from the run where the LLM's output for <strong className="text-primary">{allEvalParamsDetails.find(p=>p.id===targetEvalParamId)?.name || 'the selected parameter'}</strong> did not match your desired label: <strong className="text-primary">{desiredTargetLabel}</strong>.
+            The AI will use these examples to suggest improvements or analyze problems.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 max-h-96 overflow-y-auto">
+          {mismatchDisplayData.map((mismatch, index) => (
+            <Card key={`mismatch-display-${index}`} className="p-3 bg-muted/50 text-xs">
+              <p className="font-semibold mb-1">Example Mismatch #{index + 1}</p>
+              <div className="space-y-1">
+                <div><strong>Input Data:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(mismatch.inputData, null, 2)}</pre></div>
+                <div><strong>LLM Chose:</strong> <span className="font-medium">{mismatch.llmChosenLabel}</span></div>
+                {mismatch.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{mismatch.llmRationale}</span></div>}
+                <div><strong>Desired Label:</strong> <span className="font-medium text-green-600">{mismatch.desiredTargetLabel}</span></div>
+              </div>
+            </Card>
+          ))}
+        </CardContent>
+      </Card>
+    )}
+     {selectedEvalRunDetails && targetEvalParamId && desiredTargetLabel && mismatchDisplayData.length === 0 && !isLoadingSelectedRunDetails && (
+         <Card className="mt-6"><CardContent className="pt-6 text-center text-muted-foreground">No rows found in the selected run where the LLM's output for &quot;{allEvalParamsDetails.find(p=>p.id===targetEvalParamId)?.name}&quot; differs from your desired label &quot;{desiredTargetLabel}&quot;.</CardContent></Card>
+     )}
+    </>
+  );
+
 
   return (
     <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <Wand2 className="h-7 w-7 text-primary" />
+            <Lightbulb className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-xl md:text-2xl font-headline">Iterative Prompt Improver</CardTitle>
-              <CardDescription>Improve your product's prompt to achieve a desired outcome for a specific evaluation parameter, based on an existing evaluation run.</CardDescription>
+              <CardTitle className="text-xl md:text-2xl font-headline">AI-Powered Insights & Improvements</CardTitle>
+              <CardDescription>Use AI to analyze evaluation runs, understand problem areas, and get suggestions to improve your prompts.</CardDescription>
             </div>
           </div>
         </CardHeader>
       </Card>
 
-      <form onSubmit={handleSuggestImprovements}>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">1. Define Your Goal</CardTitle>
-            <CardDescription>Provide your current prompt and specify which evaluation parameter you want to improve towards a target label.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="currentProductPrompt" className="font-semibold">Your Current Product Prompt</Label>
-              <Textarea
-                id="currentProductPrompt"
-                value={currentProductPrompt}
-                onChange={e => setCurrentProductPrompt(e.target.value)}
-                placeholder="Paste or type your existing product prompt template here..."
-                rows={8}
-                required
-                className="font-mono text-sm"
-              />
-            </div>
+      <Tabs defaultValue="prompt_improver" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="prompt_improver"> <Wand2 className="mr-2 h-4 w-4" /> Iterative Prompt Improver</TabsTrigger>
+          <TabsTrigger value="problem_analyzer"> <ListChecks className="mr-2 h-4 w-4" /> Insights from Evals</TabsTrigger>
+        </TabsList>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="evalRunSelect" className="font-semibold">Evaluation Run to Analyze</Label>
-                <Select value={selectedRunId || ''} onValueChange={handleRunSelectChange} required>
-                  <SelectTrigger id="evalRunSelect" disabled={isLoadingRunsList}>
-                    <SelectValue placeholder={isLoadingRunsList ? "Loading runs..." : "Select an Eval Run"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {evalRunsList.map(run => (
-                      <SelectItem key={run.id} value={run.id}>{run.name} ({new Date(run.createdAt.toDate()).toLocaleDateString()})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+        <TabsContent value="prompt_improver" className="mt-6">
+          <form onSubmit={handleSuggestImprovements} className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">1. Provide Your Current Prompt</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div>
+                  <Label htmlFor="currentProductPrompt" className="font-semibold">Your Current Product Prompt</Label>
+                  <Textarea
+                    id="currentProductPrompt"
+                    value={currentProductPrompt}
+                    onChange={e => setCurrentProductPrompt(e.target.value)}
+                    placeholder="Paste or type your existing product prompt template here..."
+                    rows={8}
+                    required
+                    className="font-mono text-sm"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+            
+            {sharedInputSelectionUI}
+            {mismatchReviewUI}
 
-              <div>
-                <Label htmlFor="targetEvalParamSelect" className="font-semibold">Target Evaluation Parameter</Label>
-                <Select
-                  value={targetEvalParamId || ''}
-                  onValueChange={handleParamSelectChange}
-                  required
-                  disabled={!selectedRunId || isLoadingSelectedRunDetails || isLoadingAllEvalParams || availableEvalParamsForSelectedRun.length === 0}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="text-lg">3. Get Prompt Suggestions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  type="submit"
+                  disabled={isLoadingSuggestion || !currentProductPrompt.trim() || !selectedRunId || !targetEvalParamId || !desiredTargetLabel || mismatchDetailsForFlow.length === 0}
+                  className="w-full sm:w-auto"
                 >
-                  <SelectTrigger id="targetEvalParamSelect">
-                    <SelectValue placeholder={
-                      !selectedRunId ? "Select a run first" :
-                      isLoadingSelectedRunDetails || isLoadingAllEvalParams ? "Loading params..." :
-                      availableEvalParamsForSelectedRun.length === 0 ? "No params in run" :
-                      "Select Target Parameter"
-                    } />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableEvalParamsForSelectedRun.map(param => (
-                      <SelectItem key={param.id} value={param.id}>{param.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                  {isLoadingSuggestion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
+                  {isLoadingSuggestion ? 'Generating Suggestions...' : 'Suggest Prompt Improvements'}
+                </Button>
+              </CardContent>
 
-              <div>
-                <Label htmlFor="desiredTargetLabelSelect" className="font-semibold">Desired Target Label</Label>
-                <Select
-                  value={desiredTargetLabel || ''}
-                  onValueChange={handleLabelSelectChange}
-                  required
-                  disabled={!targetEvalParamId || availableLabelsForSelectedParam.length === 0}
-                >
-                  <SelectTrigger id="desiredTargetLabelSelect">
-                    <SelectValue placeholder={
-                        !targetEvalParamId ? "Select a parameter first" :
-                        availableLabelsForSelectedParam.length === 0 ? "No labels for param" :
-                        "Select Desired Label"
-                    }/>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableLabelsForSelectedParam.map(label => (
-                      <SelectItem key={label.name} value={label.name}>{label.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              {isLoadingSuggestion && (
+                <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t">
+                  <Skeleton className="h-8 w-1/4 mb-2" />
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-8 w-1/4 mt-4 mb-2" />
+                  <Skeleton className="h-20 w-full" />
+                </CardFooter>
+              )}
 
-        {mismatchDisplayData.length > 0 && (
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle className="text-lg">2. Review Mismatches (Auto-Generated for AI)</CardTitle>
-              <CardDescription>
-                Showing up to 5 examples from the run where the LLM's output for <strong className="text-primary">{allEvalParamsDetails.find(p=>p.id===targetEvalParamId)?.name || 'the selected parameter'}</strong> did not match your desired label: <strong className="text-primary">{desiredTargetLabel}</strong>.
-                The AI will use these examples to suggest improvements.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 max-h-96 overflow-y-auto">
-              {mismatchDisplayData.map((mismatch, index) => (
-                <Card key={index} className="p-3 bg-muted/50 text-xs">
-                  <p className="font-semibold mb-1">Example Mismatch #{index + 1}</p>
-                  <div className="space-y-1">
-                    <div><strong>Input Data:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(mismatch.inputData, null, 2)}</pre></div>
-                    <div><strong>LLM Chose:</strong> <span className="font-medium">{mismatch.llmChosenLabel}</span></div>
-                    {mismatch.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{mismatch.llmRationale}</span></div>}
-                    <div><strong>Desired Label:</strong> <span className="font-medium text-green-600">{mismatch.desiredTargetLabel}</span></div>
+              {suggestionError && !isLoadingSuggestion && (
+                <CardFooter className="pt-6 border-t">
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Suggestion Error</AlertTitle>
+                    <AlertDescription>{suggestionError}</AlertDescription>
+                  </Alert>
+                </CardFooter>
+              )}
+
+              {suggestionResult && !isLoadingSuggestion && (
+                <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t">
+                  <div>
+                    <Label htmlFor="suggestedPromptTemplate" className="text-base font-semibold flex justify-between items-center w-full">
+                      Suggested New Prompt Template
+                      <Button type="button" variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(suggestionResult.suggestedPromptTemplate)}>
+                        <Copy className="mr-2 h-3 w-3"/>Copy
+                      </Button>
+                    </Label>
+                    <Textarea id="suggestedPromptTemplate" value={suggestionResult.suggestedPromptTemplate} readOnly rows={10} className="font-mono text-sm mt-1 bg-muted/30"/>
                   </div>
-                </Card>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-         {selectedEvalRunDetails && targetEvalParamId && desiredTargetLabel && mismatchDisplayData.length === 0 && !isLoadingSelectedRunDetails && (
-             <Card className="mt-6"><CardContent className="pt-6 text-center text-muted-foreground">No rows found in the selected run where the LLM's output for &quot;{allEvalParamsDetails.find(p=>p.id===targetEvalParamId)?.name}&quot; differs from your desired label &quot;{desiredTargetLabel}&quot;.</CardContent></Card>
-         )}
+                  <div>
+                    <Label htmlFor="reasoning" className="text-base font-semibold">Reasoning for Changes</Label>
+                    <Textarea id="reasoning" value={suggestionResult.reasoning} readOnly rows={6} className="mt-1 bg-muted/30"/>
+                  </div>
+                  <Alert>
+                    <FileText className="h-4 w-4"/>
+                    <AlertTitle>Next Steps</AlertTitle>
+                    <AlertDescription>
+                      Review the suggestion. If you like it, copy the new template and either create a new prompt version or update an existing one on the &quot;Prompts&quot; page. Then, create a new evaluation run using the improved prompt.
+                    </AlertDescription>
+                  </Alert>
+                </CardFooter>
+              )}
+            </Card>
+          </form>
+        </TabsContent>
 
+        <TabsContent value="problem_analyzer" className="mt-6">
+          <form onSubmit={handleAnalyzeProblems} className="space-y-6">
+            {sharedInputSelectionUI}
+            {mismatchReviewUI}
 
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-lg">3. Get Suggestions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button
-              type="submit"
-              disabled={isLoadingSuggestion || !currentProductPrompt.trim() || !selectedRunId || !targetEvalParamId || !desiredTargetLabel || mismatchDetailsForFlow.length === 0}
-              className="w-full sm:w-auto"
-            >
-              {isLoadingSuggestion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
-              {isLoadingSuggestion ? 'Generating Suggestions...' : 'Suggest Prompt Improvements'}
-            </Button>
-          </CardContent>
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="text-lg">Analyze Problems</CardTitle>
+                <CardDescription>Identify common problems from the mismatches to understand why the desired label isn't being achieved.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button
+                  type="submit"
+                  disabled={isLoadingProblemAnalysis || !selectedRunId || !targetEvalParamId || !desiredTargetLabel || mismatchDetailsForFlow.length === 0}
+                  className="w-full sm:w-auto"
+                >
+                  {isLoadingProblemAnalysis ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListChecks className="mr-2 h-4 w-4" />}
+                  {isLoadingProblemAnalysis ? 'Analyzing Problems...' : 'Find Problem Categories'}
+                </Button>
+              </CardContent>
 
-          {isLoadingSuggestion && (
-            <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t">
-              <Skeleton className="h-8 w-1/4 mb-2" />
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-8 w-1/4 mt-4 mb-2" />
-              <Skeleton className="h-20 w-full" />
-            </CardFooter>
-          )}
+              {isLoadingProblemAnalysis && (
+                <CardFooter className="pt-6 border-t">
+                   <div className="flex items-center space-x-2">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    <p className="text-muted-foreground">AI is analyzing problem categories...</p>
+                  </div>
+                </CardFooter>
+              )}
 
-          {suggestionError && !isLoadingSuggestion && (
-            <CardFooter className="pt-6 border-t">
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Suggestion Error</AlertTitle>
-                <AlertDescription>{suggestionError}</AlertDescription>
-              </Alert>
-            </CardFooter>
-          )}
+              {problemAnalysisError && !isLoadingProblemAnalysis && (
+                <CardFooter className="pt-6 border-t">
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Problem Analysis Error</AlertTitle>
+                    <AlertDescription>{problemAnalysisError}</AlertDescription>
+                  </Alert>
+                </CardFooter>
+              )}
 
-          {suggestionResult && !isLoadingSuggestion && (
-            <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t">
-              <div>
-                <Label htmlFor="suggestedPromptTemplate" className="text-base font-semibold flex justify-between items-center w-full">
-                  Suggested New Prompt Template
-                  <Button type="button" variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(suggestionResult.suggestedPromptTemplate)}>
-                    <Copy className="mr-2 h-3 w-3"/>Copy
-                  </Button>
-                </Label>
-                <Textarea id="suggestedPromptTemplate" value={suggestionResult.suggestedPromptTemplate} readOnly rows={10} className="font-mono text-sm mt-1 bg-muted/30"/>
-              </div>
-              <div>
-                <Label htmlFor="reasoning" className="text-base font-semibold">Reasoning for Changes</Label>
-                <Textarea id="reasoning" value={suggestionResult.reasoning} readOnly rows={6} className="mt-1 bg-muted/30"/>
-              </div>
-               <Alert>
-                <FileText className="h-4 w-4"/>
-                <AlertTitle>Next Steps</AlertTitle>
-                <AlertDescription>
-                  Review the suggestion. If you like it, copy the new template and either create a new prompt version or update an existing one on the &quot;Prompts&quot; page. Then, create a new evaluation run using the improved prompt.
-                </AlertDescription>
-              </Alert>
-            </CardFooter>
-          )}
-        </Card>
-      </form>
+              {problemAnalysisResult && problemAnalysisResult.problemCategories && !isLoadingProblemAnalysis && (
+                <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t">
+                  <h3 className="text-lg font-semibold">Identified Problem Categories:</h3>
+                  {problemAnalysisResult.problemCategories.length === 0 && (
+                    <p className="text-muted-foreground">The AI could not identify distinct problem categories from the provided mismatches.</p>
+                  )}
+                  {problemAnalysisResult.problemCategories.map((category, index) => (
+                    <Card key={`problem-${index}`} className="w-full">
+                      <CardHeader>
+                        <CardTitle className="text-md">{category.categoryName} <Badge variant="secondary" className="ml-2">{category.count} row(s)</Badge></CardTitle>
+                        <CardDescription>{category.description}</CardDescription>
+                      </CardHeader>
+                      {category.exampleMismatch && (
+                        <CardContent>
+                          <p className="text-xs font-semibold mb-1">Example Mismatch for this Category:</p>
+                          <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1">
+                            <div><strong>Input:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(category.exampleMismatch.inputData, null, 2)}</pre></div>
+                            <div><strong>LLM Chose:</strong> {category.exampleMismatch.llmChosenLabel}</div>
+                            {category.exampleMismatch.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{category.exampleMismatch.llmRationale}</span></div>}
+                            <div><strong>Desired Label:</strong> {category.exampleMismatch.groundTruthLabel}</div>
+                          </div>
+                        </CardContent>
+                      )}
+                    </Card>
+                  ))}
+                </CardFooter>
+              )}
+            </Card>
+          </form>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
-
-    
-
     
