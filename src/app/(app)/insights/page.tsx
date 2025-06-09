@@ -11,6 +11,7 @@ import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Ligh
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from '@/components/ui/badge'; // Added import
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, query, orderBy, type Timestamp } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -231,21 +232,21 @@ export default function AiInsightsPage() {
         return;
       }
 
-      const newMismatchesDisplay: any[] = [];
-      const newMismatchesFlow: MismatchDetail[] = [];
+      const newMismatchesForDisplay: any[] = [];
+      const newMismatchesForFlow: MismatchDetail[] = [];
 
       selectedEvalRunDetails.results?.forEach(item => {
         const llmOutput = item.judgeLlmOutput?.[targetEvalParamId];
         if (llmOutput && llmOutput.chosenLabel !== desiredTargetLabel && !llmOutput.error) {
-          if (newMismatchesDisplay.length < 5) { 
-            newMismatchesDisplay.push({
+          if (newMismatchesForDisplay.length < 5) { 
+            newMismatchesForDisplay.push({
               inputData: item.inputData,
               llmChosenLabel: llmOutput.chosenLabel,
               llmRationale: llmOutput.rationale,
               desiredTargetLabel: desiredTargetLabel,
             });
           }
-          newMismatchesFlow.push({
+          newMismatchesForFlow.push({
             inputData: item.inputData,
             evaluationParameterName: currentParamDetails.name,
             evaluationParameterDefinition: currentParamDetails.definition,
@@ -256,11 +257,11 @@ export default function AiInsightsPage() {
         }
       });
       
-      if (JSON.stringify(newMismatchesDisplay) !== JSON.stringify(mismatchDisplayData)) {
-        setMismatchDisplayData(newMismatchesDisplay);
+      if (JSON.stringify(newMismatchesForDisplay) !== JSON.stringify(mismatchDisplayData)) {
+        setMismatchDisplayData(newMismatchesForDisplay);
       }
-      if (JSON.stringify(newMismatchesFlow) !== JSON.stringify(mismatchDetailsForFlow)) {
-        setMismatchDetailsForFlow(newMismatchesFlow);
+      if (JSON.stringify(newMismatchesForFlow) !== JSON.stringify(mismatchDetailsForFlow)) {
+        setMismatchDetailsForFlow(newMismatchesForFlow);
       }
 
     } else {
@@ -644,7 +645,7 @@ export default function AiInsightsPage() {
                         <CardContent>
                           <p className="text-xs font-semibold mb-1">Example Mismatch for this Category:</p>
                           <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1">
-                            <div><strong>Input:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(category.exampleMismatch.inputData, null, 2)}</pre></div>
+                            <div><strong>Input:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{category.exampleMismatch.inputData}</pre></div>
                             <div><strong>LLM Chose:</strong> {category.exampleMismatch.llmChosenLabel}</div>
                             {category.exampleMismatch.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{category.exampleMismatch.llmRationale}</span></div>}
                             <div><strong>Desired Label:</strong> {category.exampleMismatch.groundTruthLabel}</div>
@@ -653,6 +654,13 @@ export default function AiInsightsPage() {
                       )}
                     </Card>
                   ))}
+                  {problemAnalysisResult.overallSummary && (
+                    <Alert className="mt-4">
+                        <Lightbulb className="h-4 w-4" />
+                        <AlertTitle>Overall Summary</AlertTitle>
+                        <AlertDescription>{problemAnalysisResult.overallSummary}</AlertDescription>
+                    </Alert>
+                  )}
                 </CardFooter>
               )}
             </Card>
