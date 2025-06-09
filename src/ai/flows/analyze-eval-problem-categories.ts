@@ -38,9 +38,9 @@ export type AnalyzeEvalProblemCategoriesInput = z.infer<typeof AnalyzeEvalProble
 const ProblemCategorySchema = z.object({
   categoryName: z.string().describe("A concise, descriptive name for the identified problem category (e.g., 'User Query Ambiguity', 'LLM Missed Key Context', 'Insufficient Empathy Cues')."),
   description: z.string().describe("A brief explanation of what this problem category entails and why it leads to the undesired LLM output."),
-  count: z.number().int().describe("The number of provided mismatch details that fall into this problem category. This should be a positive integer."),
-  exampleMismatch: z.object({ // Including a MismatchDetail-like structure for the example
-      inputData: z.record(z.string(), z.any()),
+  count: z.number().int().describe("The number of provided mismatch details that fall into this problem category. This should be a positive integer (e.g., 1, 2, 3...)."),
+  exampleMismatch: z.object({
+      inputData: z.object({}).catchall(z.any()).describe("The product parameters input for the row that had a mismatch, as an object with arbitrary key-value pairs."),
       evaluationParameterName: z.string(),
       evaluationParameterDefinition: z.string(),
       llmChosenLabel: z.string(),
