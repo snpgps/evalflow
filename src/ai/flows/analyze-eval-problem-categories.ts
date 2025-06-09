@@ -40,13 +40,13 @@ const ProblemCategorySchema = z.object({
   description: z.string().describe("A brief explanation of what this problem category entails and why it leads to the undesired LLM output."),
   count: z.number().int().describe("The number of provided mismatch details that fall into this problem category. This should be a positive integer (e.g., 1, 2, 3...)."),
   exampleMismatch: z.object({
-      inputData: z.object({}).catchall(z.any()).describe("The product parameters input for the row that had a mismatch, as an object with arbitrary key-value pairs."),
+      inputData: z.string().describe("The product parameters input for the row that had a mismatch, formatted as a JSON string."),
       evaluationParameterName: z.string(),
       evaluationParameterDefinition: z.string(),
       llmChosenLabel: z.string(),
       groundTruthLabel: z.string(), // This is the desired target label
       llmRationale: z.string().optional(),
-    }).optional().describe("One example MismatchDetail from the input that clearly illustrates this problem category. Include this if possible.")
+    }).optional().describe("One example MismatchDetail from the input that clearly illustrates this problem category. Include this if possible. Its 'inputData' field MUST be a JSON string representation of the original input data object for that mismatch.")
 });
 export type ProblemCategory = z.infer<typeof ProblemCategorySchema>;
 
@@ -104,7 +104,7 @@ Instructions:
     - 'categoryName': A concise name for the problem category.
     - 'description': A brief explanation of this problem category.
     - 'count': The number of mismatch instances that fall into this category. This should be a positive integer.
-    - 'exampleMismatch': (Optional, but highly recommended) Select one Mismatch Detail from the input that best exemplifies this category.
+    - 'exampleMismatch': (Optional, but highly recommended) Select one MismatchDetail from the input that clearly illustrates this problem category. If you include an exampleMismatch, its 'inputData' field MUST be a JSON string representation of the original input data object for that mismatch.
 
 Your entire response must be ONLY a JSON object matching the output schema, with no other surrounding text or explanations.
 The output schema expects a 'problemCategories' array and an optional 'overallSummary'.
@@ -118,14 +118,8 @@ const analysisPrompt = ai.definePrompt({
   output: {schema: AnalyzeEvalProblemCategoriesOutputSchema},
   prompt: handlebarsPrompt,
   config: {
-    temperature: 0.5, // Allow for some creative categorization but not too random
+    temperature: 0.5, 
   },
-  // Assuming Genkit's Handlebars instance may not have custom helpers like 'json' easily available
-  // We might need to pre-process 'inputData' into a JSON string before passing to the prompt,
-  // or Genkit might have its own way to embed JSON (e.g., {{json inputData}} if 'json' is a built-in filter/helper in Genkit)
-  // The error was for 'add', which is removed. If 'json' causes an error, we'll need to address it similarly.
-  // For now, let's assume Genkit handles 'json inputData' appropriately or it's a standard Handlebars feature it supports.
-  // If not, the input to the flow would need to be adjusted so `inputData` is already a string.
 });
 
 const internalAnalyzeEvalProblemCategoriesFlow = ai.defineFlow(
@@ -139,21 +133,6 @@ const internalAnalyzeEvalProblemCategoriesFlow = ai.defineFlow(
         return { problemCategories: [], overallSummary: "No mismatches provided to analyze." };
     }
 
-    // If 'json' helper is not built into Genkit's Handlebars, pre-stringify here:
-    // const processedInput = {
-    //   ...input,
-    //   mismatchDetails: input.mismatchDetails.map(detail => ({
-    //     ...detail,
-    //     inputData: JSON.stringify(detail.inputData, null, 2) // Now inputData is a string
-    //   })),
-    // };
-    // And adjust the prompt to just use {{inputData}} instead of {{{json inputData}}} if pre-stringifying.
-    // However, for now, we assume `{{{json inputData}}}` or a similar mechanism works in Genkit for structured objects.
-    // The original error was specifically about 'add'.
-
-    // Using original input, assuming Genkit's Handlebars might support 'json' or similar for objects.
-    // If not, and 'json' helper is the next error, the `processedInput` approach above would be needed,
-    // along with adjusting the prompt string.
     const { output, usage } = await analysisPrompt(input);
 
 
