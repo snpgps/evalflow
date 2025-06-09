@@ -38,7 +38,7 @@ export type AnalyzeEvalProblemCategoriesInput = z.infer<typeof AnalyzeEvalProble
 const ProblemCategorySchema = z.object({
   categoryName: z.string().describe("A concise, descriptive name for the identified problem category (e.g., 'User Query Ambiguity', 'LLM Missed Key Context', 'Insufficient Empathy Cues')."),
   description: z.string().describe("A brief explanation of what this problem category entails and why it leads to the undesired LLM output."),
-  count: z.number().int().positive().describe("The number of provided mismatch details that fall into this problem category."),
+  count: z.number().int().describe("The number of provided mismatch details that fall into this problem category. This should be a positive integer."),
   exampleMismatch: z.object({ // Including a MismatchDetail-like structure for the example
       inputData: z.record(z.string(), z.any()),
       evaluationParameterName: z.string(),
@@ -62,11 +62,6 @@ export async function analyzeEvalProblemCategories(
 ): Promise<AnalyzeEvalProblemCategoriesOutput> {
   return internalAnalyzeEvalProblemCategoriesFlow(input);
 }
-
-// Register the 'json' helper directly with Genkit's Handlebars instance if possible,
-// or pre-process input to include JSON strings if Genkit doesn't expose its Handlebars instance.
-// For now, assuming Genkit's Handlebars has a way to handle or we adjust input.
-// The 'add' helper is removed as it's the source of the error.
 
 const handlebarsPrompt = `
 You are an expert AI Product Analyst. Your task is to analyze a set of "mismatches" from an AI model evaluation.
@@ -108,7 +103,7 @@ Instructions:
 5.  For each category, provide:
     - 'categoryName': A concise name for the problem category.
     - 'description': A brief explanation of this problem category.
-    - 'count': The number of mismatch instances that fall into this category.
+    - 'count': The number of mismatch instances that fall into this category. This should be a positive integer.
     - 'exampleMismatch': (Optional, but highly recommended) Select one Mismatch Detail from the input that best exemplifies this category.
 
 Your entire response must be ONLY a JSON object matching the output schema, with no other surrounding text or explanations.
@@ -145,13 +140,13 @@ const internalAnalyzeEvalProblemCategoriesFlow = ai.defineFlow(
     }
 
     // If 'json' helper is not built into Genkit's Handlebars, pre-stringify here:
-    const processedInput = {
-      ...input,
-      mismatchDetails: input.mismatchDetails.map(detail => ({
-        ...detail,
-        inputData: JSON.stringify(detail.inputData, null, 2) // Now inputData is a string
-      })),
-    };
+    // const processedInput = {
+    //   ...input,
+    //   mismatchDetails: input.mismatchDetails.map(detail => ({
+    //     ...detail,
+    //     inputData: JSON.stringify(detail.inputData, null, 2) // Now inputData is a string
+    //   })),
+    // };
     // And adjust the prompt to just use {{inputData}} instead of {{{json inputData}}} if pre-stringifying.
     // However, for now, we assume `{{{json inputData}}}` or a similar mechanism works in Genkit for structured objects.
     // The original error was specifically about 'add'.
@@ -170,3 +165,4 @@ const internalAnalyzeEvalProblemCategoriesFlow = ai.defineFlow(
     return output!;
   }
 );
+
