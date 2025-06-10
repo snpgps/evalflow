@@ -423,17 +423,21 @@ export default function AiInsightsPage() {
     const currentParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
     if (!currentParam) return;
 
-    const dataToSave: StoredAnalysisDataForFirestore = {
+    const dataToSave: Partial<StoredAnalysisDataForFirestore> & Pick<StoredAnalysisDataForFirestore, 'analysisName' | 'createdAt' | 'targetEvalParamId' | 'targetEvalParamName' | 'desiredTargetLabel' | 'problemCategories' | 'mismatchCountAnalyzed'> = {
       analysisName: analysisNameToSave.trim(),
       createdAt: serverTimestamp(),
       targetEvalParamId: targetEvalParamId,
       targetEvalParamName: currentParam.name,
       desiredTargetLabel: desiredTargetLabel,
       problemCategories: problemAnalysisResult.problemCategories,
-      overallSummary: problemAnalysisResult.overallSummary,
       mismatchCountAnalyzed: mismatchDetailsForFlow.length,
     };
-    saveAnalysisMutation.mutate(dataToSave);
+
+    if (problemAnalysisResult.overallSummary !== undefined) {
+        dataToSave.overallSummary = problemAnalysisResult.overallSummary;
+    }
+
+    saveAnalysisMutation.mutate(dataToSave as StoredAnalysisDataForFirestore);
   };
 
   const handleViewStoredAnalysis = async (analysisId: string) => {
