@@ -7,7 +7,7 @@ import { Rocket, LayoutDashboard, Settings2, Target, Database, FileText, PlugZap
 const workflowSteps = [
   {
     title: "Define Product Schema",
-    description: "Set up your input parameters. If you're analysing a bot, setup input fields for User conversation, Bot Context, API response time, etc. You should add all the relevant columns from your logs table.",
+    description: "Set up the input fields and structure your AI product expects. This forms the basis for your datasets and prompt variables.",
     href: "/schema-definition",
     icon: Settings2,
     color: "text-sky-500",
@@ -31,7 +31,7 @@ const workflowSteps = [
   },
   {
     title: "Engineer Your Prompts",
-    description: "Create, version and refine the prompt templates you'll use for running your judgements",
+    description: "Create, version, and refine the prompt templates you'll be testing for your AI product.",
     href: "/prompts",
     icon: FileText,
     color: "text-purple-500",
@@ -75,8 +75,7 @@ export default function DashboardPage() {
             <div>
               <CardTitle className="text-2xl md:text-3xl font-headline">Welcome to EvalFlow!</CardTitle>
               <CardDescription className="text-base mt-1">
-                Your intelligent assistant for AI model evaluation and prompt optimization.
-                Follow the steps below to get started or jump to any section.
+                EvalFlow helps you systematically define, test, and improve your AI applications. Begin by setting up your product and evaluation parameters, then manage your data and prompts, run evaluations, and finally, leverage AI insights to iterate and enhance performance.
               </CardDescription>
             </div>
           </div>
