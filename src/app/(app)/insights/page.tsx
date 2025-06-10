@@ -462,7 +462,7 @@ export default function AiInsightsPage() {
         if (!currentEvalParam || !desiredTargetLabel) { toast({ title: "Input Error", description: "Target evaluation parameter or desired label not fully selected.", variant: "destructive"}); return; }
         setIsLoadingProblemAnalysis(true);
         try {
-            const input: AnalyzeEvalProblemCategoriesInput = { mismatchDetails: mismatchDetailsForFlow, targetEvaluationParameterName: currentEvalParam.name, targetEvaluationParameterDefinition: currentParam.definition, desiredTargetLabel: desiredTargetLabel, productSchemaDescription: productParametersSchemaText };
+            const input: AnalyzeEvalProblemCategoriesInput = { mismatchDetails: mismatchDetailsForFlow, targetEvaluationParameterName: currentEvalParam.name, targetEvaluationParameterDefinition: currentEvalParam.definition, desiredTargetLabel: desiredTargetLabel, productSchemaDescription: productParametersSchemaText };
             const result = await analyzeEvalProblemCategories(input);
             setProblemAnalysisResult(result);
             toast({ title: "Problem Analysis Complete!", description: "Review the categorized problems below." });
@@ -569,10 +569,10 @@ export default function AiInsightsPage() {
     
 
     if (analysisType === 'evaluation' && targetEvalParamId && desiredTargetLabel) {
-        const currentParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
-        if (!currentParam) { toast({title: "Error", description: "Cannot save: target eval param details missing."}); return; }
+        const currentEvalParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
+        if (!currentEvalParam) { toast({title: "Error", description: "Cannot save: target eval param details missing."}); return; }
         dataToSave.targetEvalParamId = targetEvalParamId;
-        dataToSave.targetEvalParamName = currentParam.name;
+        dataToSave.targetEvalParamName = currentEvalParam.name;
         dataToSave.desiredTargetLabel = desiredTargetLabel;
     } else if (analysisType === 'summarization' && selectedSummarizationDefId) {
         const currentDef = allSummarizationDefs.find(d => d.id === selectedSummarizationDefId);
@@ -910,12 +910,12 @@ export default function AiInsightsPage() {
                                               <span className="truncate">{sa.analysisName}</span>
                                               <Badge variant="outline" className="ml-1 text-xs shrink-0">{sa.analysisType === 'evaluation' ? 'Eval Param Problems' : 'User Intents'}</Badge>
                                             </div>
-                                            <p className="text-xs text-muted-foreground break-words">
+                                            <div className="text-xs text-muted-foreground break-words">
                                                 Saved: {new Date(sa.createdAt.toDate()).toLocaleString()} | For: 
                                                 {sa.analysisType === 'evaluation' && <span className="font-medium"> {sa.targetEvalParamName} - &quot;{sa.desiredTargetLabel}&quot;</span>}
                                                 {sa.analysisType === 'summarization' && <span className="font-medium"> {sa.targetSummarizationDefName}</span>}
                                                 ({sa.sourceDataCount} items analyzed)
-                                            </p>
+                                            </div>
                                             {sa.analysisType === 'summarization' && sa.productContext && <p className="text-xs text-muted-foreground break-words">Product Context: <span className="italic">{sa.productContext}</span></p>}
                                         </div>
                                         <div className="flex gap-1 shrink-0">
@@ -952,4 +952,6 @@ export default function AiInsightsPage() {
     </div>
   );
 }
+    
+
     
