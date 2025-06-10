@@ -386,57 +386,57 @@ export default function EvalRunsPage() {
                   <Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading options...</span>
                 </div>
               ) : (
-                <ScrollArea className="flex-grow min-h-0 w-full">
-                  <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
-                      <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
-                      <div> <Label htmlFor="run-type">Run Type</Label> <RadioGroup value={newRunType} onValueChange={(value: 'Product' | 'GroundTruth') => setNewRunType(value)} className="flex space-x-4 mt-1"> <div className="flex items-center space-x-2"> <RadioGroupItem value="Product" id="type-product" /> <Label htmlFor="type-product" className="font-normal">Product Run</Label> </div> <div className="flex items-center space-x-2"> <RadioGroupItem value="GroundTruth" id="type-gt" /> <Label htmlFor="type-gt" className="font-normal">Ground Truth Run</Label> </div> </RadioGroup> <p className="text-xs text-muted-foreground mt-1"> Product runs evaluate outputs. Ground Truth runs compare outputs to known correct labels.</p> </div>
-                      <div> <Label htmlFor="run-dataset">Dataset</Label> <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required> <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger> <SelectContent>{datasets?.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent> </Select> </div>
-                      {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length > 0 && ( <div> <Label htmlFor="run-dataset-version">Dataset Version</Label> <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required> <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger> <SelectContent>{selectedDatasetForVersions.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent> </Select> {selectedDatasetVersionForWarnings && (!selectedDatasetVersionForWarnings.columnMapping || Object.keys(selectedDatasetVersionForWarnings.columnMapping).length === 0) && ( <p className="text-xs text-destructive mt-1">Warning: No Product Parameters mapped.</p> )} {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings && !(selectedDatasetVersionForWarnings.groundTruthMapping && Object.keys(selectedDatasetVersionForWarnings.groundTruthMapping).length > 0) && ( <p className="text-xs text-amber-600 mt-1">Warning: No Ground Truth columns mapped.</p> )} </div> )}
-                      {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length === 0 && ( <p className="text-xs text-muted-foreground mt-1">This dataset has no versions.</p> )}
-                      <div><Label htmlFor="run-connector">Model Connector (Judge LLM)</Label> <Select value={selectedConnectorId} onValueChange={setSelectedConnectorId} required> <SelectTrigger id="run-connector"><SelectValue placeholder="Select model connector" /></SelectTrigger> <SelectContent>{modelConnectors?.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name} ({mc.provider})</SelectItem>)}</SelectContent> </Select> </div>
-                      <div> <Label htmlFor="run-prompt">Prompt Template</Label> <Select value={selectedPromptId} onValueChange={(value) => {setSelectedPromptId(value); setSelectedPromptVersionId('');}} required> <SelectTrigger id="run-prompt"><SelectValue placeholder="Select prompt" /></SelectTrigger> <SelectContent>{promptTemplates?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent> </Select> </div>
-                      {foundPromptTemplate && foundPromptTemplate.versions && foundPromptTemplate.versions.length > 0 && (
-                        <div>
-                          <Label htmlFor="run-prompt-version">Prompt Version</Label>
-                          <Select value={selectedPromptVersionId} onValueChange={setSelectedPromptVersionId} required>
-                            <SelectTrigger id="run-prompt-version"><SelectValue placeholder="Select version" /></SelectTrigger>
-                            <SelectContent>{
-                              foundPromptTemplate.versions
-                                .sort((a,b) => b.versionNumber - a.versionNumber)
-                                .map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)
-                            }</SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                      <div><Label>Evaluation Parameters (Select one or more)</Label> <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border"> <div className="space-y-2"> {evaluationParameters && evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>} {evaluationParameters?.map(ep => ( <div key={ep.id} className="flex items-center space-x-2"> <Checkbox id={`ep-${ep.id}`} checked={selectedEvalParamIds.includes(ep.id)} onCheckedChange={(checked) => { setSelectedEvalParamIds(prev => checked ? [...prev, ep.id] : prev.filter(id => id !== ep.id) ); }} /> <Label htmlFor={`ep-${ep.id}`} className="font-normal">{ep.name}</Label> </div> ))} </div> </Card> </div>
-                      {showContextDocSelector && (
-                        <div><Label>Context Documents (Optional, for compatible Gemini models)</Label>
-                          <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border">
-                            <div className="space-y-2">
-                              {contextDocuments && contextDocuments.length === 0 && <p className="text-xs text-muted-foreground">No context documents available.</p>}
-                              {contextDocuments?.map(cd => (
-                                <div key={cd.id} className="flex items-center space-x-2">
-                                  <Checkbox id={`cd-${cd.id}`} checked={selectedContextDocIds.includes(cd.id)} onCheckedChange={(checked) => { setSelectedContextDocIds(prev => checked ? [...prev, cd.id] : prev.filter(id => id !== cd.id) ); }} />
-                                  <Label htmlFor={`cd-${cd.id}`} className="font-normal truncate" title={`${cd.name} (${cd.fileName})`}>{cd.name} <span className="text-xs text-muted-foreground">({cd.fileName})</span></Label>
-                                </div>
-                              ))}
-                            </div>
-                          </Card>
-                          <p className="text-xs text-muted-foreground mt-1">These documents can provide additional context to the LLM. Full context caching integration is model-dependent.</p>
-                        </div>
-                      )}
-                      <div> <Label htmlFor="run-nrows">Test on first N rows (0 for all)</Label> <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => { const val = parseInt(e.target.value, 10); setRunOnNRows(isNaN(val) ? 0 : val); }} min="0" /> <p className="text-xs text-muted-foreground mt-1">0 uses all (capped for preview). Max recommended for processing: 200.</p> </div>
-                      <div> <Label htmlFor="run-concurrency">LLM Concurrency Limit</Label> <Input id="run-concurrency" type="number" value={newRunConcurrencyLimit} onChange={(e) => setNewRunConcurrencyLimit(Math.max(1, parseInt(e.target.value, 10) || 1))} min="1" max="20" /> <p className="text-xs text-muted-foreground mt-1">Number of LLM calls in parallel (e.g., 3-5). Max: 20.</p> </div>
-                  </form>
-                </ScrollArea>
-              )}
-              {!isLoadingDialogData && (
-                <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
-                  <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
-                  <Button type="submit" form="new-eval-run-form" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId || !newRunName.trim()} >
-                    {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />} Create Run
-                  </Button>
-                </DialogFooter>
+                <>
+                  <div className="flex-grow min-h-0 overflow-y-auto">
+                    <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
+                        <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
+                        <div> <Label htmlFor="run-type">Run Type</Label> <RadioGroup value={newRunType} onValueChange={(value: 'Product' | 'GroundTruth') => setNewRunType(value)} className="flex space-x-4 mt-1"> <div className="flex items-center space-x-2"> <RadioGroupItem value="Product" id="type-product" /> <Label htmlFor="type-product" className="font-normal">Product Run</Label> </div> <div className="flex items-center space-x-2"> <RadioGroupItem value="GroundTruth" id="type-gt" /> <Label htmlFor="type-gt" className="font-normal">Ground Truth Run</Label> </div> </RadioGroup> <p className="text-xs text-muted-foreground mt-1"> Product runs evaluate outputs. Ground Truth runs compare outputs to known correct labels.</p> </div>
+                        <div> <Label htmlFor="run-dataset">Dataset</Label> <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required> <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger> <SelectContent>{datasets?.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent> </Select> </div>
+                        {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length > 0 && ( <div> <Label htmlFor="run-dataset-version">Dataset Version</Label> <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required> <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger> <SelectContent>{selectedDatasetForVersions.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent> </Select> {selectedDatasetVersionForWarnings && (!selectedDatasetVersionForWarnings.columnMapping || Object.keys(selectedDatasetVersionForWarnings.columnMapping).length === 0) && ( <p className="text-xs text-destructive mt-1">Warning: No Product Parameters mapped.</p> )} {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings && !(selectedDatasetVersionForWarnings.groundTruthMapping && Object.keys(selectedDatasetVersionForWarnings.groundTruthMapping).length > 0) && ( <p className="text-xs text-amber-600 mt-1">Warning: No Ground Truth columns mapped.</p> )} </div> )}
+                        {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length === 0 && ( <p className="text-xs text-muted-foreground mt-1">This dataset has no versions.</p> )}
+                        <div><Label htmlFor="run-connector">Model Connector (Judge LLM)</Label> <Select value={selectedConnectorId} onValueChange={setSelectedConnectorId} required> <SelectTrigger id="run-connector"><SelectValue placeholder="Select model connector" /></SelectTrigger> <SelectContent>{modelConnectors?.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name} ({mc.provider})</SelectItem>)}</SelectContent> </Select> </div>
+                        <div> <Label htmlFor="run-prompt">Prompt Template</Label> <Select value={selectedPromptId} onValueChange={(value) => {setSelectedPromptId(value); setSelectedPromptVersionId('');}} required> <SelectTrigger id="run-prompt"><SelectValue placeholder="Select prompt" /></SelectTrigger> <SelectContent>{promptTemplates?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent> </Select> </div>
+                        {foundPromptTemplate && foundPromptTemplate.versions && foundPromptTemplate.versions.length > 0 && (
+                          <div>
+                            <Label htmlFor="run-prompt-version">Prompt Version</Label>
+                            <Select value={selectedPromptVersionId} onValueChange={setSelectedPromptVersionId} required>
+                              <SelectTrigger id="run-prompt-version"><SelectValue placeholder="Select version" /></SelectTrigger>
+                              <SelectContent>{
+                                foundPromptTemplate.versions
+                                  .sort((a,b) => b.versionNumber - a.versionNumber)
+                                  .map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)
+                              }</SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <div><Label>Evaluation Parameters (Select one or more)</Label> <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border"> <div className="space-y-2"> {evaluationParameters && evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>} {evaluationParameters?.map(ep => ( <div key={ep.id} className="flex items-center space-x-2"> <Checkbox id={`ep-${ep.id}`} checked={selectedEvalParamIds.includes(ep.id)} onCheckedChange={(checked) => { setSelectedEvalParamIds(prev => checked ? [...prev, ep.id] : prev.filter(id => id !== ep.id) ); }} /> <Label htmlFor={`ep-${ep.id}`} className="font-normal">{ep.name}</Label> </div> ))} </div> </Card> </div>
+                        {showContextDocSelector && (
+                          <div><Label>Context Documents (Optional, for compatible Gemini models)</Label>
+                            <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border">
+                              <div className="space-y-2">
+                                {contextDocuments && contextDocuments.length === 0 && <p className="text-xs text-muted-foreground">No context documents available.</p>}
+                                {contextDocuments?.map(cd => (
+                                  <div key={cd.id} className="flex items-center space-x-2">
+                                    <Checkbox id={`cd-${cd.id}`} checked={selectedContextDocIds.includes(cd.id)} onCheckedChange={(checked) => { setSelectedContextDocIds(prev => checked ? [...prev, cd.id] : prev.filter(id => id !== cd.id) ); }} />
+                                    <Label htmlFor={`cd-${cd.id}`} className="font-normal truncate" title={`${cd.name} (${cd.fileName})`}>{cd.name} <span className="text-xs text-muted-foreground">({cd.fileName})</span></Label>
+                                  </div>
+                                ))}
+                              </div>
+                            </Card>
+                            <p className="text-xs text-muted-foreground mt-1">These documents can provide additional context to the LLM. Full context caching integration is model-dependent.</p>
+                          </div>
+                        )}
+                        <div> <Label htmlFor="run-nrows">Test on first N rows (0 for all)</Label> <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => { const val = parseInt(e.target.value, 10); setRunOnNRows(isNaN(val) ? 0 : val); }} min="0" /> <p className="text-xs text-muted-foreground mt-1">0 uses all (capped for preview). Max recommended for processing: 200.</p> </div>
+                        <div> <Label htmlFor="run-concurrency">LLM Concurrency Limit</Label> <Input id="run-concurrency" type="number" value={newRunConcurrencyLimit} onChange={(e) => setNewRunConcurrencyLimit(Math.max(1, parseInt(e.target.value, 10) || 1))} min="1" max="20" /> <p className="text-xs text-muted-foreground mt-1">Number of LLM calls in parallel (e.g., 3-5). Max: 20.</p> </div>
+                    </form>
+                  </div>
+                  <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
+                    <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
+                    <Button type="submit" form="new-eval-run-form" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId || !newRunName.trim()} >
+                      {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />} Create Run
+                    </Button>
+                  </DialogFooter>
+                </>
               )}
             </DialogContent>
           </Dialog>
@@ -461,3 +461,4 @@ export default function EvalRunsPage() {
   );
 }
 
+    
