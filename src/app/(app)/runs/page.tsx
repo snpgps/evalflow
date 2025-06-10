@@ -363,6 +363,8 @@ export default function EvalRunsPage() {
   const isLoadingDialogData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams || isLoadingContextDocs;
   const selectedDatasetForVersions = datasets?.find(d => d.id === selectedDatasetId);
   const selectedDatasetVersionForWarnings = selectedDatasetForVersions?.versions.find(v => v.id === selectedDatasetVersionId);
+  const foundPromptTemplate = selectedPromptId ? promptTemplates?.find(p => p.id === selectedPromptId) : undefined;
+
 
   if (isLoadingUserId) return <div className="p-4 md:p-6"><Skeleton className="h-32 w-full"/></div>;
   if (!currentUserId) return <Card className="m-4 md:m-0"><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
@@ -387,7 +389,19 @@ export default function EvalRunsPage() {
                       {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length === 0 && ( <p className="text-xs text-muted-foreground mt-1">This dataset has no versions.</p> )}
                       <div><Label htmlFor="run-connector">Model Connector (Judge LLM)</Label> <Select value={selectedConnectorId} onValueChange={setSelectedConnectorId} required> <SelectTrigger id="run-connector"><SelectValue placeholder="Select model connector" /></SelectTrigger> <SelectContent>{modelConnectors?.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name} ({mc.provider})</SelectItem>)}</SelectContent> </Select> </div>
                       <div> <Label htmlFor="run-prompt">Prompt Template</Label> <Select value={selectedPromptId} onValueChange={(value) => {setSelectedPromptId(value); setSelectedPromptVersionId('');}} required> <SelectTrigger id="run-prompt"><SelectValue placeholder="Select prompt" /></SelectTrigger> <SelectContent>{promptTemplates?.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent> </Select> </div>
-                      {selectedPromptId && promptTemplates?.find(p => p.id === selectedPromptId)?.versions.length > 0 && ( <div> <Label htmlFor="run-prompt-version">Prompt Version</Label> <Select value={selectedPromptVersionId} onValueChange={setSelectedPromptVersionId} required> <SelectTrigger id="run-prompt-version"><SelectValue placeholder="Select version" /></SelectTrigger> <SelectContent>{promptTemplates?.find(p => p.id === selectedPromptId)?.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)}</SelectContent> </Select> </div> )}
+                      {foundPromptTemplate && foundPromptTemplate.versions && foundPromptTemplate.versions.length > 0 && (
+                        <div>
+                          <Label htmlFor="run-prompt-version">Prompt Version</Label>
+                          <Select value={selectedPromptVersionId} onValueChange={setSelectedPromptVersionId} required>
+                            <SelectTrigger id="run-prompt-version"><SelectValue placeholder="Select version" /></SelectTrigger>
+                            <SelectContent>{
+                              foundPromptTemplate.versions
+                                .sort((a,b) => b.versionNumber - a.versionNumber)
+                                .map(v => <SelectItem key={v.id} value={v.id}>Version {v.versionNumber}</SelectItem>)
+                            }</SelectContent>
+                          </Select>
+                        </div>
+                      )}
                       <div><Label>Evaluation Parameters (Select one or more)</Label> <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border"> <div className="space-y-2"> {evaluationParameters && evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>} {evaluationParameters?.map(ep => ( <div key={ep.id} className="flex items-center space-x-2"> <Checkbox id={`ep-${ep.id}`} checked={selectedEvalParamIds.includes(ep.id)} onCheckedChange={(checked) => { setSelectedEvalParamIds(prev => checked ? [...prev, ep.id] : prev.filter(id => id !== ep.id) ); }} /> <Label htmlFor={`ep-${ep.id}`} className="font-normal">{ep.name}</Label> </div> ))} </div> </Card> </div>
                       {showContextDocSelector && (
                         <div><Label>Context Documents (Optional, for compatible Gemini models)</Label>
