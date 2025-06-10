@@ -338,7 +338,7 @@ export default function RunDetailsPage() {
         addLog(`Fetched ${details.length} summarization definition details.`);
         return details;
     },
-    enabled: !!currentUserId && !!runDetails?.selectedSummarizationDefIds && runDetails.selectedSummarizationDefIds.length > 0 && runDetails.runType === 'Product',
+    enabled: !!currentUserId && !!runDetails?.selectedSummarizationDefIds && runDetails.selectedSummarizationDefIds.length > 0,
     staleTime: Infinity,
   });
 
@@ -528,7 +528,7 @@ export default function RunDetailsPage() {
 
   const simulateRunExecution = async () => {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-    const hasSummarizationDefs = runDetails?.runType === 'Product' && summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
+    const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
 
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) { 
         const errorMsg = "Missing critical run configuration or no evaluation/summarization parameters selected."; 
@@ -559,7 +559,7 @@ export default function RunDetailsPage() {
             evalParamDetailsForLLM.forEach(ep => { structuredCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaText += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaText += `  - "${label.name}": ${label.definition || 'No definition.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaText += " (No specific categorization labels)\n"; } structuredCriteriaText += "\n"; }); 
             structuredCriteriaText += "--- END EVALUATION CRITERIA ---\n";
           }
-          if (hasSummarizationDefs) {
+          if (hasSummarizationDefs) { // This condition is always checked now, regardless of runType
             structuredCriteriaText += "\n\n--- SUMMARIZATION TASKS ---\n";
             summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaText += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) structuredCriteriaText += `Example Output Hint: "${sd.example}"\n`; structuredCriteriaText += "Provide your summary for this task.\n\n"; });
             structuredCriteriaText += "--- END SUMMARIZATION TASKS ---\n";
@@ -751,7 +751,7 @@ export default function RunDetailsPage() {
   const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => { if (!timestamp) return 'N/A'; return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString(); };
   const isRunTerminal = runDetails.status === 'Completed';
   const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed';
-  const canStartLLMTask = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook && ( (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (runDetails.runType === 'Product' && summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0) );
+  const canStartLLMTask = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook && ( (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0) ); // Adjusted for either task type
   const canDownloadResults = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
   const canSuggestImprovements = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
   const getStatusBadge = (status: EvalRun['status']) => { 
@@ -801,7 +801,7 @@ export default function RunDetailsPage() {
       <Tabs defaultValue="results_table">
         <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 mb-4"> <TabsTrigger value="config">Run Configuration</TabsTrigger> <TabsTrigger value="results_table">LLM Results Table</TabsTrigger> <TabsTrigger value="breakdown">Metrics Breakdown</TabsTrigger> </TabsList>
         <TabsContent value="config"> <Card> <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader> <CardContent className="space-y-3 text-sm"> <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"> <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p> <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p> <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId}</p> <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p> <p><strong>Test on Rows Config:</strong> {runDetails.runOnNRows === 0 ? 'All (capped)' : `First ${runDetails.runOnNRows} (capped)`}</p> <p><strong>LLM Concurrency Limit:</strong> {runDetails.concurrencyLimit || 'Default (3)'}</p> <div><strong>Evaluation Parameters:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for labeling.")} </div>
-          {runDetails.runType === 'Product' && (<div><strong>Summarization Definitions:</strong> {summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {summarizationDefDetailsForLLM.map(sd => <li key={sd.id}>{sd.name} (ID: {sd.id})</li>)} </ul> ) : (runDetails.selectedSummarizationDefNames && runDetails.selectedSummarizationDefNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedSummarizationDefNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for summarization.")} </div>)}
+          <div><strong>Summarization Definitions:</strong> {summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {summarizationDefDetailsForLLM.map(sd => <li key={sd.id}>{sd.name} (ID: {sd.id})</li>)} </ul> ) : (runDetails.selectedSummarizationDefNames && runDetails.selectedSummarizationDefNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedSummarizationDefNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for summarization.")} </div>
           {runDetails.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0 && (
             <div><strong>Context Documents:</strong>
                 {isLoadingSelectedContextDocs ? <Skeleton className="h-5 w-24 mt-1" /> :
@@ -851,7 +851,7 @@ export default function RunDetailsPage() {
                       </div>
                     </TableHead>
                   ))}
-                  {runDetails.runType === 'Product' && summarizationDefDetailsForLLM?.map(summDef => (
+                  {summarizationDefDetailsForLLM?.map(summDef => (
                       <TableHead key={summDef.id} className="min-w-[200px] sm:min-w-[300px] align-top">{summDef.name} (Summary)</TableHead>
                   ))}
                   </TableRow></TableHeader>
@@ -876,7 +876,7 @@ export default function RunDetailsPage() {
                           </TableCell> 
                         );
                       })}
-                      {runDetails.runType === 'Product' && summarizationDefDetailsForLLM?.map(summDef => {
+                      {summarizationDefDetailsForLLM?.map(summDef => {
                           const paramId = summDef.id;
                           const outputForCell = item.judgeLlmOutput[paramId];
                           return (
@@ -971,8 +971,8 @@ export default function RunDetailsPage() {
             <DialogTitle className="flex items-center"><MessageSquareQuote className="mr-2 h-5 w-5 text-primary"/>Question Bot's Judgement</DialogTitle>
             <DialogDescription>Analyze a specific judgment made by the LLM. Provide your reasoning for a deeper AI analysis.</DialogDescription>
           </DialogHeader>
-          <div className="flex-grow min-h-0 overflow-y-auto">
-            <ScrollArea className="h-full w-full">
+          <div className="flex-grow min-h-0 overflow-y-auto"> {/* Ensured this container allows internal ScrollArea to function */}
+            <ScrollArea className="h-full w-full"> {/* ScrollArea wraps the entire content */}
               {questioningItemData && (
                 <div className="space-y-4 p-6 text-sm">
                   <Card className="p-3 bg-muted/40">

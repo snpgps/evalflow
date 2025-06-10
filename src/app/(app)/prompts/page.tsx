@@ -574,7 +574,7 @@ export default function PromptsPage() {
   const renderEditorArea = () => {
     if (!selectedPrompt && !isLoadingPrompts && promptsData.length > 0 && currentUserId) {
       return (
-        <Card className="w-full md:flex-1 flex items-center justify-center shadow-lg">
+        <Card className="w-full md:flex-1 flex items-center justify-center shadow-lg min-w-0">
           <div className="text-center text-muted-foreground p-8">
             <FileText className="mx-auto h-16 w-16 mb-4" />
             <h2 className="text-xl font-semibold">Select a Prompt</h2>
@@ -585,7 +585,7 @@ export default function PromptsPage() {
     }
      if (!selectedPrompt && promptsData.length === 0 && !isLoadingPrompts && currentUserId) {
          return (
-            <Card className="w-full md:flex-1 flex items-center justify-center shadow-lg">
+            <Card className="w-full md:flex-1 flex items-center justify-center shadow-lg min-w-0">
               <div className="text-center text-muted-foreground p-8">
                 <FileText className="mx-auto h-16 w-16 mb-4" />
                 <h2 className="text-xl font-semibold">No Prompts Available</h2>
@@ -596,7 +596,7 @@ export default function PromptsPage() {
      }
     if (!selectedPrompt && (isLoadingPrompts || isLoadingUserId)) {
          return (
-            <Card className="w-full md:flex-1 flex flex-col shadow-lg">
+            <Card className="w-full md:flex-1 flex flex-col shadow-lg min-w-0">
                 <CardHeader className="border-b">
                     <Skeleton className="h-6 w-3/4 mb-1"/>
                     <Skeleton className="h-4 w-1/2"/>
@@ -612,7 +612,7 @@ export default function PromptsPage() {
     }
     if (!selectedPrompt) {
         return (
-            <Card className="w-full md:flex-1 flex items-center justify-center shadow-lg">
+            <Card className="w-full md:flex-1 flex items-center justify-center shadow-lg min-w-0">
                  <div className="text-center text-muted-foreground p-8">
                     <FileText className="mx-auto h-16 w-16 mb-4" />
                     <p>Select or create a prompt.</p>
@@ -622,7 +622,7 @@ export default function PromptsPage() {
     }
 
     return (
-      <Card className="w-full md:flex-1 flex flex-col shadow-lg min-h-0">
+      <Card className="w-full md:flex-1 flex flex-col shadow-lg min-h-0 min-w-0">
         <CardHeader className="border-b">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <div className="flex-grow min-w-0">
@@ -654,7 +654,7 @@ export default function PromptsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex-1 p-0 flex flex-col lg:flex-row min-h-0">
-          <div className="flex-1 p-4 flex flex-col">
+          <div className="flex-1 p-4 flex flex-col min-w-0"> {/* Added min-w-0 */}
             <Label htmlFor="prompt-template-area" className="mb-2 font-medium">
               Prompt Template (Version {selectedVersion?.versionNumber || 'N/A'})
               {selectedPrompt.currentVersionId === selectedVersionId && <Badge variant="outline" className="ml-2 border-green-500 text-green-600">Active</Badge>}
