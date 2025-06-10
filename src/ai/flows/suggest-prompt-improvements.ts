@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -8,8 +9,8 @@
  * - SuggestPromptImprovementsOutput - The return type for the suggestPromptImprovements function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {ai}from '@/ai/genkit';
+import {z}from 'genkit';
 
 const SuggestPromptImprovementsInputSchema = z.object({
   promptTemplate: z.string().describe('The prompt template to be improved.'),
@@ -64,7 +65,22 @@ const suggestPromptImprovementsFlow = ai.defineFlow(
     outputSchema: SuggestPromptImprovementsOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
-    return output!;
+    try {
+      const {output, usage} = await prompt(input);
+      if (!output) {
+        console.error('LLM did not return parsable output for prompt improvement suggestions. Usage:', usage);
+        return {
+          suggestedImprovements: "// Error: LLM did not return parsable output. Original prompt was:\n" + input.promptTemplate,
+          reasoning: "No reasoning due to parsing error. Usage data (if available): " + JSON.stringify(usage)
+        };
+      }
+      return output;
+    } catch (error: any) {
+      console.error('Error in suggestPromptImprovementsFlow:', error);
+      return {
+        suggestedImprovements: `// Error executing prompt improvement flow: ${error.message || 'Unknown error'}. Original prompt was:\n` + input.promptTemplate,
+        reasoning: `Flow execution error: ${error.message || 'Unknown error'}.`
+      };
+    }
   }
 );

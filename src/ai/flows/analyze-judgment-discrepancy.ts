@@ -19,7 +19,6 @@ const EvaluationParameterLabelSchema = z.object({
   example: z.string().optional().describe("An illustrative example for this label."),
 });
 
-// REMOVED export from const
 const AnalyzeJudgmentDiscrepancyInputSchema = z.object({
   inputData: z.record(z.string(), z.any()).describe("The original input data provided to the product for the specific row being analyzed, as a JSON object string or a well-formatted string representation."),
   evaluationParameterName: z.string().describe("The name of the evaluation parameter for which the judgment is being questioned."),
@@ -33,7 +32,6 @@ const AnalyzeJudgmentDiscrepancyInputSchema = z.object({
 });
 export type AnalyzeJudgmentDiscrepancyInput = z.infer<typeof AnalyzeJudgmentDiscrepancyInputSchema>;
 
-// REMOVED export from const
 const AnalyzeJudgmentDiscrepancyOutputSchema = z.object({
   analysis: z.string().describe("A detailed analysis. This should first try to explain or justify the original Judge LLM's decision based on the provided context. Then, it should address the user's question and the ground truth. If the original judgment seems incorrect or questionable after considering all inputs, this analysis should explain why."),
   agreesWithUserConcern: z.boolean().describe("A boolean indicating whether, after full analysis, the model leans towards agreeing with the user's concern that the original judgment might be flawed or requires re-evaluation."),
@@ -136,15 +134,24 @@ const internalAnalyzeJudgmentDiscrepancyFlow = ai.defineFlow(
     outputSchema: AnalyzeJudgmentDiscrepancyOutputSchema,
   },
   async (input) => {
-    // console.log("analyzeJudgmentDiscrepancyFlow input:", JSON.stringify(input, null, 2));
-    const { output, usage } = await analysisGenkitPrompt(input);
-    if (!output) {
-      throw new Error('The LLM did not return a parsable output for judgment discrepancy analysis.');
+    try {
+      const { output, usage } = await analysisGenkitPrompt(input);
+      if (!output) {
+        console.error('LLM did not return a parsable output for judgment discrepancy analysis. Usage:', usage);
+        return {
+          analysis: "Error: The AI model did not return a parsable output for the judgment discrepancy analysis. This could be due to issues with the LLM response format, model capacity, or safety filters. Please check server logs for details. Usage data (if available): " + JSON.stringify(usage),
+          agreesWithUserConcern: false,
+          potentialFailureReasons: "LLM output parsing failure or empty response."
+        };
+      }
+      return output;
+    } catch (error: any) {
+      console.error('Error in internalAnalyzeJudgmentDiscrepancyFlow:', error);
+      return {
+        analysis: `Error executing judgment discrepancy flow: ${error.message || 'Unknown error'}. Check server logs.`,
+        agreesWithUserConcern: false,
+        potentialFailureReasons: `Flow execution error: ${error.message || 'Unknown error'}.`
+      };
     }
-    // console.log('analyzeJudgmentDiscrepancyFlow LLM usage:', usage);
-    // console.log('analyzeJudgmentDiscrepancyFlow LLM output:', JSON.stringify(output, null, 2));
-    return output!;
   }
 );
-
-    

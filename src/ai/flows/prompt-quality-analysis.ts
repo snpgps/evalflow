@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -79,7 +80,22 @@ const analyzePromptQualityFlow = ai.defineFlow(
     outputSchema: AnalyzePromptQualityOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
-    return output!;
+    try {
+      const {output, usage} = await prompt(input);
+      if (!output) {
+        console.error('LLM did not return parsable output for prompt quality analysis. Usage:', usage);
+        return {
+          insights: "Error: LLM did not return parsable output for prompt quality analysis. Usage data (if available): " + JSON.stringify(usage),
+          recommendations: "No recommendations due to parsing error."
+        };
+      }
+      return output;
+    } catch (error: any) {
+        console.error('Error in analyzePromptQualityFlow:', error);
+        return {
+            insights: `Error executing prompt quality analysis flow: ${error.message || 'Unknown error'}. Check server logs.`,
+            recommendations: "Failed to generate recommendations due to flow execution error."
+        };
+    }
   }
 );

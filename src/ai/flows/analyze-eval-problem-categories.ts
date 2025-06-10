@@ -13,12 +13,12 @@
 
 import {ai} from '@/ai/genkit';
 import { z } from 'genkit';
-import type { MismatchDetail } from './suggest-recursive-prompt-improvements'; // Re-using this type
+import type { MismatchDetail } from './suggest-recursive-prompt-improvements'; 
 
 // Input Schema
 const AnalyzeEvalProblemCategoriesInputSchema = z.object({
   mismatchDetails: z.array(
-    z.object({ // Re-defining MismatchDetail inline for clarity in this flow's schema
+    z.object({ 
       inputData: z.record(z.string(), z.any()).describe("The product parameters input for the row that had a mismatch."),
       evaluationParameterName: z.string().describe("The name of the evaluation parameter where the mismatch occurred."),
       evaluationParameterDefinition: z.string().describe("The definition of the evaluation parameter."),
@@ -44,7 +44,7 @@ const ProblemCategorySchema = z.object({
       evaluationParameterName: z.string(),
       evaluationParameterDefinition: z.string(),
       llmChosenLabel: z.string(),
-      groundTruthLabel: z.string(), // This is the desired target label
+      groundTruthLabel: z.string(), 
       llmRationale: z.string().optional(),
     }).optional().describe("One example MismatchDetail from the input that clearly illustrates this problem category. Include this if possible. Its 'inputData' field MUST be a JSON string representation of the original input data object for that mismatch.")
 });
@@ -133,15 +133,24 @@ const internalAnalyzeEvalProblemCategoriesFlow = ai.defineFlow(
         return { problemCategories: [], overallSummary: "No mismatches provided to analyze." };
     }
 
-    const { output, usage } = await analysisPrompt(input);
-
-
-    if (!output) {
-      throw new Error('The LLM did not return a parsable output for problem category analysis.');
+    try {
+      const { output, usage } = await analysisPrompt(input);
+      if (!output) {
+        console.error('LLM did not return a parsable output for problem category analysis. Usage:', usage);
+        return { 
+            problemCategories: [], 
+            overallSummary: "Error: The AI model did not return a parsable output for problem category analysis. Usage data (if available): " + JSON.stringify(usage) 
+        };
+      }
+      console.log('internalAnalyzeEvalProblemCategoriesFlow LLM usage:', usage);
+      console.log('internalAnalyzeEvalProblemCategoriesFlow LLM output:', JSON.stringify(output, null, 2));
+      return output;
+    } catch (error: any) {
+        console.error('Error in internalAnalyzeEvalProblemCategoriesFlow:', error);
+        return {
+            problemCategories: [],
+            overallSummary: `Error executing problem category analysis flow: ${error.message || 'Unknown error'}. Check server logs.`
+        };
     }
-    console.log('internalAnalyzeEvalProblemCategoriesFlow LLM usage:', usage);
-    console.log('internalAnalyzeEvalProblemCategoriesFlow LLM output:', JSON.stringify(output, null, 2));
-    return output!;
   }
 );
-

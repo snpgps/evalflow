@@ -11,7 +11,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import { z } from 'genkit'; // Corrected import
+import { z } from 'genkit'; 
 
 const MismatchDetailSchema = z.object({
   inputData: z.record(z.string(), z.any()).describe("The product parameters input for the row that had a mismatch."),
@@ -23,7 +23,6 @@ const MismatchDetailSchema = z.object({
 });
 export type MismatchDetail = z.infer<typeof MismatchDetailSchema>;
 
-// NOT EXPORTED ANYMORE
 const SuggestRecursivePromptImprovementsInputSchema = z.object({
   originalPromptTemplate: z.string().describe("The original prompt template text that was used in the evaluation."),
   mismatchDetails: z.array(MismatchDetailSchema).describe("An array of objects, each detailing a specific instance where the LLM's output did not match the ground truth."),
@@ -32,7 +31,6 @@ const SuggestRecursivePromptImprovementsInputSchema = z.object({
 });
 export type SuggestRecursivePromptImprovementsInput = z.infer<typeof SuggestRecursivePromptImprovementsInputSchema>;
 
-// NOT EXPORTED ANYMORE
 const SuggestRecursivePromptImprovementsOutputSchema = z.object({
   suggestedPromptTemplate: z.string().describe("The full text of the suggested, improved prompt template."),
   reasoning: z.string().describe("A step-by-step explanation of why the suggested changes were made, referencing specific mismatches or patterns observed."),
@@ -42,7 +40,6 @@ export type SuggestRecursivePromptImprovementsOutput = z.infer<typeof SuggestRec
 export async function suggestRecursivePromptImprovements(
   input: SuggestRecursivePromptImprovementsInput
 ): Promise<SuggestRecursivePromptImprovementsOutput> {
-  // console.log("SuggestRecursivePromptImprovementsInput received:", JSON.stringify(input, null, 2));
   return internalSuggestRecursivePromptImprovementsFlow(input);
 }
 
@@ -108,12 +105,22 @@ const internalSuggestRecursivePromptImprovementsFlow = ai.defineFlow(
     outputSchema: SuggestRecursivePromptImprovementsOutputSchema,
   },
   async (input) => {
-    const { output, usage } = await suggestionPrompt(input);
-    if (!output) {
-      throw new Error('The LLM did not return a parsable output for prompt improvement suggestions.');
+    try {
+      const { output, usage } = await suggestionPrompt(input);
+      if (!output) {
+        console.error('LLM did not return a parsable output for prompt improvement suggestions. Usage:', usage);
+        return {
+          suggestedPromptTemplate: "// Error: LLM did not return parsable output for prompt suggestions. Original prompt was:\n" + input.originalPromptTemplate,
+          reasoning: "Failed to generate suggestions due to LLM output parsing error or empty response. Usage data (if available): " + JSON.stringify(usage)
+        };
+      }
+      return output;
+    } catch (error: any) {
+      console.error('Error in internalSuggestRecursivePromptImprovementsFlow:', error);
+      return {
+        suggestedPromptTemplate: `// Error executing prompt improvement flow: ${error.message || 'Unknown error'}. Original prompt was:\n` + input.originalPromptTemplate,
+        reasoning: `Flow execution error: ${error.message || 'Unknown error'}.`
+      };
     }
-    // console.log('internalSuggestRecursivePromptImprovementsFlow LLM usage:', usage);
-    // console.log('internalSuggestRecursivePromptImprovementsFlow LLM output:', JSON.stringify(output, null, 2));
-    return output!;
   }
 );

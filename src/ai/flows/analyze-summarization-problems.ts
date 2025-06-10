@@ -112,18 +112,18 @@ Ensure the 'count' for each category accurately reflects how many of the provide
 `;
 
 const analysisPrompt = ai.definePrompt({
-  name: 'analyzeUserIntentsFromSummariesPrompt', // Renamed prompt for clarity
+  name: 'analyzeUserIntentsFromSummariesPrompt', 
   input: {schema: AnalyzeSummarizationProblemsInputSchema},
   output: {schema: AnalyzeSummarizationProblemsOutputSchema},
   prompt: handlebarsPrompt,
   config: {
-    temperature: 0.6, // Slightly higher temp for more nuanced intent interpretation
+    temperature: 0.6, 
   },
 });
 
 const internalAnalyzeSummarizationProblemsFlow = ai.defineFlow(
   {
-    name: 'internalAnalyzeUserIntentsFromSummariesFlow', // Renamed flow for clarity
+    name: 'internalAnalyzeUserIntentsFromSummariesFlow', 
     inputSchema: AnalyzeSummarizationProblemsInputSchema,
     outputSchema: AnalyzeSummarizationProblemsOutputSchema,
   },
@@ -132,14 +132,22 @@ const internalAnalyzeSummarizationProblemsFlow = ai.defineFlow(
         return { userIntentCategories: [], overallSummaryOfUserIntents: "No summaries provided to analyze user intents." };
     }
 
-    const { output, usage } = await analysisPrompt(input);
-
-    if (!output) {
-      throw new Error('The LLM did not return a parsable output for user intent analysis from summaries.');
+    try {
+      const { output, usage } = await analysisPrompt(input);
+      if (!output) {
+        console.error('LLM did not return a parsable output for user intent analysis from summaries. Usage:', usage);
+        return { 
+            userIntentCategories: [], 
+            overallSummaryOfUserIntents: "Error: The AI model did not return a parsable output for user intent analysis. Usage data (if available): " + JSON.stringify(usage)
+        };
+      }
+      return output;
+    } catch (error: any) {
+        console.error('Error in internalAnalyzeSummarizationProblemsFlow:', error);
+        return {
+            userIntentCategories: [],
+            overallSummaryOfUserIntents: `Error executing user intent analysis flow: ${error.message || 'Unknown error'}. Check server logs.`
+        };
     }
-    // console.log('internalAnalyzeSummarizationProblemsFlow LLM usage:', usage);
-    // console.log('internalAnalyzeSummarizationProblemsFlow LLM output:', JSON.stringify(output, null, 2));
-    return output!;
   }
 );
-
