@@ -19,7 +19,8 @@ const EvaluationParameterLabelSchema = z.object({
   example: z.string().optional().describe("An illustrative example for this label."),
 });
 
-export const AnalyzeJudgmentDiscrepancyInputSchema = z.object({
+// REMOVED export from const
+const AnalyzeJudgmentDiscrepancyInputSchema = z.object({
   inputData: z.record(z.string(), z.any()).describe("The original input data provided to the product for the specific row being analyzed, as a JSON object string or a well-formatted string representation."),
   evaluationParameterName: z.string().describe("The name of the evaluation parameter for which the judgment is being questioned."),
   evaluationParameterDefinition: z.string().describe("The definition of this evaluation parameter."),
@@ -32,7 +33,8 @@ export const AnalyzeJudgmentDiscrepancyInputSchema = z.object({
 });
 export type AnalyzeJudgmentDiscrepancyInput = z.infer<typeof AnalyzeJudgmentDiscrepancyInputSchema>;
 
-export const AnalyzeJudgmentDiscrepancyOutputSchema = z.object({
+// REMOVED export from const
+const AnalyzeJudgmentDiscrepancyOutputSchema = z.object({
   analysis: z.string().describe("A detailed analysis. This should first try to explain or justify the original Judge LLM's decision based on the provided context. Then, it should address the user's question and the ground truth. If the original judgment seems incorrect or questionable after considering all inputs, this analysis should explain why."),
   agreesWithUserConcern: z.boolean().describe("A boolean indicating whether, after full analysis, the model leans towards agreeing with the user's concern that the original judgment might be flawed or requires re-evaluation."),
   potentialFailureReasons: z.string().optional().describe("If the original judgment is deemed potentially flawed, this field should list possible reasons (e.g., 'Ambiguity in prompt regarding X', 'Judge LLM may have overlooked Y in input data', 'Evaluation parameter definition could be clearer on Z')."),
