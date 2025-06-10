@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { PlusCircle, PlayCircle, Eye, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, Loader2, TestTube2, CheckCheck, Zap, FileText as FileTextIcon } from "lucide-react";
+import { PlusCircle, PlayCircle, Eye, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, Loader2, TestTube2, CheckCheck, Zap, FileText as FileTextIcon, AlignLeft } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -25,15 +25,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
+
 
 // Interfaces for dropdown data
 interface SelectableDatasetVersion { id: string; versionNumber: number; fileName?: string; columnMapping?: Record<string,string>; groundTruthMapping?: Record<string, string>; }
 interface SelectableDataset { id: string; name: string; versions: SelectableDatasetVersion[]; }
-interface SelectableModelConnector { id: string; name: string; provider?: string; config?: string; } // Added provider and config
+interface SelectableModelConnector { id: string; name: string; provider?: string; config?: string; }
 interface SelectablePromptVersion { id: string; versionNumber: number;}
 interface SelectablePromptTemplate { id: string; name: string; versions: SelectablePromptVersion[]; }
 interface SelectableEvalParameter { id: string; name: string; }
 interface SelectableContextDocument { id: string; name: string; fileName: string; }
+interface SelectableSummarizationDef { id: string; name: string; }
 
 
 // Interface for EvalRun Firestore document
@@ -54,7 +57,7 @@ interface EvalRun {
 
   modelConnectorId: string;
   modelConnectorName?: string;
-  modelConnectorProvider?: string; // For context doc logic
+  modelConnectorProvider?: string;
 
   promptId: string;
   promptName?: string;
@@ -63,7 +66,10 @@ interface EvalRun {
 
   selectedEvalParamIds: string[];
   selectedEvalParamNames?: string[];
-  selectedContextDocumentIds?: string[]; // New field
+  selectedContextDocumentIds?: string[];
+  selectedSummarizationDefIds?: string[]; // New field
+  selectedSummarizationDefNames?: string[]; // New field
+
 
   runOnNRows: number;
   concurrencyLimit: number;
@@ -82,7 +88,7 @@ type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'compl
   updatedAt: FieldValue;
   status: 'Pending';
   userId: string;
-  modelConnectorProvider?: string; // Ensure it's part of the payload type
+  modelConnectorProvider?: string;
 };
 
 const GEMINI_CONTEXT_CACHING_MODELS = ["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"];
@@ -159,6 +165,13 @@ const fetchSelectableContextDocuments = async (userId: string): Promise<Selectab
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, name: docSnap.data().name as string, fileName: docSnap.data().fileName as string }));
 };
 
+const fetchSelectableSummarizationDefs = async (userId: string): Promise<SelectableSummarizationDef[]> => {
+  const defsCollectionRef = collection(db, 'users', userId, 'summarizationDefinitions');
+  const q = query(defsCollectionRef, orderBy('createdAt', 'asc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, name: docSnap.data().name as string }));
+};
+
 
 // Fetch Evaluation Runs
 const fetchEvalRuns = async (userId: string): Promise<EvalRun[]> => {
@@ -212,6 +225,11 @@ export default function EvalRunsPage() {
     queryFn: () => fetchSelectableContextDocuments(currentUserId!),
     enabled: !!currentUserId,
   });
+  const { data: summarizationDefinitions = [], isLoading: isLoadingSummarizationDefs } = useQuery<SelectableSummarizationDef[], Error>({
+    queryKey: ['selectableSummarizationDefs', currentUserId],
+    queryFn: () => fetchSelectableSummarizationDefs(currentUserId!),
+    enabled: !!currentUserId,
+  });
 
 
   const [isNewRunDialogOpen, setIsNewRunDialogOpen] = useState(false);
@@ -224,6 +242,7 @@ export default function EvalRunsPage() {
   const [selectedPromptVersionId, setSelectedPromptVersionId] = useState('');
   const [selectedEvalParamIds, setSelectedEvalParamIds] = useState<string[]>([]);
   const [selectedContextDocIds, setSelectedContextDocIds] = useState<string[]>([]);
+  const [selectedSummarizationDefIds, setSelectedSummarizationDefIds] = useState<string[]>([]);
   const [runOnNRows, setRunOnNRows] = useState<number>(0); // 0 means all
   const [newRunConcurrencyLimit, setNewRunConcurrencyLimit] = useState<number>(3);
 
@@ -295,7 +314,16 @@ export default function EvalRunsPage() {
   const deleteEvalRunMutation = useMutation<void, Error, string>({
     mutationFn: async (runId: string) => {
       if (!currentUserId) { throw new Error("User not identified for delete operation."); }
-      try { await deleteDoc(doc(db, 'users', currentUserId, 'evaluationRuns', runId)); } catch (e: unknown) {
+      try { 
+        // Also delete storedAnalyses subcollection if it exists
+        const analysesCollectionRef = collection(db, 'users', currentUserId, 'evaluationRuns', runId, 'storedAnalyses');
+        const analysesSnapshot = await getDocs(analysesCollectionRef);
+        const batch = writeBatch(db);
+        analysesSnapshot.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        
+        await deleteDoc(doc(db, 'users', currentUserId, 'evaluationRuns', runId)); 
+      } catch (e: unknown) {
         if (e instanceof Error) { throw new Error(`Failed to delete run from Firestore: ${e.message}`); }
         throw new Error(`An unknown error occurred while deleting run ${runId} from Firestore.`);
       }
@@ -319,9 +347,12 @@ export default function EvalRunsPage() {
     const prompt = promptTemplates?.find(p => p.id === selectedPromptId);
     const promptVersion = prompt?.versions.find(v => v.id === selectedPromptVersionId);
     const selEvalParams = evaluationParameters?.filter(ep => selectedEvalParamIds.includes(ep.id)) || [];
+    const selSummarizationDefs = summarizationDefinitions?.filter(sd => selectedSummarizationDefIds.includes(sd.id)) || [];
+
 
     if (!newRunName.trim()){ toast({ title: "Validation Error", description: "Run Name is required.", variant: "destructive"}); return; }
-    if (!dataset || !datasetVersion || !connector || !prompt || !promptVersion || selEvalParams.length === 0) { toast({ title: "Configuration Incomplete", description: "Please ensure all fields are selected, including at least one evaluation parameter.", variant: "destructive"}); return; }
+    if (!dataset || !datasetVersion || !connector || !prompt || !promptVersion ) { toast({ title: "Configuration Incomplete", description: "Please ensure Dataset, Connector, and Prompt (with versions) are selected.", variant: "destructive"}); return; }
+    if (selEvalParams.length === 0 && selSummarizationDefs.length === 0) { toast({ title: "Configuration Incomplete", description: "Please select at least one Evaluation Parameter or one Summarization Definition.", variant: "destructive"}); return; }
     if (runOnNRows < 0) { toast({ title: "Validation Error", description: "Number of rows to test cannot be negative.", variant: "destructive" }); return; }
     if (newRunConcurrencyLimit < 1) { toast({ title: "Validation Error", description: "Concurrency limit must be at least 1.", variant: "destructive" }); return; }
     if (!datasetVersion.columnMapping || Object.keys(datasetVersion.columnMapping).length === 0) { toast({ title: "Dataset Version Not Ready", description: "The selected dataset version must have product parameters mapped. Please configure it on the Datasets page.", variant: "destructive" }); return; }
@@ -334,6 +365,8 @@ export default function EvalRunsPage() {
       modelConnectorId: selectedConnectorId, modelConnectorName: connector?.name, modelConnectorProvider: connector?.provider,
       promptId: selectedPromptId, promptName: prompt?.name, promptVersionId: selectedPromptVersionId, promptVersionNumber: promptVersion?.versionNumber,
       selectedEvalParamIds: selectedEvalParamIds, selectedEvalParamNames: selEvalParams.map(ep => ep.name),
+      selectedSummarizationDefIds: newRunType === 'Product' ? selectedSummarizationDefIds : [],
+      selectedSummarizationDefNames: newRunType === 'Product' ? selSummarizationDefs.map(sd => sd.name) : [],
       selectedContextDocumentIds: showContextDocSelector ? selectedContextDocIds : [],
       runOnNRows: Number(runOnNRows) || 0, concurrencyLimit: Number(newRunConcurrencyLimit) || 3,
     };
@@ -343,10 +376,11 @@ export default function EvalRunsPage() {
   const resetNewRunForm = () => {
     setNewRunName(''); setNewRunType('Product'); setSelectedDatasetId(''); setSelectedDatasetVersionId(''); setSelectedConnectorId('');
     setSelectedPromptId(''); setSelectedPromptVersionId(''); setSelectedEvalParamIds([]); setSelectedContextDocIds([]);
+    setSelectedSummarizationDefIds([]);
     setRunOnNRows(0); setNewRunConcurrencyLimit(3); setShowContextDocSelector(false);
   };
 
-  const handleDeleteRun = (runId: string) => { if (confirm('Are you sure you want to delete this evaluation run? This action cannot be undone.')) deleteEvalRunMutation.mutate(runId); };
+  const handleDeleteRun = (runId: string) => { if (confirm('Are you sure you want to delete this evaluation run and all its associated analyses? This action cannot be undone.')) deleteEvalRunMutation.mutate(runId); };
   const getStatusBadge = (status: EvalRun['status']) => {
     switch (status) {
       case 'Completed': return <Badge variant="default" className="bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1 h-3 w-3" />Completed</Badge>;
@@ -360,7 +394,7 @@ export default function EvalRunsPage() {
   };
   const formatTimestamp = (timestamp?: Timestamp) => timestamp ? timestamp.toDate().toLocaleDateString() : 'N/A';
 
-  const isLoadingDialogData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams || isLoadingContextDocs;
+  const isLoadingDialogData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams || isLoadingContextDocs || isLoadingSummarizationDefs;
   const selectedDatasetForVersions = datasets?.find(d => d.id === selectedDatasetId);
   const selectedDatasetVersionForWarnings = selectedDatasetForVersions?.versions.find(v => v.id === selectedDatasetVersionId);
   const foundPromptTemplate = selectedPromptId ? promptTemplates?.find(p => p.id === selectedPromptId) : undefined;
@@ -368,6 +402,16 @@ export default function EvalRunsPage() {
 
   if (isLoadingUserId) return <div className="p-4 md:p-6"><Skeleton className="h-32 w-full"/></div>;
   if (!currentUserId) return <Card className="m-4 md:m-0"><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
+
+  const isNewRunButtonDisabled = addEvalRunMutation.isPending || 
+    !selectedDatasetId || 
+    !selectedConnectorId || 
+    !selectedPromptId || 
+    (selectedEvalParamIds.length === 0 && (newRunType === 'GroundTruth' || selectedSummarizationDefIds.length === 0)) ||
+    !selectedDatasetVersionId || 
+    !selectedPromptVersionId || 
+    !newRunName.trim();
+
 
   return (
     <div className="space-y-6 p-4 md:p-0">
@@ -390,7 +434,7 @@ export default function EvalRunsPage() {
                   <div className="flex-grow min-h-0 overflow-y-auto">
                     <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
                         <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
-                        <div> <Label htmlFor="run-type">Run Type</Label> <RadioGroup value={newRunType} onValueChange={(value: 'Product' | 'GroundTruth') => setNewRunType(value)} className="flex space-x-4 mt-1"> <div className="flex items-center space-x-2"> <RadioGroupItem value="Product" id="type-product" /> <Label htmlFor="type-product" className="font-normal">Product Run</Label> </div> <div className="flex items-center space-x-2"> <RadioGroupItem value="GroundTruth" id="type-gt" /> <Label htmlFor="type-gt" className="font-normal">Ground Truth Run</Label> </div> </RadioGroup> <p className="text-xs text-muted-foreground mt-1"> Product runs evaluate outputs. Ground Truth runs compare outputs to known correct labels.</p> </div>
+                        <div> <Label htmlFor="run-type">Run Type</Label> <RadioGroup value={newRunType} onValueChange={(value: 'Product' | 'GroundTruth') => setNewRunType(value)} className="flex space-x-4 mt-1"> <div className="flex items-center space-x-2"> <RadioGroupItem value="Product" id="type-product" /> <Label htmlFor="type-product" className="font-normal">Product Run</Label> </div> <div className="flex items-center space-x-2"> <RadioGroupItem value="GroundTruth" id="type-gt" /> <Label htmlFor="type-gt" className="font-normal">Ground Truth Run</Label> </div> </RadioGroup> <p className="text-xs text-muted-foreground mt-1"> Product runs evaluate outputs (can include summarizations). Ground Truth runs compare outputs to known correct labels (summarizations not applicable).</p> </div>
                         <div> <Label htmlFor="run-dataset">Dataset</Label> <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required> <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger> <SelectContent>{datasets?.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent> </Select> </div>
                         {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length > 0 && ( <div> <Label htmlFor="run-dataset-version">Dataset Version</Label> <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required> <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger> <SelectContent>{selectedDatasetForVersions.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent> </Select> {selectedDatasetVersionForWarnings && (!selectedDatasetVersionForWarnings.columnMapping || Object.keys(selectedDatasetVersionForWarnings.columnMapping).length === 0) && ( <p className="text-xs text-destructive mt-1">Warning: No Product Parameters mapped.</p> )} {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings && !(selectedDatasetVersionForWarnings.groundTruthMapping && Object.keys(selectedDatasetVersionForWarnings.groundTruthMapping).length > 0) && ( <p className="text-xs text-amber-600 mt-1">Warning: No Ground Truth columns mapped.</p> )} </div> )}
                         {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length === 0 && ( <p className="text-xs text-muted-foreground mt-1">This dataset has no versions.</p> )}
@@ -410,6 +454,11 @@ export default function EvalRunsPage() {
                           </div>
                         )}
                         <div><Label>Evaluation Parameters (Select one or more)</Label> <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border"> <div className="space-y-2"> {evaluationParameters && evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>} {evaluationParameters?.map(ep => ( <div key={ep.id} className="flex items-center space-x-2"> <Checkbox id={`ep-${ep.id}`} checked={selectedEvalParamIds.includes(ep.id)} onCheckedChange={(checked) => { setSelectedEvalParamIds(prev => checked ? [...prev, ep.id] : prev.filter(id => id !== ep.id) ); }} /> <Label htmlFor={`ep-${ep.id}`} className="font-normal">{ep.name}</Label> </div> ))} </div> </Card> </div>
+                        
+                        {newRunType === 'Product' && (
+                        <div><Label>Summarization Definitions (Optional, for Product Runs)</Label> <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border"> <div className="space-y-2"> {summarizationDefinitions && summarizationDefinitions.length === 0 && <p className="text-xs text-muted-foreground">No summarization definitions available.</p>} {summarizationDefinitions?.map(sd => ( <div key={sd.id} className="flex items-center space-x-2"> <Checkbox id={`sd-${sd.id}`} checked={selectedSummarizationDefIds.includes(sd.id)} onCheckedChange={(checked) => { setSelectedSummarizationDefIds(prev => checked ? [...prev, sd.id] : prev.filter(id => id !== sd.id) ); }} /> <Label htmlFor={`sd-${sd.id}`} className="font-normal">{sd.name}</Label> </div> ))} </div> </Card> </div>
+                        )}
+
                         {showContextDocSelector && (
                           <div><Label>Context Documents (Optional, for compatible Gemini models)</Label>
                             <Card className="p-3 max-h-40 overflow-y-auto bg-muted/50 border">
@@ -432,7 +481,7 @@ export default function EvalRunsPage() {
                   </div>
                   <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
                     <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
-                    <Button type="submit" form="new-eval-run-form" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId || !newRunName.trim()} >
+                    <Button type="submit" form="new-eval-run-form" disabled={isNewRunButtonDisabled} >
                       {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />} Create Run
                     </Button>
                   </DialogFooter>
@@ -460,5 +509,3 @@ export default function EvalRunsPage() {
     </div>
   );
 }
-
-    

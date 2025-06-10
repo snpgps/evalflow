@@ -8,11 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"; // DialogTrigger added
-import { PlusCircle, Edit2, Trash2, Target, GripVertical, CheckCircle, XCircle, AlertTriangle, MinusCircle, Tags, MessageSquarePlus, File as FileIcon, UploadCloud } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { PlusCircle, Edit2, Trash2, Target, GripVertical, CheckCircle, XCircle, AlertTriangle, MinusCircle, Tags, MessageSquarePlus, File as FileIcon, UploadCloud, AlignLeft } from "lucide-react";
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp, type FieldValue } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, deleteObject as deleteFileFromStorage, getBlob } from 'firebase/storage'; // getBlob for potential future use
+import { ref as storageRef, uploadBytes, deleteObject as deleteFileFromStorage, getBlob } from 'firebase/storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -59,6 +59,16 @@ interface ContextDocument {
 }
 type NewContextDocumentPayload = Omit<ContextDocument, 'id' | 'createdAt'> & { createdAt: FieldValue };
 
+// Interfaces for Summarization Definitions
+export interface SummarizationDefinition {
+  id: string;
+  name: string;
+  definition: string;
+  example?: string;
+  createdAt?: Timestamp;
+}
+type SummarizationDefinitionUpdatePayload = { id: string } & Partial<Omit<SummarizationDefinition, 'id' | 'createdAt'>>;
+
 
 const fetchEvaluationParameters = async (userId: string | null): Promise<EvalParameter[]> => {
   if (!userId) return [];
@@ -75,6 +85,14 @@ const fetchContextDocuments = async (userId: string | null): Promise<ContextDocu
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ContextDocument));
 }
+
+const fetchSummarizationDefinitions = async (userId: string | null): Promise<SummarizationDefinition[]> => {
+  if (!userId) return [];
+  const definitionsCollection = collection(db, 'users', userId, 'summarizationDefinitions');
+  const q = query(definitionsCollection, orderBy('createdAt', 'asc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as SummarizationDefinition));
+};
 
 
 export default function EvaluationParametersPage() {
@@ -226,6 +244,60 @@ export default function EvaluationParametersPage() {
     }
   });
 
+  // --- Summarization Definition State & Mutations ---
+  const { data: summarizationDefinitions = [], isLoading: isLoadingSummarizationDefs, error: fetchSummarizationDefsError } = useQuery<SummarizationDefinition[], Error>({
+    queryKey: ['summarizationDefinitions', currentUserId],
+    queryFn: () => fetchSummarizationDefinitions(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
+  });
+
+  const [isSummarizationDefDialogOpen, setIsSummarizationDefDialogOpen] = useState(false);
+  const [editingSummarizationDef, setEditingSummarizationDef] = useState<SummarizationDefinition | null>(null);
+  const [summarizationDefName, setSummarizationDefName] = useState('');
+  const [summarizationDefDefinition, setSummarizationDefDefinition] = useState('');
+  const [summarizationDefExample, setSummarizationDefExample] = useState('');
+
+  const addSummarizationDefMutation = useMutation<void, Error, Omit<SummarizationDefinition, 'id' | 'createdAt'>>({
+    mutationFn: async (newDefData) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      await addDoc(collection(db, 'users', currentUserId, 'summarizationDefinitions'), { ...newDefData, createdAt: serverTimestamp() });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['summarizationDefinitions', currentUserId] });
+      resetSummarizationDefForm();
+      setIsSummarizationDefDialogOpen(false);
+      toast({ title: "Success", description: "Summarization definition added." });
+    },
+    onError: (error) => { console.error("Error adding summarization definition:", error); toast({ title: "Error", description: error.message, variant: "destructive" }); }
+  });
+
+  const updateSummarizationDefMutation = useMutation<void, Error, SummarizationDefinitionUpdatePayload>({
+    mutationFn: async (defToUpdate) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      const { id, ...dataToUpdate } = defToUpdate;
+      await updateDoc(doc(db, 'users', currentUserId, 'summarizationDefinitions', id), dataToUpdate);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['summarizationDefinitions', currentUserId] });
+      resetSummarizationDefForm();
+      setIsSummarizationDefDialogOpen(false);
+      toast({ title: "Success", description: "Summarization definition updated." });
+    },
+    onError: (error) => { console.error("Error updating summarization definition:", error); toast({ title: "Error", description: error.message, variant: "destructive" }); }
+  });
+
+  const deleteSummarizationDefMutation = useMutation<void, Error, string>({
+    mutationFn: async (defId) => {
+      if (!currentUserId) throw new Error("User not identified.");
+      await deleteDoc(doc(db, 'users', currentUserId, 'summarizationDefinitions', defId));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['summarizationDefinitions', currentUserId] });
+      toast({ title: "Success", description: "Summarization definition deleted." });
+    },
+    onError: (error) => { console.error("Error deleting summarization definition:", error); toast({ title: "Error", description: error.message, variant: "destructive" }); }
+  });
+
 
   // --- Form Reset & Dialog Openers ---
   const resetParamForm = () => { setParamName(''); setParamDefinition(''); setParamRequiresRationale(false); setEditingEvalParam(null); };
@@ -235,6 +307,10 @@ export default function EvaluationParametersPage() {
   const openManageLabelsDialog = (param: EvalParameter) => { setEditingLabelsForParam(param); setCurrentCategorizationLabelsInLabelsDialog(param.categorizationLabels?.map((cl, index) => ({ ...cl, tempId: `cl-${param.id}-${index}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` })) || []); setIsLabelsDialogOpen(true); };
   const resetContextDocForm = () => { setContextDocName(''); setContextDocDescription(''); setContextDocFile(null); };
   const handleAddNewContextDocClick = () => { if (!currentUserId) { toast({title: "Login Required", description: "Please log in.", variant: "destructive"}); return; } resetContextDocForm(); setIsContextDocDialogOpen(true); };
+
+  const resetSummarizationDefForm = () => { setSummarizationDefName(''); setSummarizationDefDefinition(''); setSummarizationDefExample(''); setEditingSummarizationDef(null); };
+  const openEditSummarizationDefDialog = (def: SummarizationDefinition) => { setEditingSummarizationDef(def); setSummarizationDefName(def.name); setSummarizationDefDefinition(def.definition); setSummarizationDefExample(def.example || ''); setIsSummarizationDefDialogOpen(true); };
+  const handleAddNewSummarizationDefClick = () => { if (!currentUserId) { toast({title: "Login Required", description: "Please log in.", variant: "destructive"}); return; } resetSummarizationDefForm(); setIsSummarizationDefDialogOpen(true); };
 
   // --- Handlers ---
   const handleSubmitParamForm = (e: FormEvent) => {
@@ -273,16 +349,29 @@ export default function EvaluationParametersPage() {
   };
   const handleDeleteContextDoc = (doc: ContextDocument) => { if (!currentUserId) return; if (confirm(`Delete context document "${doc.name}"? This will also remove the file from storage.`)) deleteContextDocMutation.mutate(doc); };
 
+  const handleSubmitSummarizationDefForm = (e: FormEvent) => {
+    e.preventDefault();
+    if (!currentUserId || !summarizationDefName.trim() || !summarizationDefDefinition.trim()) { toast({title: "Validation Error", description: "Name and Definition are required.", variant: "destructive"}); return; }
+    const defData = { name: summarizationDefName.trim(), definition: summarizationDefDefinition.trim(), example: summarizationDefExample.trim() || undefined };
+    if (editingSummarizationDef) {
+      updateSummarizationDefMutation.mutate({ id: editingSummarizationDef.id, ...defData });
+    } else {
+      addSummarizationDefMutation.mutate(defData);
+    }
+  };
+  const handleDeleteSummarizationDef = (id: string) => { if (!currentUserId) return; if (confirm('Delete this summarization definition?')) deleteSummarizationDefMutation.mutate(id); };
 
-  if (isLoadingUserId || (isLoadingParameters && currentUserId) || (isLoadingContextDocs && currentUserId)) {
+
+  if (isLoadingUserId || (isLoadingParameters && currentUserId) || (isLoadingContextDocs && currentUserId) || (isLoadingSummarizationDefs && currentUserId)) {
     return ( <div className="space-y-6 p-4 md:p-0"> <Card className="shadow-lg"><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-full sm:w-64" /></CardContent></Card> <Card><CardHeader><Skeleton className="h-8 w-1/2" /></CardHeader><CardContent className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></CardContent></Card> </div> );
   }
-  if (fetchError || fetchContextDocsError) {
-    return ( <Card className="shadow-lg m-4 md:m-0"><CardHeader><CardTitle className="text-xl md:text-2xl font-headline text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle></CardHeader><CardContent><p>{fetchError?.message || fetchContextDocsError?.message}</p></CardContent></Card> );
+  if (fetchError || fetchContextDocsError || fetchSummarizationDefsError) {
+    return ( <Card className="shadow-lg m-4 md:m-0"><CardHeader><CardTitle className="text-xl md:text-2xl font-headline text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle></CardHeader><CardContent><p>{fetchError?.message || fetchContextDocsError?.message || fetchSummarizationDefsError?.message}</p></CardContent></Card> );
   }
 
   return (
     <div className="space-y-6 p-4 md:p-0">
+      {/* Evaluation Parameters Section */}
       <Card className="shadow-lg">
         <CardHeader> <div className="flex items-center gap-3"><Target className="h-7 w-7 text-primary" /> <div><CardTitle className="text-xl md:text-2xl font-headline">Evaluation Parameters</CardTitle><CardDescription>Define metrics for evaluating AI model performance. Each parameter can have detailed categorization labels.</CardDescription></div> </div> </CardHeader>
         <CardContent> <Button onClick={handleAddNewParameterClick} disabled={!currentUserId || addMutation.isPending || updateParamMutation.isPending} className="w-full sm:w-auto"> <PlusCircle className="mr-2 h-5 w-5" /> Add New Evaluation Parameter </Button> </CardContent>
@@ -359,6 +448,47 @@ export default function EvaluationParametersPage() {
                 </TableBody>
               </Table>
             </TooltipProvider>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Summarization Definitions Section */}
+      <Card className="shadow-lg">
+        <CardHeader> <div className="flex items-center gap-3"><AlignLeft className="h-7 w-7 text-primary" /> <div><CardTitle className="text-xl md:text-2xl font-headline">Summarization Definitions</CardTitle><CardDescription>Define tasks for the AI to generate textual summaries based on input data.</CardDescription></div> </div> </CardHeader>
+        <CardContent> <Button onClick={handleAddNewSummarizationDefClick} disabled={!currentUserId || addSummarizationDefMutation.isPending || updateSummarizationDefMutation.isPending} className="w-full sm:w-auto"> <PlusCircle className="mr-2 h-5 w-5" /> Add New Summarization Definition </Button> </CardContent>
+      </Card>
+
+      <Dialog open={isSummarizationDefDialogOpen} onOpenChange={(isOpen) => { setIsSummarizationDefDialogOpen(isOpen); if(!isOpen) resetSummarizationDefForm();}}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader> <DialogTitle>{editingSummarizationDef ? 'Edit' : 'Add New'} Summarization Definition</DialogTitle> <DialogDescription>Define the name, detailed definition, and an optional example for a summarization task.</DialogDescription> </DialogHeader>
+          <form onSubmit={handleSubmitSummarizationDefForm}>
+            <div className="space-y-4 py-4 pr-1">
+              <div><Label htmlFor="summ-def-name">Name</Label><Input id="summ-def-name" value={summarizationDefName} onChange={(e) => setSummarizationDefName(e.target.value)} placeholder="e.g., User Intent Summary" required /></div>
+              <div><Label htmlFor="summ-def-definition">Definition</Label><Textarea id="summ-def-definition" value={summarizationDefDefinition} onChange={(e) => setSummarizationDefDefinition(e.target.value)} placeholder="Clearly describe what this summary should capture." required /></div>
+              <div><Label htmlFor="summ-def-example">Example (Optional)</Label><Textarea id="summ-def-example" value={summarizationDefExample} onChange={(e) => setSummarizationDefExample(e.target.value)} placeholder="Provide an ideal example of this summary." /></div>
+            </div>
+            <DialogFooter className="pt-4 border-t"> <Button type="button" variant="outline" onClick={() => {setIsSummarizationDefDialogOpen(false); resetSummarizationDefForm();}}>Cancel</Button> <Button type="submit" disabled={addSummarizationDefMutation.isPending || updateSummarizationDefMutation.isPending || !currentUserId}> {addSummarizationDefMutation.isPending || updateSummarizationDefMutation.isPending ? 'Saving...' : (editingSummarizationDef ? 'Save Changes' : 'Add Definition')} </Button> </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Card>
+        <CardHeader> <CardTitle>Defined Summarization Definitions</CardTitle> <CardDescription>Manage your existing summarization tasks.</CardDescription> </CardHeader>
+        <CardContent>
+          {!currentUserId && !isLoadingUserId ? ( <div className="text-center text-muted-foreground py-8"><p>Please log in to see summarization definitions.</p></div> ) : summarizationDefinitions.length === 0 && !isLoadingSummarizationDefs ? ( <div className="text-center text-muted-foreground py-8"><p>No summarization definitions created yet.</p></div> ) : (
+            <Table>
+              <TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Definition</TableHead><TableHead className="hidden md:table-cell">Example</TableHead><TableHead className="text-right w-auto md:w-[120px]">Actions</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {summarizationDefinitions.map((def) => (
+                  <TableRow key={def.id} className="hover:bg-muted/50">
+                    <TableCell className="font-medium">{def.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs sm:max-w-md truncate hidden sm:table-cell">{def.definition}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate hidden md:table-cell">{def.example || "N/A"}</TableCell>
+                    <TableCell className="text-right"><div className="flex items-center justify-end gap-1"><Button variant="ghost" size="icon" onClick={() => openEditSummarizationDefDialog(def)} className="mr-1" disabled={updateSummarizationDefMutation.isPending || deleteSummarizationDefMutation.isPending || !currentUserId}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => handleDeleteSummarizationDef(def.id)} className="text-destructive hover:text-destructive/90" disabled={deleteSummarizationDefMutation.isPending || (updateSummarizationDefMutation.isPending && editingSummarizationDef?.id === def.id) || !currentUserId}><Trash2 className="h-4 w-4" /></Button></div></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>

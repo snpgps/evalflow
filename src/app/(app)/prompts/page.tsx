@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, Tag, Loader2, Target, AlertTriangle } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, Tag, Loader2, Target, AlertTriangle, AlignLeft } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
@@ -21,9 +21,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
 import { fetchPromptTemplates } from '@/lib/promptActions'; 
+import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page'; // Import new type
 
 // Firestore-aligned interfaces for Product Parameters
-export interface ProductParameterForPrompts { // Added export keyword
+export interface ProductParameterForPrompts {
   id: string;
   name: string;
   description: string;
@@ -105,6 +106,29 @@ const fetchEvaluationParametersForPrompts = async (userId: string | null): Promi
   }
 };
 
+// Fetch Summarization Definitions
+const fetchSummarizationDefinitionsForPrompts = async (userId: string | null): Promise<SummarizationDefinition[]> => {
+  if (!userId) return [];
+  try {
+    const defsCollectionRef = collection(db, 'users', userId, 'summarizationDefinitions');
+    const q = query(defsCollectionRef, orderBy('createdAt', 'asc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(docSnap => {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        name: data.name || 'Unnamed Summarization',
+        definition: data.definition || '',
+        example: data.example || undefined,
+      };
+    });
+  } catch (error) {
+    console.error("Error fetching summarization definitions for prompts:", error);
+    toast({ title: "Error", description: "Could not fetch summarization definitions.", variant: "destructive" });
+    return [];
+  }
+};
+
 
 export default function PromptsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -151,6 +175,12 @@ export default function PromptsPage() {
   const { data: evaluationParameters = [], isLoading: isLoadingEvalParams, error: fetchEvalParamsError } = useQuery<EvalParameterForPrompts[], Error>({
     queryKey: ['evaluationParametersForPrompts', currentUserId],
     queryFn: () => fetchEvaluationParametersForPrompts(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
+  });
+
+  const { data: summarizationDefinitions = [], isLoading: isLoadingSummarizationDefs, error: fetchSummarizationDefsError } = useQuery<SummarizationDefinition[], Error>({
+    queryKey: ['summarizationDefinitionsForPrompts', currentUserId],
+    queryFn: () => fetchSummarizationDefinitionsForPrompts(currentUserId),
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
@@ -383,6 +413,7 @@ export default function PromptsPage() {
 
   const insertEvaluationParameter = (evalParam: EvalParameterForPrompts) => {
     let textToInsert = `--- EVALUATION PARAMETER: ${evalParam.name} ---\n`;
+    textToInsert += `ID: ${evalParam.id}\n`;
     textToInsert += `Definition: ${evalParam.definition}\n`;
 
     if (evalParam.requiresRationale) {
@@ -403,6 +434,18 @@ export default function PromptsPage() {
       textToInsert += "(No specific categorization labels defined for this parameter)\n";
     }
     textToInsert += `--- END EVALUATION PARAMETER: ${evalParam.name} ---\n\n`;
+    insertIntoTextarea(textToInsert);
+  };
+
+  const insertSummarizationDefinition = (summDef: SummarizationDefinition) => {
+    let textToInsert = `--- SUMMARIZATION TASK: ${summDef.name} ---\n`;
+    textToInsert += `ID: ${summDef.id}\n`;
+    textToInsert += `Definition: ${summDef.definition}\n`;
+    if (summDef.example && summDef.example.trim() !== '') {
+        textToInsert += `Example Output Hint: "${summDef.example}"\n`;
+    }
+    textToInsert += `Based on the input, provide a concise summary for "${summDef.name}" that adheres to the above definition. Your summary should be a single block of text.\n`;
+    textToInsert += `--- END SUMMARIZATION TASK: ${summDef.name} ---\n\n`;
     insertIntoTextarea(textToInsert);
   };
 
@@ -660,7 +703,7 @@ export default function PromptsPage() {
                 )}
               </div>
 
-              <div className="pt-4 border-t">
+              <div className="pt-4 border-t mb-4">
                 <h3 className="text-md font-semibold mb-2">Evaluation Parameters</h3>
                 {isLoadingEvalParams ? <Skeleton className="h-20 w-full" /> :
                 fetchEvalParamsError ? <p className="text-xs text-destructive">Error loading evaluation parameters.</p> :
@@ -683,6 +726,31 @@ export default function PromptsPage() {
                   </div>
                 )}
               </div>
+
+              <div className="pt-4 border-t">
+                <h3 className="text-md font-semibold mb-2">Summarization Definitions</h3>
+                {isLoadingSummarizationDefs ? <Skeleton className="h-20 w-full" /> :
+                fetchSummarizationDefsError ? <p className="text-xs text-destructive">Error loading summarization definitions.</p> :
+                summarizationDefinitions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No summarization definitions defined. Go to Evaluation Parameters page.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {summarizationDefinitions.map(def => (
+                      <Card key={def.id} className="p-2 shadow-sm bg-background overflow-hidden">
+                        <div className="flex items-center gap-2 mb-1">
+                          <AlignLeft className="h-4 w-4 text-purple-600 shrink-0" />
+                          <span className="text-sm font-medium truncate min-w-0" title={def.name}>{def.name}</span>
+                        </div>
+                        <Button onClick={() => insertSummarizationDefinition(def)} title={`Insert details for ${def.name}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
+                          Insert
+                        </Button>
+                        <p className="text-xs text-muted-foreground truncate min-w-0" title={def.definition}>{def.definition}</p>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </ScrollArea>
           </div>
         </CardContent>
