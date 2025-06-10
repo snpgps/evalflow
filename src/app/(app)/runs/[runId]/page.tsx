@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck, Info, Wand2, Copy, FileText as FileTextIcon, MessageSquareQuote } from "lucide-react";
+import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck, Info, Wand2, Copy, FileText as FileTextIcon, MessageSquareQuote, Filter as FilterIcon } from "lucide-react";
 import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBar, ResponsiveContainer } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -269,6 +270,9 @@ export default function RunDetailsPage() {
   const [isAnalyzingJudgment, setIsAnalyzingJudgment] = useState(false);
   const [judgmentAnalysisError, setJudgmentAnalysisError] = useState<string | null>(null);
 
+  // State for results table filtering
+  const [filterStates, setFilterStates] = useState<Record<string, 'all' | 'match' | 'mismatch'>>({});
+
 
   useEffect(() => {
     const storedUserId = localStorage.getItem('currentUserId');
@@ -304,6 +308,20 @@ export default function RunDetailsPage() {
     enabled: !!currentUserId && !!runDetails?.selectedEvalParamIds && runDetails.selectedEvalParamIds.length > 0,
     staleTime: Infinity,
   });
+
+  // Initialize filterStates when evalParamDetailsForLLM or runType changes
+  useEffect(() => {
+    if (evalParamDetailsForLLM && runDetails?.runType === 'GroundTruth') {
+      const initialFilters: Record<string, 'all' | 'match' | 'mismatch'> = {};
+      evalParamDetailsForLLM.forEach(param => {
+        initialFilters[param.id] = 'all';
+      });
+      setFilterStates(initialFilters);
+    } else {
+      setFilterStates({}); // Clear filters if not GT run or no params
+    }
+  }, [evalParamDetailsForLLM, runDetails?.runType]);
+
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
     queryKey: ['selectedContextDocDetails', currentUserId, runDetails?.selectedContextDocumentIds?.join(',')],
@@ -607,11 +625,46 @@ export default function RunDetailsPage() {
     ); 
   }, [runDetails, evalParamDetailsForLLM]);
 
+  // Handler for filter changes
+  const handleFilterChange = (paramId: string, value: 'all' | 'match' | 'mismatch') => {
+    setFilterStates(prev => ({ ...prev, [paramId]: value }));
+  };
+
+  // Memoized filtered results
+  const filteredResultsToDisplay = useMemo(() => {
+    if (!runDetails?.results) return [];
+    if (runDetails.runType !== 'GroundTruth' || Object.keys(filterStates).length === 0 || evalParamDetailsForLLM.length === 0) {
+      return runDetails.results;
+    }
+
+    return runDetails.results.filter(item => {
+      for (const paramId in filterStates) {
+        if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) continue; // Only filter on params in current run
+
+        const filterValue = filterStates[paramId];
+        if (filterValue === 'all') continue;
+
+        const llmOutput = item.judgeLlmOutput?.[paramId];
+        const gtLabel = item.groundTruth?.[paramId];
+
+        if (!llmOutput || gtLabel === undefined || llmOutput.error) {
+          if (filterValue === 'match' || filterValue === 'mismatch') return false;
+          continue;
+        }
+        const isMatch = String(llmOutput.chosenLabel).toLowerCase() === String(gtLabel).toLowerCase();
+        if (filterValue === 'match' && !isMatch) return false;
+        if (filterValue === 'mismatch' && isMatch) return false;
+      }
+      return true;
+    });
+  }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
+
+
   if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
   if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
   if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
 
-  const actualResultsToDisplay = runDetails.results || []; const displayedPreviewData = runDetails.previewedDatasetSample || [];
+  const displayedPreviewData = runDetails.previewedDatasetSample || [];
   const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
   const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => { if (!timestamp) return 'N/A'; return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString(); };
   const isRunTerminal = runDetails.status === 'Completed';
@@ -683,10 +736,40 @@ export default function RunDetailsPage() {
           <Card>
             <CardHeader> <CardTitle>Detailed LLM Categorization Results</CardTitle> <CardDescription>Row-by-row results from the Genkit LLM flow on the processed data.</CardDescription> </CardHeader>
             <CardContent>
-              {actualResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization.' : (runDetails.status === 'Pending' ? 'Fetch data sample.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : 'Run may have failed.'))}</p> ) : (
+              {filteredResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results for the current filter. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization.' : (runDetails.status === 'Pending' ? 'Fetch data sample.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : (Object.values(filterStates).some(f => f !== 'all') ? 'Try adjusting filters.' : 'Run may have failed or has no results.')))}</p> ) : (
                 <div className="max-h-[600px] overflow-auto">
-                  <Table><TableHeader><TableRow><TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>{evalParamDetailsForLLM?.map(paramDetail => (<TableHead key={paramDetail.id} className="min-w-[200px] sm:min-w-[250px]">{paramDetail.name}</TableHead>))}</TableRow></TableHeader>
-                    <TableBody>{actualResultsToDisplay.map((item, index) => (<TableRow key={`result-${index}`}><TableCell className="text-xs align-top"><pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre></TableCell>
+                  <Table><TableHeader><TableRow><TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>
+                  {evalParamDetailsForLLM?.map(paramDetail => (
+                    <TableHead key={paramDetail.id} className="min-w-[200px] sm:min-w-[250px] align-top">
+                      <div className="flex flex-col">
+                        <span>{paramDetail.name}</span>
+                        {runDetails.runType === 'GroundTruth' && (
+                          <Select
+                            value={filterStates[paramDetail.id] || 'all'}
+                            onValueChange={(value) => handleFilterChange(paramDetail.id, value as 'all' | 'match' | 'mismatch')}
+                          >
+                            <SelectTrigger className="h-7 text-xs mt-1 w-full max-w-[180px] bg-background focus:ring-primary focus:border-primary">
+                              <FilterIcon className="h-3 w-3 mr-1 opacity-70" />
+                              <SelectValue>
+                                {
+                                  filterStates[paramDetail.id] === 'match' ? 'GT Matches Only' :
+                                  filterStates[paramDetail.id] === 'mismatch' ? 'GT Mismatches Only' :
+                                  'Filter: All'
+                                }
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Show All</SelectItem>
+                              <SelectItem value="match">Ground Truth Matches</SelectItem>
+                              <SelectItem value="mismatch">Ground Truth Mismatches</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    </TableHead>
+                  ))}
+                  </TableRow></TableHeader>
+                    <TableBody>{filteredResultsToDisplay.map((item, index) => (<TableRow key={`result-${index}`}><TableCell className="text-xs align-top"><pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre></TableCell>
                       {evalParamDetailsForLLM?.map(paramDetail => {
                         const paramId = paramDetail.id; const outputForCell = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = outputForCell?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && !outputForCell?.error && String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
                         return ( 
