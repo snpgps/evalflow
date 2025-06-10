@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck, Info, Wand2, Copy, FileText as FileTextIcon, MessageSquareQuestion } from "lucide-react";
+import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck, Info, Wand2, Copy, FileText as FileTextIcon, MessageSquareQuote } from "lucide-react";
 import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBar, ResponsiveContainer } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
@@ -424,6 +424,7 @@ export default function RunDetailsPage() {
             const mappedRowForStorage: Record<string, any> = {};
             let rowHasAnyMappedData = false;
 
+            // Create a map of normalized (lowercase, trimmed) original keys to their original (case-sensitive) keys
             const normalizedOriginalRowKeys: Record<string, string> = {};
             Object.keys(originalRow).forEach(key => {
                 normalizedOriginalRowKeys[String(key).trim().toLowerCase()] = key;
@@ -432,14 +433,16 @@ export default function RunDetailsPage() {
             for (const productParamName in productParamToOriginalColMap) {
                 const mappedOriginalColName = productParamToOriginalColMap[productParamName];
                 const normalizedMappedOriginalColName = String(mappedOriginalColName).trim().toLowerCase();
+                
+                // Find the original case-sensitive key using the normalized key
                 const actualKeyInOriginalRow = normalizedOriginalRowKeys[normalizedMappedOriginalColName];
 
                 if (actualKeyInOriginalRow !== undefined) {
                     mappedRowForStorage[productParamName] = originalRow[actualKeyInOriginalRow];
                     rowHasAnyMappedData = true;
                 } else {
-                    mappedRowForStorage[productParamName] = undefined;
-                    addLog(`Data Preview: Warning: Row ${index + 1} missing/unmatched original column "${mappedOriginalColName}" (normalized: ${normalizedMappedOriginalColName}) for param "${productParamName}". Available (normalized): ${Object.keys(normalizedOriginalRowKeys).join(', ')}`);
+                    mappedRowForStorage[productParamName] = undefined; // Will become null via sanitizeDataForFirestore
+                    addLog(`Data Preview: Warning: Row ${index + 1} missing/unmatched original column "${mappedOriginalColName}" (normalized: ${normalizedMappedOriginalColName}) for PRODUCT param "${productParamName}". Available (normalized): ${Object.keys(normalizedOriginalRowKeys).join(', ')}`);
                 }
             }
 
@@ -447,14 +450,15 @@ export default function RunDetailsPage() {
                 for (const evalParamId in evalParamIdToGtColMap) {
                     const mappedGtColName = evalParamIdToGtColMap[evalParamId];
                     const normalizedMappedGtColName = String(mappedGtColName).trim().toLowerCase();
+
                     const actualKeyInOriginalRowForGt = normalizedOriginalRowKeys[normalizedMappedGtColName];
 
                     if (actualKeyInOriginalRowForGt !== undefined) {
                         mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[actualKeyInOriginalRowForGt];
                         rowHasAnyMappedData = true;
                     } else {
-                        mappedRowForStorage[`_gt_${evalParamId}`] = undefined;
-                        addLog(`Data Preview: Warning: Row ${index + 1} missing/unmatched GT column "${mappedGtColName}" (normalized: ${normalizedMappedGtColName}) for eval ID "${evalParamId}". Available (normalized): ${Object.keys(normalizedOriginalRowKeys).join(', ')}`);
+                         mappedRowForStorage[`_gt_${evalParamId}`] = undefined; // Will become null
+                        addLog(`Data Preview: Warning: Row ${index + 1} missing/unmatched GT column "${mappedGtColName}" (normalized: ${normalizedMappedGtColName}) for EVAL ID "${evalParamId}". Available (normalized): ${Object.keys(normalizedOriginalRowKeys).join(', ')}`);
                     }
                 }
             }
@@ -696,7 +700,7 @@ export default function RunDetailsPage() {
                               </div>
                               {outputForCell && !outputForCell.error && (
                                 <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 ml-1" title="Question this Judgement" onClick={() => handleOpenQuestionDialog(item, paramId, index)}>
-                                  <MessageSquareQuestion className="h-4 w-4 text-muted-foreground hover:text-primary"/>
+                                  <MessageSquareQuote className="h-4 w-4 text-muted-foreground hover:text-primary"/>
                                 </Button>
                               )}
                             </div>
@@ -785,7 +789,7 @@ export default function RunDetailsPage() {
       <Dialog open={isQuestionDialogVisible} onOpenChange={setIsQuestionDialogVisible}>
         <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle className="flex items-center"><MessageSquareQuestion className="mr-2 h-5 w-5 text-primary"/>Question Bot's Judgement</DialogTitle>
+            <DialogTitle className="flex items-center"><MessageSquareQuote className="mr-2 h-5 w-5 text-primary"/>Question Bot's Judgement</DialogTitle>
             <DialogDescription>Analyze a specific judgment made by the LLM. Provide your reasoning for a deeper AI analysis.</DialogDescription>
           </DialogHeader>
           <ScrollArea className="flex-grow pr-2 -mr-2 text-sm">
@@ -853,5 +857,3 @@ export default function RunDetailsPage() {
   );
 }
 
-
-    
