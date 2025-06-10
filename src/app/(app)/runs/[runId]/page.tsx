@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck, Info, Wand2, Copy, FileText as FileTextIcon } from "lucide-react";
+import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck, Info, Wand2, Copy, FileText as FileTextIcon, MessageSquareQuestion } from "lucide-react";
 import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBar, ResponsiveContainer } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +28,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
 import { judgeLlmEvaluation, type JudgeLlmEvaluationInput, type JudgeLlmEvaluationOutput } from '@/ai/flows/judge-llm-evaluation-flow';
 import { suggestRecursivePromptImprovements, type SuggestRecursivePromptImprovementsInput, type SuggestRecursivePromptImprovementsOutput, type MismatchDetail } from '@/ai/flows/suggest-recursive-prompt-improvements';
+import { analyzeJudgmentDiscrepancy, type AnalyzeJudgmentDiscrepancyInput, type AnalyzeJudgmentDiscrepancyOutput } from '@/ai/flows/analyze-judgment-discrepancy';
 import * as XLSX from 'xlsx';
 
 // Interfaces
@@ -76,11 +77,16 @@ interface DatasetVersionConfig {
     selectedSheetName?: string | null;
 }
 
+interface EvalParamLabelForAnalysis {
+    name: string;
+    definition: string;
+    example?: string;
+}
 interface EvalParamDetailForPrompt {
   id: string;
   name: string;
   definition: string;
-  labels: Array<{ name: string; definition?: string; example?: string }>;
+  labels: EvalParamLabelForAnalysis[];
   requiresRationale?: boolean;
 }
 
@@ -106,6 +112,19 @@ interface ContextDocumentDisplayDetail {
     name: string;
     fileName: string;
 }
+
+// Interface for data passed to the Question Judgement Dialog
+interface QuestioningItemContext {
+    rowIndex: number; // Keep original row index for context
+    inputData: Record<string, any>;
+    paramId: string;
+    paramName: string;
+    paramDefinition: string;
+    paramLabels: EvalParamLabelForAnalysis[];
+    judgeLlmOutput: { chosenLabel: string; rationale?: string; error?: string };
+    groundTruthLabel?: string;
+}
+
 
 const MAX_ROWS_FOR_PROCESSING = 200;
 
@@ -241,6 +260,14 @@ export default function RunDetailsPage() {
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [suggestionResult, setSuggestionResult] = useState<SuggestRecursivePromptImprovementsOutput | null>(null);
+
+  // State for "Question Judgement" feature
+  const [isQuestionDialogVisible, setIsQuestionDialogVisible] = useState(false);
+  const [questioningItemData, setQuestioningItemData] = useState<QuestioningItemContext | null>(null);
+  const [userQuestionText, setUserQuestionText] = useState('');
+  const [judgmentAnalysisResult, setJudgmentAnalysisResult] = useState<AnalyzeJudgmentDiscrepancyOutput | null>(null);
+  const [isAnalyzingJudgment, setIsAnalyzingJudgment] = useState(false);
+  const [judgmentAnalysisError, setJudgmentAnalysisError] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -495,7 +522,8 @@ export default function RunDetailsPage() {
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results"); const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`; XLSX.writeFile(workbook, fileName); toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
   };
 
-  const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId], queryFn: () => fetchProductParametersForSchema(currentUserId!), enabled: !!currentUserId && isSuggestionDialogOpen, });
+  const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId], queryFn: () => fetchProductParametersForSchema(currentUserId!), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
+  
   const handleSuggestImprovementsClick = async () => { 
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest Improvements", description: "Missing critical run data or configuration.", variant: "destructive" }); return; }
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
@@ -510,6 +538,60 @@ export default function RunDetailsPage() {
       const result = await suggestRecursivePromptImprovements(flowInput); setSuggestionResult(result);
     } catch (error: any) { console.error("Error suggesting improvements:", error); setSuggestionError(error.message || "Failed to get suggestions."); } finally { setIsLoadingSuggestion(false); }
   };
+  
+  const handleOpenQuestionDialog = (item: EvalRunResultItem, paramId: string, rowIndex: number) => {
+    const paramDetail = evalParamDetailsForLLM.find(p => p.id === paramId);
+    if (!paramDetail || !item.judgeLlmOutput[paramId]) return;
+
+    setQuestioningItemData({
+        rowIndex,
+        inputData: item.inputData,
+        paramId: paramId,
+        paramName: paramDetail.name,
+        paramDefinition: paramDetail.definition,
+        paramLabels: paramDetail.labels,
+        judgeLlmOutput: item.judgeLlmOutput[paramId],
+        groundTruthLabel: item.groundTruth ? item.groundTruth[paramId] : undefined,
+    });
+    setUserQuestionText('');
+    setJudgmentAnalysisResult(null);
+    setJudgmentAnalysisError(null);
+    setIsQuestionDialogVisible(true);
+  };
+
+  const handleSubmitQuestionAnalysis = async () => {
+    if (!questioningItemData || !currentUserId || !runDetails?.promptId || !runDetails?.promptVersionId) {
+      setJudgmentAnalysisError("Missing data to perform analysis.");
+      return;
+    }
+    setIsAnalyzingJudgment(true);
+    setJudgmentAnalysisError(null);
+    setJudgmentAnalysisResult(null);
+    try {
+      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
+      if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt template for analysis.");
+
+      const inputForFlow: AnalyzeJudgmentDiscrepancyInput = {
+        inputData: questioningItemData.inputData,
+        evaluationParameterName: questioningItemData.paramName,
+        evaluationParameterDefinition: questioningItemData.paramDefinition,
+        evaluationParameterLabels: questioningItemData.paramLabels,
+        judgeLlmChosenLabel: questioningItemData.judgeLlmOutput.chosenLabel,
+        judgeLlmRationale: questioningItemData.judgeLlmOutput.rationale,
+        groundTruthLabel: questioningItemData.groundTruthLabel,
+        userQuestion: userQuestionText,
+        originalPromptTemplate: originalPromptTemplate,
+      };
+      const analysisOutput = await analyzeJudgmentDiscrepancy(inputForFlow);
+      setJudgmentAnalysisResult(analysisOutput);
+    } catch (error: any) {
+      console.error("Error analyzing judgment discrepancy:", error);
+      setJudgmentAnalysisError(error.message || "Failed to get analysis from the AI.");
+    } finally {
+      setIsAnalyzingJudgment(false);
+    }
+  };
+
   const hasMismatches = useMemo(() => { 
     if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; 
     return runDetails.results.some(item => 
@@ -599,11 +681,27 @@ export default function RunDetailsPage() {
             <CardContent>
               {actualResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization.' : (runDetails.status === 'Pending' ? 'Fetch data sample.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : 'Run may have failed.'))}</p> ) : (
                 <div className="max-h-[600px] overflow-auto">
-                  <Table><TableHeader><TableRow><TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>{evalParamDetailsForLLM?.map(paramDetail => (<TableHead key={paramDetail.id} className="min-w-[150px] sm:min-w-[200px]">{paramDetail.name}</TableHead>))}</TableRow></TableHeader>
+                  <Table><TableHeader><TableRow><TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>{evalParamDetailsForLLM?.map(paramDetail => (<TableHead key={paramDetail.id} className="min-w-[200px] sm:min-w-[250px]">{paramDetail.name}</TableHead>))}</TableRow></TableHeader>
                     <TableBody>{actualResultsToDisplay.map((item, index) => (<TableRow key={`result-${index}`}><TableCell className="text-xs align-top"><pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre></TableCell>
                       {evalParamDetailsForLLM?.map(paramDetail => {
                         const paramId = paramDetail.id; const outputForCell = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = outputForCell?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && !outputForCell?.error && String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
-                        return ( <TableCell key={paramId} className="text-xs align-top"> <div><strong>LLM:</strong> {outputForCell?.chosenLabel || (outputForCell?.error ? 'ERROR' : 'N/A')}</div> {outputForCell?.error && <div className="text-destructive text-[10px]">Error: {outputForCell.error}</div>} {showGroundTruth && !outputForCell?.error && ( <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}> <div className="flex items-center"> <strong>GT:</strong>&nbsp;{gtLabel} {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>} </div> </div> )} {outputForCell?.rationale && ( <details className="mt-1"> <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center"> <MessageSquareText className="h-3 w-3 mr-1"/> LLM Rationale </summary> <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{outputForCell.rationale}</p> </details> )} </TableCell> );
+                        return ( 
+                          <TableCell key={paramId} className="text-xs align-top"> 
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <div><strong>LLM:</strong> {outputForCell?.chosenLabel || (outputForCell?.error ? 'ERROR' : 'N/A')}</div> 
+                                {outputForCell?.error && <div className="text-destructive text-[10px]">Error: {outputForCell.error}</div>} 
+                                {showGroundTruth && !outputForCell?.error && ( <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}> <div className="flex items-center"> <strong>GT:</strong>&nbsp;{gtLabel} {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>} </div> </div> )} 
+                                {outputForCell?.rationale && ( <details className="mt-1"> <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center"> <MessageSquareText className="h-3 w-3 mr-1"/> LLM Rationale </summary> <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{outputForCell.rationale}</p> </details> )} 
+                              </div>
+                              {outputForCell && !outputForCell.error && (
+                                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 ml-1" title="Question this Judgement" onClick={() => handleOpenQuestionDialog(item, paramId, index)}>
+                                  <MessageSquareQuestion className="h-4 w-4 text-muted-foreground hover:text-primary"/>
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell> 
+                        );
                       })}</TableRow>))}</TableBody>
                   </Table>
                 </div>
@@ -684,7 +782,76 @@ export default function RunDetailsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isQuestionDialogVisible} onOpenChange={setIsQuestionDialogVisible}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center"><MessageSquareQuestion className="mr-2 h-5 w-5 text-primary"/>Question Bot's Judgement</DialogTitle>
+            <DialogDescription>Analyze a specific judgment made by the LLM. Provide your reasoning for a deeper AI analysis.</DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-grow pr-2 -mr-2 text-sm">
+            {questioningItemData && (
+              <div className="space-y-4 py-4">
+                <Card className="p-3 bg-muted/40">
+                  <CardHeader className="p-0 pb-2"><CardTitle className="text-sm">Item Details (Row {questioningItemData.rowIndex + 1})</CardTitle></CardHeader>
+                  <CardContent className="p-0 space-y-1 text-xs">
+                    <div><strong>Input Data:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(questioningItemData.inputData, null, 2)}</pre></div>
+                    <div><strong>Evaluation Parameter:</strong> {questioningItemData.paramName}</div>
+                    <div><strong>Judge LLM Label:</strong> {questioningItemData.judgeLlmOutput.chosenLabel}</div>
+                    {questioningItemData.judgeLlmOutput.rationale && <div><strong>Judge LLM Rationale:</strong> <span className="italic">{questioningItemData.judgeLlmOutput.rationale}</span></div>}
+                    {runDetails?.runType === 'GroundTruth' && <div><strong>Ground Truth Label:</strong> {questioningItemData.groundTruthLabel || 'N/A'}</div>}
+                  </CardContent>
+                </Card>
+                
+                <div>
+                  <Label htmlFor="userQuestionText">Your Question/Reasoning for Discrepancy:</Label>
+                  <Textarea 
+                    id="userQuestionText" 
+                    value={userQuestionText} 
+                    onChange={(e) => setUserQuestionText(e.target.value)} 
+                    placeholder="e.g., 'I believe the LLM missed the nuance in the user's request regarding X...' or 'The ground truth is Y because...'"
+                    rows={4}
+                    className="mt-1"
+                  />
+                </div>
+
+                {isAnalyzingJudgment && (
+                  <div className="flex items-center space-x-2 pt-2">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <p className="text-muted-foreground">AI is analyzing the judgment...</p>
+                  </div>
+                )}
+                {judgmentAnalysisError && !isAnalyzingJudgment && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Analysis Error</AlertTitle>
+                    <AlertDescription>{judgmentAnalysisError}</AlertDescription>
+                  </Alert>
+                )}
+                {judgmentAnalysisResult && !isAnalyzingJudgment && (
+                  <Card className="mt-4 p-4 border-primary/30">
+                    <CardHeader className="p-0 pb-2"><CardTitle className="text-base text-primary">AI Analysis of Judgement</CardTitle></CardHeader>
+                    <CardContent className="p-0 space-y-2 text-xs">
+                      <p><strong>Analysis:</strong> {judgmentAnalysisResult.analysis}</p>
+                      <p><strong>Agrees with User Concern:</strong> <Badge variant={judgmentAnalysisResult.agreesWithUserConcern ? "default" : "secondary"} className={judgmentAnalysisResult.agreesWithUserConcern ? "bg-green-100 text-green-700 border-green-300" : ""}>{judgmentAnalysisResult.agreesWithUserConcern ? 'Yes' : 'No'}</Badge></p>
+                      {judgmentAnalysisResult.potentialFailureReasons && <p><strong>Potential Failure Reasons:</strong> {judgmentAnalysisResult.potentialFailureReasons}</p>}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+          </ScrollArea>
+          <DialogFooter className="pt-4 border-t mt-auto">
+            <Button variant="outline" onClick={() => setIsQuestionDialogVisible(false)}>Cancel</Button>
+            <Button onClick={handleSubmitQuestionAnalysis} disabled={isAnalyzingJudgment || !userQuestionText.trim() || !questioningItemData}>
+              {isAnalyzingJudgment ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...</> : "Submit for Analysis"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
 
+
+    

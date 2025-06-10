@@ -6,4 +6,7 @@ import '@/ai/flows/suggest-prompt-improvements.ts';
 import '@/ai/flows/prompt-quality-analysis.ts';
 import '@/ai/flows/judge-llm-evaluation-flow.ts';
 import '@/ai/flows/suggest-recursive-prompt-improvements.ts';
-import '@/ai/flows/analyze-eval-problem-categories.ts'; // Added new flow
+import '@/ai/flows/analyze-eval-problem-categories.ts';
+import '@/ai/flows/analyze-judgment-discrepancy.ts'; // Added new flow
+
+    
