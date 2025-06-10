@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, type FormEvent, useRef, useEffect } from 'react';
@@ -654,7 +655,7 @@ export default function PromptsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex-1 p-0 flex flex-col lg:flex-row min-h-0">
-          <div className="flex-1 p-4 flex flex-col min-w-0"> {/* Added min-w-0 */}
+          <div className="flex-1 p-4 flex flex-col min-w-0">
             <Label htmlFor="prompt-template-area" className="mb-2 font-medium">
               Prompt Template (Version {selectedVersion?.versionNumber || 'N/A'})
               {selectedPrompt.currentVersionId === selectedVersionId && <Badge variant="outline" className="ml-2 border-green-500 text-green-600">Active</Badge>}
@@ -677,7 +678,7 @@ export default function PromptsPage() {
               disabled={!selectedVersion || updatePromptVersionMutation.isPending}
             />
           </div>
-          <div className="w-full lg:w-1/3 lg:min-w-[300px] border-t lg:border-t-0 lg:border-l p-4 bg-muted/20 flex flex-col">
+          <div className="w-full lg:w-1/3 lg:min-w-[300px] border-t lg:border-t-0 lg:border-l p-4 bg-muted/20 flex flex-col lg:min-w-0">
             <ScrollArea className="flex-1 max-h-[40vh] lg:max-h-none">
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">Product Parameters</h3>
