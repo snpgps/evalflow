@@ -836,7 +836,15 @@ export default function RunDetailsPage() {
                     <CardHeader className="p-0 pb-2"><CardTitle className="text-base text-primary">AI Analysis of Judgement</CardTitle></CardHeader>
                     <CardContent className="p-0 space-y-2 text-xs">
                       <p><strong>Analysis:</strong> {judgmentAnalysisResult.analysis}</p>
-                      <p><strong>Agrees with User Concern:</strong> <Badge variant={judgmentAnalysisResult.agreesWithUserConcern ? "default" : "secondary"} className={judgmentAnalysisResult.agreesWithUserConcern ? "bg-green-100 text-green-700 border-green-300" : ""}>{judgmentAnalysisResult.agreesWithUserConcern ? 'Yes' : 'No'}</Badge></p>
+                      <div className="flex items-center gap-2"> {/* Changed from p to div */}
+                        <strong>Agrees with User Concern:</strong> 
+                        <Badge 
+                          variant={judgmentAnalysisResult.agreesWithUserConcern ? "default" : "secondary"} 
+                          className={judgmentAnalysisResult.agreesWithUserConcern ? "bg-green-100 text-green-700 border-green-300" : ""}
+                        >
+                          {judgmentAnalysisResult.agreesWithUserConcern ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
                       {judgmentAnalysisResult.potentialFailureReasons && <p><strong>Potential Failure Reasons:</strong> {judgmentAnalysisResult.potentialFailureReasons}</p>}
                     </CardContent>
                   </Card>
