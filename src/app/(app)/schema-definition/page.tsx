@@ -27,7 +27,7 @@ interface ProductParameter {
 }
 
 // Type for update payload, allowing options to be FieldValue for deletion
-type ProductParameterUpdatePayload = { id: string } & Partial<Omit<ProductParameter, 'id' | 'createdAt' | 'order'> & { options?: string[] | FieldValue }>;
+type ProductParameterUpdatePayload = { id: string } & Partial<Omit<ProductParameter, 'id' | 'createdAt' | 'order' | 'options'>> & { options?: string[] | FieldValue };
 
 
 const fetchProductParameters = async (userId: string | null): Promise<ProductParameter[]> => {
