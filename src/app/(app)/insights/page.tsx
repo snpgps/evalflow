@@ -7,27 +7,29 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Lightbulb, ListChecks } from "lucide-react";
+import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Lightbulb, ListChecks, Save, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from '@/components/ui/input';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, query, orderBy, type Timestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, orderBy, type Timestamp, addDoc, deleteDoc, serverTimestamp, type FieldValue } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
 import {
   suggestRecursivePromptImprovements,
   type SuggestRecursivePromptImprovementsInput,
   type SuggestRecursivePromptImprovementsOutput,
-  type MismatchDetail // Re-using this type
+  type MismatchDetail
 } from '@/ai/flows/suggest-recursive-prompt-improvements';
 import {
   analyzeEvalProblemCategories,
   type AnalyzeEvalProblemCategoriesInput,
   type AnalyzeEvalProblemCategoriesOutput,
   type ProblemCategory,
-} from '@/ai/flows/analyze-eval-problem-categories'; // New flow
+} from '@/ai/flows/analyze-eval-problem-categories';
 import type { EvalParameterForPrompts, CategorizationLabelForPrompts } from '@/app/(app)/prompts/page';
 import type { ProductParameterForPrompts } from '@/app/(app)/prompts/page';
 
@@ -53,6 +55,29 @@ interface EvalRunDetailFromDB {
   promptId: string;
   promptVersionId: string;
 }
+
+interface StoredAnalysisDataForFirestore {
+  analysisName: string;
+  createdAt: FieldValue;
+  targetEvalParamId: string;
+  targetEvalParamName: string;
+  desiredTargetLabel: string;
+  problemCategories: ProblemCategory[];
+  overallSummary?: string;
+  mismatchCountAnalyzed: number;
+}
+
+interface StoredAnalysis extends Omit<StoredAnalysisDataForFirestore, 'createdAt' | 'problemCategories' | 'overallSummary'> {
+  id: string;
+  createdAt: Timestamp; // After fetching
+  // problemCategories and overallSummary will be loaded when viewing
+}
+
+interface StoredAnalysisWithDetails extends StoredAnalysis {
+    problemCategories: ProblemCategory[];
+    overallSummary?: string;
+}
+
 
 const fetchEvalRunsList = async (userId: string | null): Promise<EvalRunSummary[]> => {
   if (!userId) return [];
@@ -121,30 +146,73 @@ const fetchAllProductParamsSchema = async (userId: string | null): Promise<Produ
     }));
 };
 
+const fetchStoredAnalysesForRun = async (userId: string | null, runId: string | null): Promise<StoredAnalysis[]> => {
+    if (!userId || !runId) return [];
+    const analysesCollectionRef = collection(db, 'users', userId, 'evaluationRuns', runId, 'storedAnalyses');
+    const q = query(analysesCollectionRef, orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+            id: docSnap.id,
+            analysisName: data.analysisName,
+            createdAt: data.createdAt as Timestamp,
+            targetEvalParamId: data.targetEvalParamId,
+            targetEvalParamName: data.targetEvalParamName,
+            desiredTargetLabel: data.desiredTargetLabel,
+            mismatchCountAnalyzed: data.mismatchCountAnalyzed,
+            // problemCategories and overallSummary are not fetched in the list view for brevity
+        } as StoredAnalysis;
+    });
+};
+
+const fetchSingleStoredAnalysisDetails = async (userId: string | null, runId: string | null, analysisId: string | null): Promise<StoredAnalysisWithDetails | null> => {
+    if (!userId || !runId || !analysisId) return null;
+    const analysisDocRef = doc(db, 'users', userId, 'evaluationRuns', runId, 'storedAnalyses', analysisId);
+    const docSnap = await getDoc(analysisDocRef);
+    if (docSnap.exists()) {
+        const data = docSnap.data();
+        return {
+            id: docSnap.id,
+            analysisName: data.analysisName,
+            createdAt: data.createdAt as Timestamp,
+            targetEvalParamId: data.targetEvalParamId,
+            targetEvalParamName: data.targetEvalParamName,
+            desiredTargetLabel: data.desiredTargetLabel,
+            problemCategories: data.problemCategories as ProblemCategory[],
+            overallSummary: data.overallSummary as string | undefined,
+            mismatchCountAnalyzed: data.mismatchCountAnalyzed,
+        } as StoredAnalysisWithDetails;
+    }
+    return null;
+}
+
 
 export default function AiInsightsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
+  const queryClient = useQueryClient();
 
-  // Shared state for input selections
-  const [currentProductPrompt, setCurrentProductPrompt] = useState(''); // Primarily for "Iterative Improver"
+  const [currentProductPrompt, setCurrentProductPrompt] = useState('');
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [targetEvalParamId, setTargetEvalParamId] = useState<string | null>(null);
   const [desiredTargetLabel, setDesiredTargetLabel] = useState<string | null>(null);
-
-  // Shared state for mismatch data derived from selections
   const [mismatchDisplayData, setMismatchDisplayData] = useState<any[]>([]);
   const [mismatchDetailsForFlow, setMismatchDetailsForFlow] = useState<MismatchDetail[]>([]);
   
-  // State for "Iterative Prompt Improver" tab
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
   const [suggestionResult, setSuggestionResult] = useState<SuggestRecursivePromptImprovementsOutput | null>(null);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
 
-  // State for "Insights from Evals" tab
   const [isLoadingProblemAnalysis, setIsLoadingProblemAnalysis] = useState(false);
   const [problemAnalysisResult, setProblemAnalysisResult] = useState<AnalyzeEvalProblemCategoriesOutput | null>(null);
   const [problemAnalysisError, setProblemAnalysisError] = useState<string | null>(null);
+  const [viewingSavedAnalysisId, setViewingSavedAnalysisId] = useState<string | null>(null);
+
+
+  // State for Save Analysis Dialog
+  const [isSaveAnalysisDialogOpen, setIsSaveAnalysisDialogOpen] = useState(false);
+  const [analysisNameToSave, setAnalysisNameToSave] = useState('');
 
 
   useEffect(() => {
@@ -153,7 +221,6 @@ export default function AiInsightsPage() {
     setIsLoadingUserId(false);
   }, []);
 
-  // Shared Queries
   const { data: evalRunsList = [], isLoading: isLoadingRunsList } = useQuery<EvalRunSummary[], Error>({
     queryKey: ['evalRunsListForInsights', currentUserId],
     queryFn: () => fetchEvalRunsList(currentUserId),
@@ -166,10 +233,17 @@ export default function AiInsightsPage() {
     enabled: !!currentUserId && !!selectedRunId,
   });
 
+  const { data: storedAnalyses = [], isLoading: isLoadingStoredAnalyses } = useQuery<StoredAnalysis[], Error>({
+    queryKey: ['storedAnalysesForRun', currentUserId, selectedRunId],
+    queryFn: () => fetchStoredAnalysesForRun(currentUserId, selectedRunId),
+    enabled: !!currentUserId && !!selectedRunId,
+  });
+
+
   useEffect(() => {
     if (selectedEvalRunDetails) {
       if (selectedEvalRunDetails.promptId && selectedEvalRunDetails.promptVersionId) {
-        if (!currentProductPrompt) { // Only prefill if empty, to respect user edits
+        if (!currentProductPrompt) { 
              fetchOriginalPromptText(currentUserId, selectedEvalRunDetails.promptId, selectedEvalRunDetails.promptVersionId)
                 .then(text => { if(text) setCurrentProductPrompt(text); });
         }
@@ -180,6 +254,7 @@ export default function AiInsightsPage() {
       setMismatchDetailsForFlow([]);
       setSuggestionResult(null);
       setProblemAnalysisResult(null);
+      setViewingSavedAnalysisId(null);
     }
   }, [selectedEvalRunDetails, currentUserId, currentProductPrompt]);
 
@@ -196,7 +271,6 @@ export default function AiInsightsPage() {
       enabled: !!currentUserId,
   });
 
-  // Shared derived data
   const productParametersSchemaText = useMemo(() => {
     if (!allProductParams || allProductParams.length === 0) return "No product parameters defined.";
     return "Product Parameters Schema:\n" + allProductParams.map(p => `- ${p.name}: ${p.description || 'No definition'}`).join("\n");
@@ -235,10 +309,8 @@ export default function AiInsightsPage() {
         if (mismatchDetailsForFlow.length > 0) setMismatchDetailsForFlow([]);
         return;
       }
-
       const newMismatchesForDisplay: any[] = [];
       const newMismatchesForFlow: MismatchDetail[] = [];
-
       selectedEvalRunDetails.results?.forEach(item => {
         const llmOutput = item.judgeLlmOutput?.[targetEvalParamId];
         if (llmOutput && llmOutput.chosenLabel !== desiredTargetLabel && !llmOutput.error) {
@@ -260,14 +332,8 @@ export default function AiInsightsPage() {
           });
         }
       });
-      
-      if (JSON.stringify(newMismatchesForDisplay) !== JSON.stringify(mismatchDisplayData)) {
-        setMismatchDisplayData(newMismatchesForDisplay);
-      }
-      if (JSON.stringify(newMismatchesForFlow) !== JSON.stringify(mismatchDetailsForFlow)) {
-        setMismatchDetailsForFlow(newMismatchesForFlow);
-      }
-
+      if (JSON.stringify(newMismatchesForDisplay) !== JSON.stringify(mismatchDisplayData)) { setMismatchDisplayData(newMismatchesForDisplay); }
+      if (JSON.stringify(newMismatchesForFlow) !== JSON.stringify(mismatchDetailsForFlow)) { setMismatchDetailsForFlow(newMismatchesForFlow); }
     } else {
       if (mismatchDisplayData.length > 0) setMismatchDisplayData([]);
       if (mismatchDetailsForFlow.length > 0) setMismatchDetailsForFlow([]);
@@ -277,179 +343,165 @@ export default function AiInsightsPage() {
 
   const handleSuggestImprovements = async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentProductPrompt.trim()) {
-      toast({ title: "Input Error", description: "Please provide your current product prompt.", variant: "destructive" }); return;
-    }
-    if (mismatchDetailsForFlow.length === 0) {
-      toast({ title: "No Mismatches", description: "No rows found where the LLM output differs from your desired target label for the selected parameter. Nothing to improve based on this specific goal!", variant: "default" }); return;
-    }
-
-    setIsLoadingSuggestion(true);
-    setSuggestionResult(null);
-    setSuggestionError(null);
-
+    if (!currentProductPrompt.trim()) { toast({ title: "Input Error", description: "Please provide your current product prompt.", variant: "destructive" }); return; }
+    if (mismatchDetailsForFlow.length === 0) { toast({ title: "No Mismatches", description: "No rows found where the LLM output differs from your desired target label.", variant: "default" }); return; }
+    setIsLoadingSuggestion(true); setSuggestionResult(null); setSuggestionError(null);
     try {
-      const input: SuggestRecursivePromptImprovementsInput = {
-        originalPromptTemplate: currentProductPrompt,
-        mismatchDetails: mismatchDetailsForFlow,
-        productParametersSchema: productParametersSchemaText,
-        evaluationParametersSchema: evaluationParametersSchemaText,
-      };
-      const result = await suggestRecursivePromptImprovements(input);
-      setSuggestionResult(result);
-      toast({ title: "Suggestions Generated!", description: "Review the suggested prompt and reasoning below." });
-    } catch (error) {
-      console.error("Error suggesting prompt improvements:", error);
-      const errorMessage = (error as Error).message || "Failed to get suggestions.";
-      setSuggestionError(errorMessage);
-      toast({ title: "Suggestion Error", description: errorMessage, variant: "destructive" });
-    } finally {
-      setIsLoadingSuggestion(false);
-    }
+      const input: SuggestRecursivePromptImprovementsInput = { originalPromptTemplate: currentProductPrompt, mismatchDetails: mismatchDetailsForFlow, productParametersSchema: productParametersSchemaText, evaluationParametersSchema: evaluationParametersSchemaText };
+      const result = await suggestRecursivePromptImprovements(input); setSuggestionResult(result); toast({ title: "Suggestions Generated!", description: "Review the suggested prompt and reasoning below." });
+    } catch (error) { console.error("Error suggesting prompt improvements:", error); const errorMessage = (error as Error).message || "Failed to get suggestions."; setSuggestionError(errorMessage); toast({ title: "Suggestion Error", description: errorMessage, variant: "destructive" });
+    } finally { setIsLoadingSuggestion(false); }
   };
 
   const handleAnalyzeProblems = async (e: FormEvent) => {
     e.preventDefault();
-     if (mismatchDetailsForFlow.length === 0) {
-      toast({ title: "No Mismatches", description: "No rows found where the LLM output differs from your desired target label for the selected parameter. Nothing to analyze for problems.", variant: "default" }); return;
-    }
+    setViewingSavedAnalysisId(null); // Clear viewing saved analysis when re-analyzing
+     if (mismatchDetailsForFlow.length === 0) { toast({ title: "No Mismatches", description: "No rows found where the LLM output differs from your desired target label.", variant: "default" }); return; }
     const currentEvalParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
-    if (!currentEvalParam || !desiredTargetLabel) {
-      toast({ title: "Input Error", description: "Target parameter or desired label not fully selected.", variant: "destructive"}); return;
-    }
-
-    setIsLoadingProblemAnalysis(true);
-    setProblemAnalysisResult(null);
-    setProblemAnalysisError(null);
-
+    if (!currentEvalParam || !desiredTargetLabel) { toast({ title: "Input Error", description: "Target parameter or desired label not fully selected.", variant: "destructive"}); return; }
+    setIsLoadingProblemAnalysis(true); setProblemAnalysisResult(null); setProblemAnalysisError(null);
     try {
-      const input: AnalyzeEvalProblemCategoriesInput = {
-        mismatchDetails: mismatchDetailsForFlow,
-        targetEvaluationParameterName: currentEvalParam.name,
-        targetEvaluationParameterDefinition: currentEvalParam.definition,
-        desiredTargetLabel: desiredTargetLabel,
-        productSchemaDescription: productParametersSchemaText,
-      };
-      const result = await analyzeEvalProblemCategories(input);
-      setProblemAnalysisResult(result);
-      toast({ title: "Problem Analysis Complete!", description: "Review the categorized problems below." });
-    } catch (error) {
-      console.error("Error analyzing problems:", error);
-      const errorMessage = (error as Error).message || "Failed to analyze problems.";
-      setProblemAnalysisError(errorMessage);
-      toast({ title: "Analysis Error", description: errorMessage, variant: "destructive" });
-    } finally {
-      setIsLoadingProblemAnalysis(false);
+      const input: AnalyzeEvalProblemCategoriesInput = { mismatchDetails: mismatchDetailsForFlow, targetEvaluationParameterName: currentEvalParam.name, targetEvaluationParameterDefinition: currentEvalParam.definition, desiredTargetLabel: desiredTargetLabel, productSchemaDescription: productParametersSchemaText };
+      const result = await analyzeEvalProblemCategories(input); setProblemAnalysisResult(result); toast({ title: "Problem Analysis Complete!", description: "Review the categorized problems below." });
+    } catch (error) { console.error("Error analyzing problems:", error); const errorMessage = (error as Error).message || "Failed to analyze problems."; setProblemAnalysisError(errorMessage); toast({ title: "Analysis Error", description: errorMessage, variant: "destructive" });
+    } finally { setIsLoadingProblemAnalysis(false); }
+  };
+
+  const saveAnalysisMutation = useMutation<void, Error, StoredAnalysisDataForFirestore>({
+    mutationFn: async (analysisData) => {
+      if (!currentUserId || !selectedRunId) throw new Error("User or Run ID missing.");
+      await addDoc(collection(db, 'users', currentUserId, 'evaluationRuns', selectedRunId, 'storedAnalyses'), analysisData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['storedAnalysesForRun', currentUserId, selectedRunId] });
+      toast({ title: "Success", description: "Analysis saved successfully." });
+      setIsSaveAnalysisDialogOpen(false);
+      setAnalysisNameToSave('');
+    },
+    onError: (error) => {
+      toast({ title: "Error Saving Analysis", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const deleteStoredAnalysisMutation = useMutation<void, Error, string>({
+    mutationFn: async (analysisId) => {
+        if (!currentUserId || !selectedRunId) throw new Error("User or Run ID missing.");
+        await deleteDoc(doc(db, 'users', currentUserId, 'evaluationRuns', selectedRunId, 'storedAnalyses', analysisId));
+    },
+    onSuccess: () => {
+        queryClient.invalidateQueries({queryKey: ['storedAnalysesForRun', currentUserId, selectedRunId]});
+        toast({title: "Success", description: "Saved analysis deleted."});
+        if (viewingSavedAnalysisId === deleteStoredAnalysisMutation.variables) {
+            setProblemAnalysisResult(null); // Clear view if deleted item was being viewed
+            setViewingSavedAnalysisId(null);
+        }
+    },
+    onError: (error) => {
+        toast({title: "Error Deleting Analysis", description: error.message, variant: "destructive"});
+    }
+  });
+
+
+  const handleSaveCurrentAnalysis = () => {
+    if (!problemAnalysisResult || !targetEvalParamId || !desiredTargetLabel) {
+      toast({ title: "No Analysis", description: "Generate an analysis first before saving.", variant: "destructive" }); return;
+    }
+    const currentParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
+    if (!currentParam) {
+      toast({ title: "Error", description: "Could not find target parameter details.", variant: "destructive" }); return;
+    }
+    setAnalysisNameToSave(`Analysis for ${currentParam.name} - Label: ${desiredTargetLabel} - ${new Date().toLocaleDateString()}`);
+    setIsSaveAnalysisDialogOpen(true);
+  };
+
+  const confirmSaveAnalysis = (e: FormEvent) => {
+    e.preventDefault();
+    if (!analysisNameToSave.trim()) {
+      toast({ title: "Name Required", description: "Please provide a name for this analysis.", variant: "destructive" }); return;
+    }
+    if (!problemAnalysisResult || !targetEvalParamId || !desiredTargetLabel) return; // Should be covered by button disable
+    const currentParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
+    if (!currentParam) return;
+
+    const dataToSave: StoredAnalysisDataForFirestore = {
+      analysisName: analysisNameToSave.trim(),
+      createdAt: serverTimestamp(),
+      targetEvalParamId: targetEvalParamId,
+      targetEvalParamName: currentParam.name,
+      desiredTargetLabel: desiredTargetLabel,
+      problemCategories: problemAnalysisResult.problemCategories,
+      overallSummary: problemAnalysisResult.overallSummary,
+      mismatchCountAnalyzed: mismatchDetailsForFlow.length,
+    };
+    saveAnalysisMutation.mutate(dataToSave);
+  };
+
+  const handleViewStoredAnalysis = async (analysisId: string) => {
+    setViewingSavedAnalysisId(analysisId); // Indicate we are now viewing a saved one
+    try {
+        const fullAnalysis = await fetchSingleStoredAnalysisDetails(currentUserId, selectedRunId, analysisId);
+        if (fullAnalysis) {
+            setProblemAnalysisResult({
+                problemCategories: fullAnalysis.problemCategories,
+                overallSummary: fullAnalysis.overallSummary,
+            });
+            setTargetEvalParamId(fullAnalysis.targetEvalParamId); // Update dropdown
+            setDesiredTargetLabel(fullAnalysis.desiredTargetLabel); // Update dropdown
+            toast({title: "Viewing Saved Analysis", description: `Displaying "${fullAnalysis.analysisName}".`});
+        } else {
+            toast({title: "Error", description: "Could not load details for the saved analysis.", variant: "destructive"});
+            setViewingSavedAnalysisId(null);
+        }
+    } catch (error: any) {
+        toast({title: "Error Loading Analysis", description: error.message, variant: "destructive"});
+        setViewingSavedAnalysisId(null);
+    }
+  };
+
+  const handleDeleteStoredAnalysis = (analysisId: string) => {
+    if (confirm("Are you sure you want to delete this saved analysis?")) {
+      deleteStoredAnalysisMutation.mutate(analysisId);
     }
   };
 
 
-  // Shared handlers for select changes
   const handleRunSelectChange = (runId: string) => {
     setSelectedRunId(runId);
-    // Clear dependent states when run changes
-    setCurrentProductPrompt(''); // Clear prompt to allow re-fetch
+    setCurrentProductPrompt(''); 
     setTargetEvalParamId(null);
     setDesiredTargetLabel(null);
-    setSuggestionResult(null);
-    setSuggestionError(null);
-    setProblemAnalysisResult(null);
-    setProblemAnalysisError(null);
+    setSuggestionResult(null); setSuggestionError(null);
+    setProblemAnalysisResult(null); setProblemAnalysisError(null);
+    setViewingSavedAnalysisId(null);
   };
 
   const handleParamSelectChange = (paramId: string) => {
     setTargetEvalParamId(paramId);
     setDesiredTargetLabel(null); 
-    setSuggestionResult(null);
-    setSuggestionError(null);
-    setProblemAnalysisResult(null);
-    setProblemAnalysisError(null);
+    setSuggestionResult(null); setSuggestionError(null);
+    setProblemAnalysisResult(null); setProblemAnalysisError(null);
+    setViewingSavedAnalysisId(null);
   };
   
   const handleLabelSelectChange = (label: string) => {
     setDesiredTargetLabel(label);
-    setSuggestionResult(null);
-    setSuggestionError(null);
-    setProblemAnalysisResult(null);
-    setProblemAnalysisError(null);
+    setSuggestionResult(null); setSuggestionError(null);
+    setProblemAnalysisResult(null); setProblemAnalysisError(null);
+    setViewingSavedAnalysisId(null);
   };
 
 
-  if (isLoadingUserId) {
-    return <div className="p-6"><Skeleton className="h-screen w-full"/></div>;
-  }
-  if (!currentUserId) {
-    return <Card className="m-4"><CardContent className="p-6 text-center text-muted-foreground">Please log in to use AI Insights.</CardContent></Card>;
-  }
+  if (isLoadingUserId) return <div className="p-6"><Skeleton className="h-screen w-full"/></div>;
+  if (!currentUserId) return <Card className="m-4"><CardContent className="p-6 text-center text-muted-foreground">Please log in to use AI Insights.</CardContent></Card>;
 
   const sharedInputSelectionUI = (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Target Your Analysis</CardTitle>
-        <CardDescription>Select an evaluation run and specify which parameter and label you want to focus on.</CardDescription>
-      </CardHeader>
+      <CardHeader> <CardTitle className="text-lg">Target Your Analysis</CardTitle> <CardDescription>Select an evaluation run and specify which parameter and label you want to focus on.</CardDescription> </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <Label htmlFor="evalRunSelectCommon" className="font-semibold">Evaluation Run to Analyze</Label>
-            <Select value={selectedRunId || ''} onValueChange={handleRunSelectChange} required>
-              <SelectTrigger id="evalRunSelectCommon" disabled={isLoadingRunsList}>
-                <SelectValue placeholder={isLoadingRunsList ? "Loading runs..." : "Select an Eval Run"} />
-              </SelectTrigger>
-              <SelectContent>
-                {evalRunsList.map(run => (
-                  <SelectItem key={run.id} value={run.id}>{run.name} ({new Date(run.createdAt.toDate()).toLocaleDateString()})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label htmlFor="targetEvalParamSelectCommon" className="font-semibold">Target Evaluation Parameter</Label>
-            <Select
-              value={targetEvalParamId || ''}
-              onValueChange={handleParamSelectChange}
-              required
-              disabled={!selectedRunId || isLoadingSelectedRunDetails || isLoadingAllEvalParams || availableEvalParamsForSelectedRun.length === 0}
-            >
-              <SelectTrigger id="targetEvalParamSelectCommon">
-                <SelectValue placeholder={
-                  !selectedRunId ? "Select a run first" :
-                  isLoadingSelectedRunDetails || isLoadingAllEvalParams ? "Loading params..." :
-                  availableEvalParamsForSelectedRun.length === 0 ? "No params in run" :
-                  "Select Target Parameter"
-                } />
-              </SelectTrigger>
-              <SelectContent>
-                {availableEvalParamsForSelectedRun.map(param => (
-                  <SelectItem key={param.id} value={param.id}>{param.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label htmlFor="desiredTargetLabelSelectCommon" className="font-semibold">Desired Target Label</Label>
-            <Select
-              value={desiredTargetLabel || ''}
-              onValueChange={handleLabelSelectChange}
-              required
-              disabled={!targetEvalParamId || availableLabelsForSelectedParam.length === 0}
-            >
-              <SelectTrigger id="desiredTargetLabelSelectCommon">
-                <SelectValue placeholder={
-                    !targetEvalParamId ? "Select a parameter first" :
-                    availableLabelsForSelectedParam.length === 0 ? "No labels for param" :
-                    "Select Desired Label"
-                }/>
-              </SelectTrigger>
-              <SelectContent>
-                {availableLabelsForSelectedParam.map(label => (
-                  <SelectItem key={label.name} value={label.name}>{label.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <div> <Label htmlFor="evalRunSelectCommon" className="font-semibold">Evaluation Run to Analyze</Label> <Select value={selectedRunId || ''} onValueChange={handleRunSelectChange} required> <SelectTrigger id="evalRunSelectCommon" disabled={isLoadingRunsList}> <SelectValue placeholder={isLoadingRunsList ? "Loading runs..." : "Select an Eval Run"} /> </SelectTrigger> <SelectContent> {evalRunsList.map(run => ( <SelectItem key={run.id} value={run.id}>{run.name} ({new Date(run.createdAt.toDate()).toLocaleDateString()})</SelectItem> ))} </SelectContent> </Select> </div>
+          <div> <Label htmlFor="targetEvalParamSelectCommon" className="font-semibold">Target Evaluation Parameter</Label> <Select value={targetEvalParamId || ''} onValueChange={handleParamSelectChange} required disabled={!selectedRunId || isLoadingSelectedRunDetails || isLoadingAllEvalParams || availableEvalParamsForSelectedRun.length === 0} > <SelectTrigger id="targetEvalParamSelectCommon"> <SelectValue placeholder={ !selectedRunId ? "Select a run first" : isLoadingSelectedRunDetails || isLoadingAllEvalParams ? "Loading params..." : availableEvalParamsForSelectedRun.length === 0 ? "No params in run" : "Select Target Parameter" } /> </SelectTrigger> <SelectContent> {availableEvalParamsForSelectedRun.map(param => ( <SelectItem key={param.id} value={param.id}>{param.name}</SelectItem> ))} </SelectContent> </Select> </div>
+          <div> <Label htmlFor="desiredTargetLabelSelectCommon" className="font-semibold">Desired Target Label</Label> <Select value={desiredTargetLabel || ''} onValueChange={handleLabelSelectChange} required disabled={!targetEvalParamId || availableLabelsForSelectedParam.length === 0} > <SelectTrigger id="desiredTargetLabelSelectCommon"> <SelectValue placeholder={ !targetEvalParamId ? "Select a parameter first" : availableLabelsForSelectedParam.length === 0 ? "No labels for param" : "Select Desired Label" }/> </SelectTrigger> <SelectContent> {availableLabelsForSelectedParam.map(label => ( <SelectItem key={label.name} value={label.name}>{label.name}</SelectItem> ))} </SelectContent> </Select> </div>
         </div>
       </CardContent>
     </Card>
@@ -459,223 +511,124 @@ export default function AiInsightsPage() {
     <>
     {mismatchDisplayData.length > 0 && (
       <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="text-lg">Review Mismatches (Auto-Generated for AI)</CardTitle>
-          <CardDescription>
-            Showing up to 5 examples from the run where the LLM's output for <strong className="text-primary">{allEvalParamsDetails.find(p=>p.id===targetEvalParamId)?.name || 'the selected parameter'}</strong> did not match your desired label: <strong className="text-primary">{desiredTargetLabel}</strong>.
-            The AI will use these examples to suggest improvements or analyze problems.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 max-h-96 overflow-y-auto">
-          {mismatchDisplayData.map((mismatch, index) => (
-            <Card key={`mismatch-display-${index}`} className="p-3 bg-muted/50 text-xs">
-              <p className="font-semibold mb-1">Example Mismatch #{index + 1}</p>
-              <div className="space-y-1">
-                <div><strong>Input Data:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(mismatch.inputData, null, 2)}</pre></div>
-                <div><strong>LLM Chose:</strong> <span className="font-medium">{mismatch.llmChosenLabel}</span></div>
-                {mismatch.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{mismatch.llmRationale}</span></div>}
-                <div><strong>Desired Label:</strong> <span className="font-medium text-green-600">{mismatch.desiredTargetLabel}</span></div>
-              </div>
-            </Card>
-          ))}
-        </CardContent>
+        <CardHeader> <CardTitle className="text-lg">Review Mismatches (Auto-Generated for AI)</CardTitle> <CardDescription> Showing up to 5 examples from the run where the LLM's output for <strong className="text-primary">{allEvalParamsDetails.find(p=>p.id===targetEvalParamId)?.name || 'the selected parameter'}</strong> did not match your desired label: <strong className="text-primary">{desiredTargetLabel}</strong>. The AI will use these examples. </CardDescription> </CardHeader>
+        <CardContent className="space-y-3 max-h-96 overflow-y-auto"> {mismatchDisplayData.map((mismatch, index) => ( <Card key={`mismatch-display-${index}`} className="p-3 bg-muted/50 text-xs"> <p className="font-semibold mb-1">Example Mismatch #{index + 1}</p> <div className="space-y-1"> <div><strong>Input Data:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(mismatch.inputData, null, 2)}</pre></div> <div><strong>LLM Chose:</strong> <span className="font-medium">{mismatch.llmChosenLabel}</span></div> {mismatch.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{mismatch.llmRationale}</span></div>} <div><strong>Desired Label:</strong> <span className="font-medium text-green-600">{mismatch.desiredTargetLabel}</span></div> </div> </Card> ))} </CardContent>
       </Card>
     )}
-     {selectedEvalRunDetails && targetEvalParamId && desiredTargetLabel && mismatchDisplayData.length === 0 && !isLoadingSelectedRunDetails && (
-         <Card className="mt-6"><CardContent className="pt-6 text-center text-muted-foreground">No rows found in the selected run where the LLM's output for &quot;{allEvalParamsDetails.find(p=>p.id===targetEvalParamId)?.name}&quot; differs from your desired label &quot;{desiredTargetLabel}&quot;.</CardContent></Card>
-     )}
+     {selectedEvalRunDetails && targetEvalParamId && desiredTargetLabel && mismatchDisplayData.length === 0 && !isLoadingSelectedRunDetails && ( <Card className="mt-6"><CardContent className="pt-6 text-center text-muted-foreground">No rows found in the selected run where the LLM's output for &quot;{allEvalParamsDetails.find(p=>p.id===targetEvalParamId)?.name}&quot; differs from your desired label &quot;{desiredTargetLabel}&quot;.</CardContent></Card> )}
     </>
   );
 
 
   return (
     <div className="space-y-6 p-4 md:p-0">
-      <Card className="shadow-lg">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Lightbulb className="h-7 w-7 text-primary" />
-            <div>
-              <CardTitle className="text-xl md:text-2xl font-headline">AI-Powered Insights & Improvements</CardTitle>
-              <CardDescription>Use AI to analyze evaluation runs, understand problem areas, and get suggestions to improve your prompts.</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
-
+      <Card className="shadow-lg"> <CardHeader> <div className="flex items-center gap-3"> <Lightbulb className="h-7 w-7 text-primary" /> <div> <CardTitle className="text-xl md:text-2xl font-headline">AI-Powered Insights & Improvements</CardTitle> <CardDescription>Use AI to analyze evaluation runs, understand problem areas, and get suggestions to improve your prompts.</CardDescription> </div> </div> </CardHeader> </Card>
       <Tabs defaultValue="prompt_improver" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="prompt_improver"> <Wand2 className="mr-2 h-4 w-4" /> Iterative Prompt Improver</TabsTrigger>
-          <TabsTrigger value="problem_analyzer"> <ListChecks className="mr-2 h-4 w-4" /> Insights from Evals</TabsTrigger>
-        </TabsList>
-
+        <TabsList className="grid w-full grid-cols-2"> <TabsTrigger value="prompt_improver"> <Wand2 className="mr-2 h-4 w-4" /> Iterative Prompt Improver</TabsTrigger> <TabsTrigger value="problem_analyzer"> <ListChecks className="mr-2 h-4 w-4" /> Insights from Evals</TabsTrigger> </TabsList>
         <TabsContent value="prompt_improver" className="mt-6">
           <form onSubmit={handleSuggestImprovements} className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">1. Provide Your Current Prompt</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div>
-                  <Label htmlFor="currentProductPrompt" className="font-semibold">Your Current Product Prompt</Label>
-                  <Textarea
-                    id="currentProductPrompt"
-                    value={currentProductPrompt}
-                    onChange={e => setCurrentProductPrompt(e.target.value)}
-                    placeholder="Paste or type your existing product prompt template here..."
-                    rows={8}
-                    required
-                    className="font-mono text-sm"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-            
-            {sharedInputSelectionUI}
-            {mismatchReviewUI}
-
+            <Card> <CardHeader> <CardTitle className="text-lg">1. Provide Your Current Prompt</CardTitle> </CardHeader> <CardContent> <div> <Label htmlFor="currentProductPrompt" className="font-semibold">Your Current Product Prompt</Label> <Textarea id="currentProductPrompt" value={currentProductPrompt} onChange={e => setCurrentProductPrompt(e.target.value)} placeholder="Paste or type your existing product prompt template here..." rows={8} required className="font-mono text-sm" /> </div> </CardContent> </Card>
+            {sharedInputSelectionUI} {mismatchReviewUI}
             <Card className="mt-6">
-              <CardHeader>
-                <CardTitle className="text-lg">3. Get Prompt Suggestions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Button
-                  type="submit"
-                  disabled={isLoadingSuggestion || !currentProductPrompt.trim() || !selectedRunId || !targetEvalParamId || !desiredTargetLabel || mismatchDetailsForFlow.length === 0}
-                  className="w-full sm:w-auto"
-                >
-                  {isLoadingSuggestion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />}
-                  {isLoadingSuggestion ? 'Generating Suggestions...' : 'Suggest Prompt Improvements'}
-                </Button>
-              </CardContent>
-
-              {isLoadingSuggestion && (
-                <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t">
-                  <Skeleton className="h-8 w-1/4 mb-2" />
-                  <Skeleton className="h-24 w-full" />
-                  <Skeleton className="h-8 w-1/4 mt-4 mb-2" />
-                  <Skeleton className="h-20 w-full" />
-                </CardFooter>
-              )}
-
-              {suggestionError && !isLoadingSuggestion && (
-                <CardFooter className="pt-6 border-t">
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Suggestion Error</AlertTitle>
-                    <AlertDescription>{suggestionError}</AlertDescription>
-                  </Alert>
-                </CardFooter>
-              )}
-
-              {suggestionResult && !isLoadingSuggestion && (
-                <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t">
-                  <div>
-                    <Label htmlFor="suggestedPromptTemplate" className="text-base font-semibold flex justify-between items-center w-full">
-                      Suggested New Prompt Template
-                      <Button type="button" variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(suggestionResult.suggestedPromptTemplate)}>
-                        <Copy className="mr-2 h-3 w-3"/>Copy
-                      </Button>
-                    </Label>
-                    <Textarea id="suggestedPromptTemplate" value={suggestionResult.suggestedPromptTemplate} readOnly rows={10} className="font-mono text-sm mt-1 bg-muted/30"/>
-                  </div>
-                  <div>
-                    <Label htmlFor="reasoning" className="text-base font-semibold">Reasoning for Changes</Label>
-                    <Textarea id="reasoning" value={suggestionResult.reasoning} readOnly rows={6} className="mt-1 bg-muted/30"/>
-                  </div>
-                  <Alert>
-                    <FileText className="h-4 w-4"/>
-                    <AlertTitle>Next Steps</AlertTitle>
-                    <AlertDescription>
-                      Review the suggestion. If you like it, copy the new template and either create a new prompt version or update an existing one on the &quot;Prompts&quot; page. Then, create a new evaluation run using the improved prompt.
-                    </AlertDescription>
-                  </Alert>
-                </CardFooter>
-              )}
+              <CardHeader> <CardTitle className="text-lg">3. Get Prompt Suggestions</CardTitle> </CardHeader>
+              <CardContent> <Button type="submit" disabled={isLoadingSuggestion || !currentProductPrompt.trim() || !selectedRunId || !targetEvalParamId || !desiredTargetLabel || mismatchDetailsForFlow.length === 0} className="w-full sm:w-auto"> {isLoadingSuggestion ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BrainCircuit className="mr-2 h-4 w-4" />} {isLoadingSuggestion ? 'Generating Suggestions...' : 'Suggest Prompt Improvements'} </Button> </CardContent>
+              {isLoadingSuggestion && ( <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t"> <Skeleton className="h-8 w-1/4 mb-2" /> <Skeleton className="h-24 w-full" /> <Skeleton className="h-8 w-1/4 mt-4 mb-2" /> <Skeleton className="h-20 w-full" /> </CardFooter> )}
+              {suggestionError && !isLoadingSuggestion && ( <CardFooter className="pt-6 border-t"> <Alert variant="destructive"> <AlertTriangle className="h-4 w-4" /> <AlertTitle>Suggestion Error</AlertTitle> <AlertDescription>{suggestionError}</AlertDescription> </Alert> </CardFooter> )}
+              {suggestionResult && !isLoadingSuggestion && ( <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t"> <div> <Label htmlFor="suggestedPromptTemplate" className="text-base font-semibold flex justify-between items-center w-full"> Suggested New Prompt Template <Button type="button" variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(suggestionResult.suggestedPromptTemplate)}> <Copy className="mr-2 h-3 w-3"/>Copy </Button> </Label> <Textarea id="suggestedPromptTemplate" value={suggestionResult.suggestedPromptTemplate} readOnly rows={10} className="font-mono text-sm mt-1 bg-muted/30"/> </div> <div> <Label htmlFor="reasoning" className="text-base font-semibold">Reasoning for Changes</Label> <Textarea id="reasoning" value={suggestionResult.reasoning} readOnly rows={6} className="mt-1 bg-muted/30"/> </div> <Alert> <FileText className="h-4 w-4"/> <AlertTitle>Next Steps</AlertTitle> <AlertDescription> Review the suggestion. If you like it, copy the new template and either create a new prompt version or update an existing one on the &quot;Prompts&quot; page. Then, create a new evaluation run using the improved prompt. </AlertDescription> </Alert> </CardFooter> )}
             </Card>
           </form>
         </TabsContent>
-
         <TabsContent value="problem_analyzer" className="mt-6">
-          <form onSubmit={handleAnalyzeProblems} className="space-y-6">
+          <div className="space-y-6"> {/* Changed from form to div to allow multiple forms/actions */}
             {sharedInputSelectionUI}
             {mismatchReviewUI}
-
             <Card className="mt-6">
-              <CardHeader>
-                <CardTitle className="text-lg">Analyze Problems</CardTitle>
-                <CardDescription>Identify common problems from the mismatches to understand why the desired label isn't being achieved.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button
-                  type="submit"
-                  disabled={isLoadingProblemAnalysis || !selectedRunId || !targetEvalParamId || !desiredTargetLabel || mismatchDetailsForFlow.length === 0}
-                  className="w-full sm:w-auto"
-                >
-                  {isLoadingProblemAnalysis ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListChecks className="mr-2 h-4 w-4" />}
-                  {isLoadingProblemAnalysis ? 'Analyzing Problems...' : 'Find Problem Categories'}
-                </Button>
+              <CardHeader> <CardTitle className="text-lg">Analyze Problems</CardTitle> <CardDescription>Identify common problems from the mismatches to understand why the desired label isn't being achieved.</CardDescription> </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                <Button onClick={handleAnalyzeProblems} disabled={isLoadingProblemAnalysis || !selectedRunId || !targetEvalParamId || !desiredTargetLabel || mismatchDetailsForFlow.length === 0 || viewingSavedAnalysisId !== null} className="w-full sm:w-auto"> {isLoadingProblemAnalysis ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListChecks className="mr-2 h-4 w-4" />} {isLoadingProblemAnalysis ? 'Analyzing...' : 'Find Problem Categories'} </Button>
+                <Button variant="outline" onClick={handleSaveCurrentAnalysis} disabled={!problemAnalysisResult || saveAnalysisMutation.isPending || viewingSavedAnalysisId !== null} className="w-full sm:w-auto"> <Save className="mr-2 h-4 w-4" /> Save Current Analysis </Button>
               </CardContent>
-
-              {isLoadingProblemAnalysis && (
-                <CardFooter className="pt-6 border-t">
-                   <div className="flex items-center space-x-2">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    <p className="text-muted-foreground">AI is analyzing problem categories...</p>
-                  </div>
-                </CardFooter>
-              )}
-
-              {problemAnalysisError && !isLoadingProblemAnalysis && (
-                <CardFooter className="pt-6 border-t">
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Problem Analysis Error</AlertTitle>
-                    <AlertDescription>{problemAnalysisError}</AlertDescription>
-                  </Alert>
-                </CardFooter>
-              )}
-
-              {problemAnalysisResult && problemAnalysisResult.problemCategories && !isLoadingProblemAnalysis && (
+              {isLoadingProblemAnalysis && ( <CardFooter className="pt-6 border-t"> <div className="flex items-center space-x-2"> <Loader2 className="h-6 w-6 animate-spin text-primary" /> <p className="text-muted-foreground">AI is analyzing problem categories...</p> </div> </CardFooter> )}
+              {problemAnalysisError && !isLoadingProblemAnalysis && ( <CardFooter className="pt-6 border-t"> <Alert variant="destructive"> <AlertTriangle className="h-4 w-4" /> <AlertTitle>Problem Analysis Error</AlertTitle> <AlertDescription>{problemAnalysisError}</AlertDescription> </Alert> </CardFooter> )}
+              {problemAnalysisResult && !isLoadingProblemAnalysis && (
                 <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t">
-                  <h3 className="text-lg font-semibold">Identified Problem Categories:</h3>
-                  {problemAnalysisResult.problemCategories.length === 0 && (
-                    <p className="text-muted-foreground">The AI could not identify distinct problem categories from the provided mismatches.</p>
-                  )}
-                  {problemAnalysisResult.problemCategories.map((category, index) => (
-                    <Card key={`problem-${index}`} className="w-full">
-                      <CardHeader>
-                        <CardTitle className="text-md">{category.categoryName} <Badge variant="secondary" className="ml-2">{category.count} row(s)</Badge></CardTitle>
-                        <CardDescription>{category.description}</CardDescription>
-                      </CardHeader>
-                      {category.exampleMismatch && (
-                        <CardContent>
-                          <p className="text-xs font-semibold mb-1">Example Mismatch for this Category:</p>
-                          <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1">
-                            <div><strong>Input:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{category.exampleMismatch.inputData}</pre></div>
-                            <div><strong>LLM Chose:</strong> {category.exampleMismatch.llmChosenLabel}</div>
-                            {category.exampleMismatch.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{category.exampleMismatch.llmRationale}</span></div>}
-                            <div><strong>Desired Label:</strong> {category.exampleMismatch.groundTruthLabel}</div>
-                          </div>
-                        </CardContent>
-                      )}
-                    </Card>
-                  ))}
-                  {problemAnalysisResult.overallSummary && (
-                    <Alert className="mt-4">
-                        <Lightbulb className="h-4 w-4" />
-                        <AlertTitle>Overall Summary</AlertTitle>
-                        <AlertDescription>{problemAnalysisResult.overallSummary}</AlertDescription>
-                    </Alert>
-                  )}
+                  <h3 className="text-lg font-semibold"> {viewingSavedAnalysisId ? `Details for Saved Analysis: "${storedAnalyses.find(sa => sa.id === viewingSavedAnalysisId)?.analysisName}"` : "Identified Problem Categories:"} </h3>
+                  {problemAnalysisResult.problemCategories.length === 0 && ( <p className="text-muted-foreground">The AI could not identify distinct problem categories.</p> )}
+                  {problemAnalysisResult.problemCategories.map((category, index) => ( <Card key={`problem-${index}`} className="w-full"> <CardHeader> <CardTitle className="text-md">{category.categoryName} <Badge variant="secondary" className="ml-2">{category.count} row(s)</Badge></CardTitle> <CardDescription>{category.description}</CardDescription> </CardHeader> {category.exampleMismatch && ( <CardContent> <p className="text-xs font-semibold mb-1">Example Mismatch for this Category:</p> <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1"> <div><strong>Input:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{category.exampleMismatch.inputData}</pre></div> <div><strong>LLM Chose:</strong> {category.exampleMismatch.llmChosenLabel}</div> {category.exampleMismatch.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{category.exampleMismatch.llmRationale}</span></div>} <div><strong>Desired Label:</strong> {category.exampleMismatch.groundTruthLabel}</div> </div> </CardContent> )} </Card> ))}
+                  {problemAnalysisResult.overallSummary && ( <Alert className="mt-4"> <Lightbulb className="h-4 w-4" /> <AlertTitle>Overall Summary</AlertTitle> <AlertDescription>{problemAnalysisResult.overallSummary}</AlertDescription> </Alert> )}
                 </CardFooter>
               )}
             </Card>
-          </form>
+
+            {/* Display Saved Analyses */}
+            {selectedRunId && (
+            <Card className="mt-6">
+                <CardHeader>
+                    <CardTitle className="text-lg">Previously Saved Analyses for this Run</CardTitle>
+                    <CardDescription>Review or delete analyses you've saved for <strong className="text-primary">{selectedEvalRunDetails?.name || "the current"}</strong> run.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {isLoadingStoredAnalyses && <Skeleton className="h-20 w-full" />}
+                    {!isLoadingStoredAnalyses && storedAnalyses.length === 0 && (
+                        <p className="text-muted-foreground">No analyses saved for this run yet.</p>
+                    )}
+                    {!isLoadingStoredAnalyses && storedAnalyses.length > 0 && (
+                        <div className="space-y-3">
+                            {storedAnalyses.map(sa => (
+                                <Card key={sa.id} className="p-3 bg-muted/50">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="font-semibold">{sa.analysisName}</p>
+                                            <p className="text-xs text-muted-foreground">
+                                                Saved: {new Date(sa.createdAt.toDate()).toLocaleString()} | For: <span className="font-medium">{sa.targetEvalParamName}</span> - <span className="font-medium">&quot;{sa.desiredTargetLabel}&quot;</span> ({sa.mismatchCountAnalyzed} mismatches)
+                                            </p>
+                                        </div>
+                                        <div className="flex gap-1">
+                                            <Button variant="outline" size="sm" onClick={() => handleViewStoredAnalysis(sa.id)} disabled={viewingSavedAnalysisId === sa.id}>View</Button>
+                                            <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleDeleteStoredAnalysis(sa.id)} disabled={deleteStoredAnalysisMutation.isPending && deleteStoredAnalysisMutation.variables === sa.id}>
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </Card>
+                            ))}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={isSaveAnalysisDialogOpen} onOpenChange={setIsSaveAnalysisDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save Problem Analysis</DialogTitle>
+            <DialogDescription>Give this analysis a descriptive name so you can refer to it later.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={confirmSaveAnalysis} className="space-y-4 py-2">
+            <div>
+              <Label htmlFor="analysisName">Analysis Name</Label>
+              <Input
+                id="analysisName"
+                value={analysisNameToSave}
+                onChange={(e) => setAnalysisNameToSave(e.target.value)}
+                placeholder="e.g., User Query Ambiguity - Run X"
+                required
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsSaveAnalysisDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={saveAnalysisMutation.isPending}>
+                {saveAnalysisMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />} Save Analysis
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
-    
-
     
