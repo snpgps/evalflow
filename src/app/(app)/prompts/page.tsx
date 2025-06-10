@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, type FormEvent, useRef, useEffect } from 'react';
@@ -10,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, Tag, Loader2, Target, AlertTriangle, AlignLeft } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, Tag, Loader2, Target, AlertTriangle, AlignLeft, PanelLeftClose, PanelRightOpen } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
@@ -22,7 +21,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
 import { fetchPromptTemplates } from '@/lib/promptActions'; 
-import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page'; // Import new type
+import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
+import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
 
 // Firestore-aligned interfaces for Product Parameters
 export interface ProductParameterForPrompts {
@@ -150,6 +152,9 @@ export default function PromptsPage() {
   const [promptTemplateContent, setPromptTemplateContent] = useState('');
   const [versionNotes, setVersionNotes] = useState('');
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [isPromptListCollapsed, setIsPromptListCollapsed] = useState(false);
+
 
   useEffect(() => {
     const storedUserId = localStorage.getItem('currentUserId');
@@ -546,29 +551,36 @@ export default function PromptsPage() {
       return (
         <div className="p-6 text-center text-muted-foreground">
           <FileText className="mx-auto h-10 w-10 mb-2" />
-          <p>No prompts created yet.</p>
+          <p className={cn(isPromptListCollapsed && "hidden")}>No prompts created yet.</p>
         </div>
       );
     }
     return promptsData.map(p => (
-      <div
-        key={p.id}
-        className={`p-3 border-b cursor-pointer hover:bg-muted/50 ${selectedPromptId === p.id ? 'bg-muted' : ''}`}
-        onClick={() => handleSelectPrompt(p.id)}
-      >
-        <div className="flex justify-between items-center">
-          <span className={`font-medium ${selectedPromptId === p.id ? 'text-primary': ''} truncate min-w-0`}>{p.name}</span>
-          <div className="flex gap-1 shrink-0">
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openEditPromptDialog(p);}} disabled={updatePromptTemplateMutation.isPending || deletePromptTemplateMutation.isPending}>
-              <Edit2 className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/90" onClick={(e) => {e.stopPropagation(); handleDeletePrompt(p.id)}} disabled={deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === p.id }>
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground truncate">{p.description}</p>
-      </div>
+      <TooltipProvider key={p.id} delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              className={`p-3 border-b cursor-pointer hover:bg-muted/50 ${selectedPromptId === p.id ? 'bg-muted' : ''}`}
+              onClick={() => handleSelectPrompt(p.id)}
+            >
+              <div className="flex justify-between items-center">
+                <span className={cn("font-medium truncate min-w-0", selectedPromptId === p.id ? 'text-primary': '', isPromptListCollapsed ? "hidden" : "")}>{p.name}</span>
+                {isPromptListCollapsed && <FileText className="h-5 w-5 mx-auto text-muted-foreground" />}
+                <div className={cn("flex gap-1 shrink-0", isPromptListCollapsed ? "hidden" : "")}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openEditPromptDialog(p);}} disabled={updatePromptTemplateMutation.isPending || deletePromptTemplateMutation.isPending}>
+                    <Edit2 className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/90" onClick={(e) => {e.stopPropagation(); handleDeletePrompt(p.id)}} disabled={deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === p.id }>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <p className={cn("text-xs text-muted-foreground truncate", isPromptListCollapsed ? "hidden" : "")}>{p.description}</p>
+            </div>
+          </TooltipTrigger>
+          {isPromptListCollapsed && <TooltipContent side="right"><p>{p.name}</p></TooltipContent>}
+        </Tooltip>
+      </TooltipProvider>
     ));
   };
 
@@ -679,7 +691,7 @@ export default function PromptsPage() {
             />
           </div>
           <div className="w-full lg:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l p-4 bg-muted/20 flex flex-col min-w-0">
-            <ScrollArea className="flex-1 max-h-[40vh] lg:max-h-none">
+            <ScrollArea className="flex-1"> {/* Added flex-1 here for ScrollArea */}
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">Product Parameters</h3>
                 {isLoadingProdParams ? <Skeleton className="h-20 w-full" /> :
@@ -770,14 +782,46 @@ export default function PromptsPage() {
 
   return (
     <div className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-theme(spacing.28))] gap-6 p-4 md:p-0">
-      <Card className="w-full md:w-[300px] md:shrink-0 flex flex-col shadow-lg md:max-h-none">
-        <CardHeader className="border-b">
-          <CardTitle>Prompt Templates</CardTitle>
-          <CardDescription>Manage your Judge LLM prompts.</CardDescription>
+      <Card className={cn(
+        "flex flex-col shadow-lg transition-all duration-300 ease-in-out md:max-h-none overflow-hidden",
+        isPromptListCollapsed ? "w-full md:w-16" : "w-full md:w-[300px]"
+        )}
+      >
+        <CardHeader className="border-b p-3">
+          <div className="flex justify-between items-center">
+            <div className={cn(isPromptListCollapsed && "md:hidden")}>
+              <CardTitle>Prompt Templates</CardTitle>
+              <CardDescription>Manage your Judge LLM prompts.</CardDescription>
+            </div>
+            <TooltipProvider delayDuration={100}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setIsPromptListCollapsed(!isPromptListCollapsed)}
+                    className="hidden md:flex"
+                    aria-label={isPromptListCollapsed ? "Expand prompt list" : "Collapse prompt list"}
+                  >
+                    {isPromptListCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  <p>{isPromptListCollapsed ? "Expand prompt list" : "Collapse prompt list"}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
            <Dialog open={isPromptDialogOpen} onOpenChange={(isOpen) => { setIsPromptDialogOpen(isOpen); if(!isOpen) resetPromptDialogForm();}}>
             <DialogTrigger asChild>
-              <Button size="sm" className="mt-2 w-full" onClick={handleOpenNewPromptDialog} disabled={addPromptTemplateMutation.isPending || updatePromptTemplateMutation.isPending || !currentUserId}>
-                <PlusCircle className="mr-2 h-4 w-4" /> New Prompt Template
+              <Button 
+                size="sm" 
+                className={cn("mt-2 w-full", isPromptListCollapsed && "md:hidden")} 
+                onClick={handleOpenNewPromptDialog} 
+                disabled={addPromptTemplateMutation.isPending || updatePromptTemplateMutation.isPending || !currentUserId}
+              >
+                <PlusCircle className="mr-2 h-4 w-4" /> 
+                <span className={cn(isPromptListCollapsed && "md:hidden")}>New Template</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
@@ -811,8 +855,9 @@ export default function PromptsPage() {
         </ScrollArea>
       </Card>
 
-      {renderEditorArea()}
+      <div className="flex-1 flex flex-col min-w-0"> {/* Added min-w-0 here for the editor parent */}
+         {renderEditorArea()}
+      </div>
     </div>
   );
 }
-
