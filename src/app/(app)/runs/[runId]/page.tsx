@@ -109,6 +109,27 @@ interface ContextDocumentDisplayDetail {
 
 const MAX_ROWS_FOR_PROCESSING = 200;
 
+// Helper function to sanitize data for Firestore by replacing undefined with null
+function sanitizeDataForFirestore(data: any): any {
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeDataForFirestore(item));
+  } else if (data !== null && typeof data === 'object') {
+    const sanitizedObject: Record<string, any> = {};
+    for (const key in data) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        const value = data[key];
+        if (value === undefined) {
+          sanitizedObject[key] = null; // Replace undefined with null
+        } else {
+          sanitizedObject[key] = sanitizeDataForFirestore(value);
+        }
+      }
+    }
+    return sanitizedObject;
+  }
+  return data; // Primitives, null
+}
+
 
 const fetchEvalRunDetails = async (userId: string, runId: string): Promise<EvalRun | null> => {
   const runDocRef = doc(db, 'users', userId, 'evaluationRuns', runId);
@@ -365,7 +386,7 @@ export default function RunDetailsPage() {
         if (fileName.endsWith('.xlsx')) { const arrayBuffer = await blob.arrayBuffer(); const workbook = XLSX.read(arrayBuffer, { type: 'array' }); const sheetName = versionConfig.selectedSheetName || workbook.SheetNames[0]; if (!sheetName || !workbook.Sheets[sheetName]) { throw new Error(`Sheet "${sheetName || 'default'}" not found in Excel file.`); } parsedRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" }); addLog(`Data Preview: Parsed ${parsedRows.length} rows from Excel sheet "${sheetName}".`);
         } else if (fileName.endsWith('.csv')) { const text = await blob.text(); const lines = text.split(/\r\n|\n|\r/).filter(line => line.trim() !== ''); if (lines.length < 1) throw new Error("CSV file is empty or has no header row."); const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim()); for (let i = 1; i < lines.length; i++) { const values = lines[i].split(',').map(v => v.replace(/^"|"$/g, '').trim()); const rowObject: Record<string, any> = {}; headers.forEach((header, index) => { rowObject[header] = values[index] || ""; }); parsedRows.push(rowObject); } addLog(`Data Preview: Parsed ${parsedRows.length} rows from CSV file.`);
         } else { throw new Error("Unsupported file type. Only .xlsx and .csv are supported for preview."); }
-        if (parsedRows.length === 0) { addLog("Data Preview: No data rows found after parsing."); updateRunMutation.mutate({ id: runId, previewedDatasetSample: [], status: 'DataPreviewed', errorMessage: undefined, results: [] }); toast({ title: "No Data", description: "The dataset file was parsed but contained no data rows." }); setIsPreviewDataLoading(false); return; }
+        if (parsedRows.length === 0) { addLog("Data Preview: No data rows found after parsing."); updateRunMutation.mutate({ id: runId, previewedDatasetSample: [], status: 'DataPreviewed', results: [] }); toast({ title: "No Data", description: "The dataset file was parsed but contained no data rows." }); setIsPreviewDataLoading(false); return; }
         let rowsToAttemptFromConfig: number; if (runDetails.runOnNRows > 0) { rowsToAttemptFromConfig = Math.min(runDetails.runOnNRows, parsedRows.length); } else { rowsToAttemptFromConfig = parsedRows.length; }
         const actualRowsToProcessAndStore = Math.min(rowsToAttemptFromConfig, MAX_ROWS_FOR_PROCESSING); const dataSliceForStorage = parsedRows.slice(0, actualRowsToProcessAndStore);
         if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows !== 0) { addLog(`Data Preview: User requested ${rowsToAttemptFromConfig} rows, but processing capped at ${MAX_ROWS_FOR_PROCESSING}.`); } else if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows === 0) { addLog(`Data Preview: "All rows" selected (${rowsToAttemptFromConfig}), processing capped at ${MAX_ROWS_FOR_PROCESSING}.`); }
@@ -377,7 +398,10 @@ export default function RunDetailsPage() {
             if (runDetails.runType === 'GroundTruth') { for (const evalParamId in evalParamIdToGtColMap) { const gtColName = evalParamIdToGtColMap[evalParamId]; if (originalRow.hasOwnProperty(gtColName)) { mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[gtColName]; rowHasAnyMappedData = true; } else { mappedRowForStorage[`_gt_${evalParamId}`] = undefined; addLog(`Data Preview: Warning: Row ${index+1} missing GT column "${gtColName}" for eval ID "${evalParamId}".`); } } }
             if(rowHasAnyMappedData) sampleForStorage.push(mappedRowForStorage); else addLog(`Data Preview: Skipping row ${index+1} as no mapped data found.`);
         });
-        addLog(`Data Preview: Processed ${sampleForStorage.length} rows for storage.`); updateRunMutation.mutate({ id: runId, previewedDatasetSample: sampleForStorage, status: 'DataPreviewed', errorMessage: undefined, results: [] }); toast({ title: "Data Preview Ready", description: `${sampleForStorage.length} rows fetched and mapped.`});
+        addLog(`Data Preview: Processed ${sampleForStorage.length} rows for storage.`); 
+        const sanitizedSample = sanitizeDataForFirestore(sampleForStorage);
+        updateRunMutation.mutate({ id: runId, previewedDatasetSample: sanitizedSample, status: 'DataPreviewed', results: [] }); 
+        toast({ title: "Data Preview Ready", description: `${sanitizedSample.length} rows fetched and mapped.`});
     } catch (error: any) { addLog(`Data Preview: Error: ${error.message}`, "error"); setPreviewDataError(error.message); toast({ title: "Preview Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `Data preview failed: ${error.message}` });
     } finally { setIsPreviewDataLoading(false); }
   };
@@ -385,7 +409,8 @@ export default function RunDetailsPage() {
   const simulateRunExecution = async () => {
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || evalParamDetailsForLLM.length === 0) { const errorMsg = "Missing critical run configuration or evaluation parameter details."; toast({ title: "Cannot start LLM Categorization", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return; }
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start LLM Categorization", description: "No dataset sample. Please fetch and preview data first.", variant: "destructive"}); addLog("Error: Attempted to start LLM categorization without previewed data.", "error"); return; }
-    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, errorMessage: undefined, results: [] }); setSimulationLog([]); addLog("LLM Categorization process initialized."); let collectedResults: EvalRunResultItem[] = [];
+    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [] }); 
+    setSimulationLog([]); addLog("LLM Categorization process initialized."); let collectedResults: EvalRunResultItem[] = [];
     try {
       const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateText) throw new Error("Failed to fetch prompt template text.");
       addLog(`Fetched prompt template (v${runDetails.promptVersionNumber}).`); addLog(`Using ${evalParamDetailsForLLM.length} evaluation parameter details for LLM call.`);
@@ -409,10 +434,13 @@ export default function RunDetailsPage() {
         settledBatchResults.forEach(itemWithIndex => { const { originalIndex, ...resultItem } = itemWithIndex; collectedResults.push(resultItem as EvalRunResultItem); });
         addLog(`Batch from ${batchStartIndex + 1} to ${batchEndIndex} processed. ${settledBatchResults.length} results/errors.`);
         const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
-        updateRunMutation.mutate({ id: runId, progress: currentProgress, results: [...collectedResults], status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing' });
+        updateRunMutation.mutate({ id: runId, progress: currentProgress, results: sanitizeDataForFirestore(collectedResults), status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing' });
       }
-      addLog("LLM Categorization completed."); updateRunMutation.mutate({ id: runId, status: 'Completed', results: collectedResults, progress: 100, completedAt: serverTimestamp() }); toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
-    } catch (error: any) { addLog(`Error during LLM categorization: ${error.message}`, "error"); console.error("LLM Categorization Error: ", error); toast({ title: "LLM Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM Categorization failed: ${error.message}`, results: collectedResults }); }
+      addLog("LLM Categorization completed."); 
+      updateRunMutation.mutate({ id: runId, status: 'Completed', results: sanitizeDataForFirestore(collectedResults), progress: 100, completedAt: serverTimestamp() }); 
+      toast({ title: "LLM Categorization Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
+    } catch (error: any) { addLog(`Error during LLM categorization: ${error.message}`, "error"); console.error("LLM Categorization Error: ", error); toast({ title: "LLM Error", description: error.message, variant: "destructive" }); 
+    updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM Categorization failed: ${error.message}`, results: sanitizeDataForFirestore(collectedResults) }); }
   };
 
   const handleDownloadResults = () => {
@@ -441,7 +469,7 @@ export default function RunDetailsPage() {
       const result = await suggestRecursivePromptImprovements(flowInput); setSuggestionResult(result);
     } catch (error: any) { console.error("Error suggesting improvements:", error); setSuggestionError(error.message || "Failed to get suggestions."); } finally { setIsLoadingSuggestion(false); }
   };
-  const hasMismatches = useMemo(() => { if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; return runDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase(); })); }, [runDetails, evalParamDetailsForLLM]);
+  const hasMismatches = useMemo(() => { if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; return runDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !outputForCell?.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase(); })); }, [runDetails, evalParamDetailsForLLM]);
 
   if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
   if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
@@ -573,13 +601,7 @@ export default function RunDetailsPage() {
                     className="w-full"
                     style={{ height: `${Math.max(150, paramChart.data.length * 40 + 60)}px` }}
                   >
-                    <RechartsBarChartElement data={paramChart.data} layout="vertical" margin={{ right: 30, left: 70, top: 5, bottom: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} />
-                        <YAxis dataKey="labelName" type="category" width={120} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={0} />
-                        <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} />
-                        <RechartsBar dataKey="count" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} barSize={20} />
-                      </RechartsBarChartElement>
+                     <RechartsBarChartElement data={paramChart.data} layout="vertical" margin={{ right: 30, left: 70, top: 5, bottom: 20 }}> <CartesianGrid strokeDasharray="3 3" /> <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} /> <YAxis dataKey="labelName" type="category" width={120} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={0} /> <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} /> <RechartsBar dataKey="count" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} barSize={20} /> </RechartsBarChartElement>
                   </ChartContainer>
                 )}
               </CardContent>
