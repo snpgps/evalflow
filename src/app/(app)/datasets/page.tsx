@@ -622,7 +622,7 @@ export default function DatasetsPage() {
 
   const isInitialUploadButtonDisabled = !selectedFileUpload || !currentUserId || addDatasetVersionMutation.isPending;
 
-  const isSaveMappingButtonDisabled = Boolean(
+  const isSaveMappingButtonDisabled = !!(
     !mappingDialogFileData ||
     !versionBeingMapped ||
     !currentUserId ||
