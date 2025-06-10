@@ -392,12 +392,54 @@ export default function RunDetailsPage() {
         if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows !== 0) { addLog(`Data Preview: User requested ${rowsToAttemptFromConfig} rows, but processing capped at ${MAX_ROWS_FOR_PROCESSING}.`); } else if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows === 0) { addLog(`Data Preview: "All rows" selected (${rowsToAttemptFromConfig}), processing capped at ${MAX_ROWS_FOR_PROCESSING}.`); }
         addLog(`Data Preview: Preparing ${dataSliceForStorage.length} rows for processing (User N: ${runDetails.runOnNRows === 0 ? 'All' : runDetails.runOnNRows}, System Cap: ${MAX_ROWS_FOR_PROCESSING}).`);
         const sampleForStorage: Array<Record<string, any>> = []; const productParamToOriginalColMap = versionConfig.columnMapping; const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
+        
         dataSliceForStorage.forEach((originalRow, index) => {
-            const mappedRowForStorage: Record<string, any> = {}; let rowHasAnyMappedData = false;
-            for (const productParamName in productParamToOriginalColMap) { const originalColName = productParamToOriginalColMap[productParamName]; if (originalRow.hasOwnProperty(originalColName)) { mappedRowForStorage[productParamName] = originalRow[originalColName]; rowHasAnyMappedData = true; } else { mappedRowForStorage[productParamName] = undefined; addLog(`Data Preview: Warning: Row ${index+1} missing original column "${originalColName}" for param "${productParamName}".`); } }
-            if (runDetails.runType === 'GroundTruth') { for (const evalParamId in evalParamIdToGtColMap) { const gtColName = evalParamIdToGtColMap[evalParamId]; if (originalRow.hasOwnProperty(gtColName)) { mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[gtColName]; rowHasAnyMappedData = true; } else { mappedRowForStorage[`_gt_${evalParamId}`] = undefined; addLog(`Data Preview: Warning: Row ${index+1} missing GT column "${gtColName}" for eval ID "${evalParamId}".`); } } }
-            if(rowHasAnyMappedData) sampleForStorage.push(mappedRowForStorage); else addLog(`Data Preview: Skipping row ${index+1} as no mapped data found.`);
+            const mappedRowForStorage: Record<string, any> = {};
+            let rowHasAnyMappedData = false;
+
+            const originalRowKeys = Object.keys(originalRow);
+            const originalRowLookup: Record<string, string> = {};
+            originalRowKeys.forEach(key => {
+                originalRowLookup[String(key).trim().toLowerCase()] = key;
+            });
+
+            for (const productParamName in productParamToOriginalColMap) {
+                const mappedOriginalColName = productParamToOriginalColMap[productParamName];
+                const normalizedMappedOriginalColName = String(mappedOriginalColName).trim().toLowerCase();
+                const actualKeyInOriginalRow = originalRowLookup[normalizedMappedOriginalColName];
+
+                if (actualKeyInOriginalRow) {
+                    mappedRowForStorage[productParamName] = originalRow[actualKeyInOriginalRow];
+                    rowHasAnyMappedData = true;
+                } else {
+                    mappedRowForStorage[productParamName] = undefined;
+                    addLog(`Data Preview: Warning: Row ${index + 1} missing/unmatched original column "${mappedOriginalColName}" (normalized: ${normalizedMappedOriginalColName}) for param "${productParamName}". Available (normalized): ${Object.keys(originalRowLookup).join(', ')}`);
+                }
+            }
+
+            if (runDetails.runType === 'GroundTruth') {
+                for (const evalParamId in evalParamIdToGtColMap) {
+                    const mappedGtColName = evalParamIdToGtColMap[evalParamId];
+                    const normalizedMappedGtColName = String(mappedGtColName).trim().toLowerCase();
+                    const actualKeyInOriginalRowForGt = originalRowLookup[normalizedMappedGtColName];
+
+                    if (actualKeyInOriginalRowForGt) {
+                        mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[actualKeyInOriginalRowForGt];
+                        rowHasAnyMappedData = true;
+                    } else {
+                        mappedRowForStorage[`_gt_${evalParamId}`] = undefined;
+                        addLog(`Data Preview: Warning: Row ${index + 1} missing/unmatched GT column "${mappedGtColName}" (normalized: ${normalizedMappedGtColName}) for eval ID "${evalParamId}". Available (normalized): ${Object.keys(originalRowLookup).join(', ')}`);
+                    }
+                }
+            }
+
+            if(rowHasAnyMappedData) {
+              sampleForStorage.push(mappedRowForStorage);
+            } else {
+              addLog(`Data Preview: Skipping row ${index + 1} as no mapped data found after attempting normalization.`);
+            }
         });
+
         addLog(`Data Preview: Processed ${sampleForStorage.length} rows for storage.`); 
         const sanitizedSample = sanitizeDataForFirestore(sampleForStorage);
         updateRunMutation.mutate({ id: runId, previewedDatasetSample: sanitizedSample, status: 'DataPreviewed', results: [] }); 
