@@ -787,72 +787,74 @@ export default function RunDetailsPage() {
       </Dialog>
 
       <Dialog open={isQuestionDialogVisible} onOpenChange={setIsQuestionDialogVisible}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col p-0">
+          <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
             <DialogTitle className="flex items-center"><MessageSquareQuote className="mr-2 h-5 w-5 text-primary"/>Question Bot's Judgement</DialogTitle>
             <DialogDescription>Analyze a specific judgment made by the LLM. Provide your reasoning for a deeper AI analysis.</DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-grow pr-2 -mr-2 text-sm">
-            {questioningItemData && (
-              <div className="space-y-4 py-4">
-                <Card className="p-3 bg-muted/40">
-                  <CardHeader className="p-0 pb-2"><CardTitle className="text-sm">Item Details (Row {questioningItemData.rowIndex + 1})</CardTitle></CardHeader>
-                  <CardContent className="p-0 space-y-1 text-xs">
-                    <div><strong>Input Data:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(questioningItemData.inputData, null, 2)}</pre></div>
-                    <div><strong>Evaluation Parameter:</strong> {questioningItemData.paramName}</div>
-                    <div><strong>Judge LLM Label:</strong> {questioningItemData.judgeLlmOutput.chosenLabel}</div>
-                    {questioningItemData.judgeLlmOutput.rationale && <div><strong>Judge LLM Rationale:</strong> <span className="italic">{questioningItemData.judgeLlmOutput.rationale}</span></div>}
-                    {runDetails?.runType === 'GroundTruth' && <div><strong>Ground Truth Label:</strong> {questioningItemData.groundTruthLabel || 'N/A'}</div>}
-                  </CardContent>
-                </Card>
-                
-                <div>
-                  <Label htmlFor="userQuestionText">Your Question/Reasoning for Discrepancy:</Label>
-                  <Textarea 
-                    id="userQuestionText" 
-                    value={userQuestionText} 
-                    onChange={(e) => setUserQuestionText(e.target.value)} 
-                    placeholder="e.g., 'I believe the LLM missed the nuance in the user's request regarding X...' or 'The ground truth is Y because...'"
-                    rows={4}
-                    className="mt-1"
-                  />
-                </div>
-
-                {isAnalyzingJudgment && (
-                  <div className="flex items-center space-x-2 pt-2">
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                    <p className="text-muted-foreground">AI is analyzing the judgment...</p>
-                  </div>
-                )}
-                {judgmentAnalysisError && !isAnalyzingJudgment && (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Analysis Error</AlertTitle>
-                    <AlertDescription>{judgmentAnalysisError}</AlertDescription>
-                  </Alert>
-                )}
-                {judgmentAnalysisResult && !isAnalyzingJudgment && (
-                  <Card className="mt-4 p-4 border-primary/30">
-                    <CardHeader className="p-0 pb-2"><CardTitle className="text-base text-primary">AI Analysis of Judgement</CardTitle></CardHeader>
-                    <CardContent className="p-0 space-y-2 text-xs">
-                      <p><strong>Analysis:</strong> {judgmentAnalysisResult.analysis}</p>
-                      <div className="flex items-center gap-2"> {/* Changed from p to div */}
-                        <strong>Agrees with User Concern:</strong> 
-                        <Badge 
-                          variant={judgmentAnalysisResult.agreesWithUserConcern ? "default" : "secondary"} 
-                          className={judgmentAnalysisResult.agreesWithUserConcern ? "bg-green-100 text-green-700 border-green-300" : ""}
-                        >
-                          {judgmentAnalysisResult.agreesWithUserConcern ? 'Yes' : 'No'}
-                        </Badge>
-                      </div>
-                      {judgmentAnalysisResult.potentialFailureReasons && <p><strong>Potential Failure Reasons:</strong> {judgmentAnalysisResult.potentialFailureReasons}</p>}
+          <div className="flex-grow min-h-0 overflow-hidden">
+            <ScrollArea className="h-full w-full">
+              {questioningItemData && (
+                <div className="space-y-4 p-6 text-sm">
+                  <Card className="p-3 bg-muted/40">
+                    <CardHeader className="p-0 pb-2"><CardTitle className="text-sm">Item Details (Row {questioningItemData.rowIndex + 1})</CardTitle></CardHeader>
+                    <CardContent className="p-0 space-y-1 text-xs">
+                      <div><strong>Input Data:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(questioningItemData.inputData, null, 2)}</pre></div>
+                      <div><strong>Evaluation Parameter:</strong> {questioningItemData.paramName}</div>
+                      <div><strong>Judge LLM Label:</strong> {questioningItemData.judgeLlmOutput.chosenLabel}</div>
+                      {questioningItemData.judgeLlmOutput.rationale && <div><strong>Judge LLM Rationale:</strong> <span className="italic">{questioningItemData.judgeLlmOutput.rationale}</span></div>}
+                      {runDetails?.runType === 'GroundTruth' && <div><strong>Ground Truth Label:</strong> {questioningItemData.groundTruthLabel || 'N/A'}</div>}
                     </CardContent>
                   </Card>
-                )}
-              </div>
-            )}
-          </ScrollArea>
-          <DialogFooter className="pt-4 border-t mt-auto">
+                  
+                  <div>
+                    <Label htmlFor="userQuestionText">Your Question/Reasoning for Discrepancy:</Label>
+                    <Textarea 
+                      id="userQuestionText" 
+                      value={userQuestionText} 
+                      onChange={(e) => setUserQuestionText(e.target.value)} 
+                      placeholder="e.g., 'I believe the LLM missed the nuance in the user's request regarding X...' or 'The ground truth is Y because...'"
+                      rows={4}
+                      className="mt-1"
+                    />
+                  </div>
+
+                  {isAnalyzingJudgment && (
+                    <div className="flex items-center space-x-2 pt-2">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                      <p className="text-muted-foreground">AI is analyzing the judgment...</p>
+                    </div>
+                  )}
+                  {judgmentAnalysisError && !isAnalyzingJudgment && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertTitle>Analysis Error</AlertTitle>
+                      <AlertDescription>{judgmentAnalysisError}</AlertDescription>
+                    </Alert>
+                  )}
+                  {judgmentAnalysisResult && !isAnalyzingJudgment && (
+                    <Card className="mt-4 p-4 border-primary/30">
+                      <CardHeader className="p-0 pb-2"><CardTitle className="text-base text-primary">AI Analysis of Judgement</CardTitle></CardHeader>
+                      <CardContent className="p-0 space-y-2 text-xs">
+                        <p><strong>Analysis:</strong> {judgmentAnalysisResult.analysis}</p>
+                        <div className="flex items-center gap-2">
+                          <strong>Agrees with User Concern:</strong> 
+                          <Badge 
+                            variant={judgmentAnalysisResult.agreesWithUserConcern ? "default" : "secondary"} 
+                            className={judgmentAnalysisResult.agreesWithUserConcern ? "bg-green-100 text-green-700 border-green-300" : ""}
+                          >
+                            {judgmentAnalysisResult.agreesWithUserConcern ? 'Yes' : 'No'}
+                          </Badge>
+                        </div>
+                        {judgmentAnalysisResult.potentialFailureReasons && <p><strong>Potential Failure Reasons:</strong> {judgmentAnalysisResult.potentialFailureReasons}</p>}
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
+          <DialogFooter className="p-6 pt-4 border-t mt-auto flex-shrink-0">
             <Button variant="outline" onClick={() => setIsQuestionDialogVisible(false)}>Cancel</Button>
             <Button onClick={handleSubmitQuestionAnalysis} disabled={isAnalyzingJudgment || !userQuestionText.trim() || !questioningItemData}>
               {isAnalyzingJudgment ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...</> : "Submit for Analysis"}
