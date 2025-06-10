@@ -177,8 +177,8 @@ export default function EvaluationParametersPage() {
   const addContextDocMutation = useMutation<void, Error, { payload: NewContextDocumentPayload; file: File }>({
     mutationFn: async ({ payload, file }) => {
       if (!currentUserId) throw new Error("User not identified.");
-      
-      const docRef = await addDoc(collection(db, 'users', currentUserId, 'contextDocuments'), { ...payload, createdAt: serverTimestamp() });
+      // The payload already includes createdAt: serverTimestamp() due to NewContextDocumentPayload type
+      const docRef = await addDoc(collection(db, 'users', currentUserId, 'contextDocuments'), payload);
       const storagePath = `users/${currentUserId}/contextDocuments/${docRef.id}/${file.name}`;
       const fileStorageRef = storageRef(storage, storagePath);
       
@@ -256,7 +256,14 @@ export default function EvaluationParametersPage() {
   const handleSubmitContextDocForm = (e: FormEvent) => {
     e.preventDefault();
     if (!currentUserId || !contextDocName.trim() || !contextDocFile) { toast({title: "Validation Error", description: "Name and file are required for context document.", variant: "destructive"}); return; }
-    const payload: NewContextDocumentPayload = { name: contextDocName.trim(), description: contextDocDescription.trim(), fileName: contextDocFile.name, storagePath: '', userId: currentUserId }; // storagePath set after upload
+    const payload: NewContextDocumentPayload = {
+      name: contextDocName.trim(),
+      description: contextDocDescription.trim(),
+      fileName: contextDocFile.name,
+      storagePath: '', // storagePath set after upload
+      userId: currentUserId,
+      createdAt: serverTimestamp() // Added missing field
+    };
     addContextDocMutation.mutate({ payload, file: contextDocFile });
   };
   const handleDeleteContextDoc = (doc: ContextDocument) => { if (!currentUserId) return; if (confirm(`Delete context document "${doc.name}"? This will also remove the file from storage.`)) deleteContextDocMutation.mutate(doc); };
