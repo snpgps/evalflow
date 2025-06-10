@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from '@/components/ui/input';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, query, orderBy, type Timestamp, addDoc, deleteDoc, serverTimestamp, type FieldValue } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -559,7 +560,6 @@ export default function AiInsightsPage() {
     
     const overallSummaryKey = 'overallSummary' in problemAnalysisResult ? 'overallSummary' : ('overallSummaryOfUserIntents' in problemAnalysisResult ? 'overallSummaryOfUserIntents' : null);
     if (overallSummaryKey && problemAnalysisResult[overallSummaryKey as keyof typeof problemAnalysisResult] !== undefined) {
-        // Only add overallSummary if it's not undefined. Firestore doesn't like undefined.
         dataToSave.overallSummary = problemAnalysisResult[overallSummaryKey as keyof typeof problemAnalysisResult] as string;
     }
 
@@ -851,10 +851,36 @@ export default function AiInsightsPage() {
                      <Card key={`problem-intent-${index}`} className="w-full">
                        <CardHeader> <CardTitle className="text-md">{category.categoryName} <Badge variant="secondary" className="ml-2">{category.count} item(s)</Badge></CardTitle> <CardDescription>{category.description}</CardDescription> </CardHeader>
                        {analysisType === 'evaluation' && (category as ProblemCategory).exampleMismatch && (
-                         <CardContent> <p className="text-xs font-semibold mb-1">Example Mismatch for this Category:</p> <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1"> <div><strong>Input:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{(category as ProblemCategory).exampleMismatch!.inputData}</pre></div> <div><strong>LLM Chose:</strong> {(category as ProblemCategory).exampleMismatch!.llmChosenLabel}</div> {(category as ProblemCategory).exampleMismatch!.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{(category as ProblemCategory).exampleMismatch!.llmRationale}</span></div>} <div><strong>Desired Label:</strong> {(category as ProblemCategory).exampleMismatch!.groundTruthLabel}</div> </div> </CardContent>
+                         <CardContent>
+                            <Accordion type="single" collapsible className="w-full">
+                              <AccordionItem value="item-1">
+                                <AccordionTrigger className="text-xs py-2 hover:no-underline">View Example Mismatch Details</AccordionTrigger>
+                                <AccordionContent>
+                                  <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1 mt-1">
+                                    <div><strong>Input:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{(category as ProblemCategory).exampleMismatch!.inputData}</pre></div>
+                                    <div><strong>LLM Chose:</strong> {(category as ProblemCategory).exampleMismatch!.llmChosenLabel}</div>
+                                    {(category as ProblemCategory).exampleMismatch!.llmRationale && <div><strong>LLM Rationale:</strong> <span className="italic">{(category as ProblemCategory).exampleMismatch!.llmRationale}</span></div>}
+                                    <div><strong>Desired Label:</strong> {(category as ProblemCategory).exampleMismatch!.groundTruthLabel}</div>
+                                  </div>
+                                </AccordionContent>
+                              </AccordionItem>
+                            </Accordion>
+                         </CardContent>
                        )}
                        {analysisType === 'summarization' && (category as UserIntentCategory).exampleSummaryIllustratingIntent && (
-                         <CardContent> <p className="text-xs font-semibold mb-1">Example Summary Illustrating this Intent:</p> <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1"> <div><strong>Input:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{(category as UserIntentCategory).exampleSummaryIllustratingIntent!.inputData}</pre></div> <div><strong>Generated Summary:</strong> <p className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{(category as UserIntentCategory).exampleSummaryIllustratingIntent!.generatedSummary}</p></div></div> </CardContent>
+                         <CardContent>
+                            <Accordion type="single" collapsible className="w-full">
+                              <AccordionItem value="item-1">
+                                <AccordionTrigger className="text-xs py-2 hover:no-underline">View Example Summary Details</AccordionTrigger>
+                                <AccordionContent>
+                                   <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1 mt-1">
+                                      <div><strong>Input:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{(category as UserIntentCategory).exampleSummaryIllustratingIntent!.inputData}</pre></div>
+                                      <div><strong>Generated Summary:</strong> <p className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{(category as UserIntentCategory).exampleSummaryIllustratingIntent!.generatedSummary}</p></div>
+                                   </div>
+                                </AccordionContent>
+                              </AccordionItem>
+                            </Accordion>
+                         </CardContent>
                        )}
                      </Card>
                   ))}
@@ -875,17 +901,20 @@ export default function AiInsightsPage() {
                             {storedAnalyses.map(sa => (
                                 <Card key={sa.id} className="p-3 bg-muted/50">
                                     <div className="flex justify-between items-start">
-                                        <div>
-                                            <div className="font-semibold flex items-center">{sa.analysisName} <Badge variant="outline" className="ml-1 text-xs">{sa.analysisType === 'evaluation' ? 'Eval Param Problems' : 'User Intents'}</Badge></div>
-                                            <p className="text-xs text-muted-foreground">
+                                        <div className="min-w-0">
+                                            <div className="font-semibold flex items-center flex-wrap gap-x-2">
+                                              <span className="truncate">{sa.analysisName}</span>
+                                              <Badge variant="outline" className="ml-1 text-xs shrink-0">{sa.analysisType === 'evaluation' ? 'Eval Param Problems' : 'User Intents'}</Badge>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground break-words">
                                                 Saved: {new Date(sa.createdAt.toDate()).toLocaleString()} | For: 
                                                 {sa.analysisType === 'evaluation' && <span className="font-medium"> {sa.targetEvalParamName} - &quot;{sa.desiredTargetLabel}&quot;</span>}
                                                 {sa.analysisType === 'summarization' && <span className="font-medium"> {sa.targetSummarizationDefName}</span>}
                                                 ({sa.sourceDataCount} items analyzed)
                                             </p>
-                                            {sa.analysisType === 'summarization' && sa.productContext && <p className="text-xs text-muted-foreground">Product Context: <span className="italic">{sa.productContext}</span></p>}
+                                            {sa.analysisType === 'summarization' && sa.productContext && <p className="text-xs text-muted-foreground break-words">Product Context: <span className="italic">{sa.productContext}</span></p>}
                                         </div>
-                                        <div className="flex gap-1">
+                                        <div className="flex gap-1 shrink-0">
                                             <Button variant="outline" size="sm" onClick={() => handleViewStoredAnalysis(sa.id)} disabled={viewingSavedAnalysisId === sa.id}>View</Button>
                                             <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleDeleteStoredAnalysis(sa.id)} disabled={deleteStoredAnalysisMutation.isPending && deleteStoredAnalysisMutation.variables === sa.id}>
                                                 <Trash2 className="h-4 w-4" />
@@ -919,4 +948,6 @@ export default function AiInsightsPage() {
     </div>
   );
 }
+    
+
     
