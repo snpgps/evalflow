@@ -376,7 +376,7 @@ export default function EvalRunsPage() {
           <div className="flex items-center gap-3"> <PlayCircle className="h-7 w-7 text-primary" /> <div> <CardTitle className="text-xl md:text-2xl font-headline">Evaluation Runs</CardTitle> <CardDescription>Manage and track your AI model evaluation runs. Choose between Product or Ground Truth comparison.</CardDescription> </div> </div>
            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
             <DialogTrigger asChild><Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending} className="w-full sm:w-auto"><PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run</Button></DialogTrigger>
-            <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh] p-0"> {/* Added p-0 here */}
+            <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh] p-0">
               <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b">
                 <DialogTitle>Configure New Evaluation Run</DialogTitle>
                 <DialogDescription>Select components and parameters for your new eval run.</DialogDescription>
@@ -386,8 +386,8 @@ export default function EvalRunsPage() {
                   <Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading options...</span>
                 </div>
               ) : (
-                <div className="flex-grow min-h-0"> {/* Removed overflow-hidden as ScrollArea handles it */}
-                  <ScrollArea className="h-full w-full">
+                <div className="flex-grow min-h-0 overflow-hidden"> 
+                  <ScrollArea className="h-full w-full"> 
                     <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
                       <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
                       <div> <Label htmlFor="run-type">Run Type</Label> <RadioGroup value={newRunType} onValueChange={(value: 'Product' | 'GroundTruth') => setNewRunType(value)} className="flex space-x-4 mt-1"> <div className="flex items-center space-x-2"> <RadioGroupItem value="Product" id="type-product" /> <Label htmlFor="type-product" className="font-normal">Product Run</Label> </div> <div className="flex items-center space-x-2"> <RadioGroupItem value="GroundTruth" id="type-gt" /> <Label htmlFor="type-gt" className="font-normal">Ground Truth Run</Label> </div> </RadioGroup> <p className="text-xs text-muted-foreground mt-1"> Product runs evaluate outputs. Ground Truth runs compare outputs to known correct labels.</p> </div>
