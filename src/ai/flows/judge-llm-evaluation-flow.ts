@@ -50,7 +50,21 @@ const LlmOutputArraySchema = z.array(LlmOutputArrayItemSchema)
 export async function judgeLlmEvaluation(
   input: JudgeLlmEvaluationInput
 ): Promise<JudgeLlmEvaluationOutput> {
-  const llmOutputArray = await internalJudgeLlmEvaluationFlow(input);
+  let llmOutputArray: z.infer<typeof LlmOutputArraySchema> | null = null;
+  try {
+    llmOutputArray = await internalJudgeLlmEvaluationFlow(input);
+  } catch (flowExecutionError: any) {
+    console.error('internalJudgeLlmEvaluationFlow itself threw an error:', flowExecutionError);
+    const errorResults: z.infer<typeof LlmOutputArraySchema> = [];
+    const errorMessage = `Flow execution error: ${flowExecutionError.message || 'Unknown flow error'}`;
+    input.evaluationParameterIds?.forEach(id => {
+      errorResults.push({ parameterId: id, chosenLabel: "ERROR_FLOW_FAILURE", rationale: errorMessage, generatedSummary: undefined });
+    });
+    input.summarizationParameterIds?.forEach(id => {
+      errorResults.push({ parameterId: id, generatedSummary: `ERROR: ${errorMessage}`, chosenLabel: undefined, rationale: undefined });
+    });
+    llmOutputArray = errorResults;
+  }
 
   const finalOutput: JudgeLlmEvaluationOutput = {};
   if (llmOutputArray) {
@@ -60,13 +74,22 @@ export async function judgeLlmEvaluation(
           chosenLabel: item.chosenLabel,
           generatedSummary: item.generatedSummary,
           rationale: item.rationale,
+          error: (item as any).error, 
         };
+        
+        if (item.chosenLabel === "ERROR_NO_LLM_OUTPUT" || item.chosenLabel === "ERROR_LLM_CALL_FAILED" || item.chosenLabel === "ERROR_FLOW_FAILURE") {
+            finalOutput[item.parameterId].error = item.rationale || "LLM did not return parsable output or call failed.";
+        }
+        if (item.generatedSummary?.startsWith("ERROR:")) {
+            finalOutput[item.parameterId].error = item.generatedSummary;
+        }
+
       } else {
         console.warn('judgeLlmEvaluation: Received an invalid item in LlmOutputArray:', item);
       }
     }
   } else {
-     console.warn('judgeLlmEvaluation: LlmOutputArray was null or undefined.');
+     console.warn('judgeLlmEvaluation: LlmOutputArray was null or undefined after flow execution attempt.');
   }
   return finalOutput;
 }
@@ -130,7 +153,7 @@ const judgePrompt = ai.definePrompt({
   output: { schema: LlmOutputArraySchema },
   prompt: handlebarsPrompt,
   config: {
-    temperature: 0.3, // Slightly lower for more deterministic evaluation and summarization
+    temperature: 0.3, 
   }
 });
 
@@ -142,7 +165,7 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
     outputSchema: LlmOutputArraySchema,
   },
   async (input) => {
-    console.log('internalJudgeLlmEvaluationFlow received input:', JSON.stringify(input, null, 2));
+    // console.log('internalJudgeLlmEvaluationFlow received input for prompt:', JSON.stringify(input.fullPromptText, null, 2)); // Log only prompt text to avoid overly verbose logs of IDs
     
     if ((!input.evaluationParameterIds || input.evaluationParameterIds.length === 0) && 
         (!input.summarizationParameterIds || input.summarizationParameterIds.length === 0)) {
@@ -150,23 +173,43 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
       return [];
     }
 
-    const { output, usage } = await judgePrompt(input);
+    let output: z.infer<typeof LlmOutputArraySchema> | undefined | null = null;
+    let usage: any = null;
 
-    if (!output) {
-      console.error('LLM did not return a parsable output matching the LlmOutputArraySchema.');
-      // Attempt to return a structured error for each requested parameter
+    try {
+      const result = await judgePrompt(input);
+      output = result.output; // output is already parsed against LlmOutputArraySchema by Genkit
+      usage = result.usage;
+    } catch (err: any) {
+      console.error(`Error calling judgePrompt within internalJudgeLlmEvaluationFlow. Error:`, err);
+      const errorMessage = `LLM call failed: ${err.message || 'Unknown error during LLM call.'}`;
       const errorResults: z.infer<typeof LlmOutputArraySchema> = [];
       input.evaluationParameterIds?.forEach(id => {
-        errorResults.push({ parameterId: id, chosenLabel: "ERROR_NO_LLM_OUTPUT" });
+        errorResults.push({ parameterId: id, chosenLabel: "ERROR_LLM_CALL_FAILED", rationale: errorMessage, generatedSummary: undefined });
       });
       input.summarizationParameterIds?.forEach(id => {
-        errorResults.push({ parameterId: id, generatedSummary: "ERROR: LLM did not return a parsable output." });
+        errorResults.push({ parameterId: id, generatedSummary: `ERROR: ${errorMessage}`, chosenLabel: undefined, rationale: undefined });
+      });
+      return errorResults; 
+    }
+
+    if (!output) {
+      console.error('LLM did not return a parsable output matching the LlmOutputArraySchema. Usage/Error Details (if any):', usage);
+      const errorResults: z.infer<typeof LlmOutputArraySchema> = [];
+      const rationaleForError = `LLM did not return a parsable output. Usage/details: ${JSON.stringify(usage || 'N/A')}`;
+      input.evaluationParameterIds?.forEach(id => {
+        errorResults.push({ parameterId: id, chosenLabel: "ERROR_NO_LLM_OUTPUT", rationale: rationaleForError, generatedSummary: undefined });
+      });
+      input.summarizationParameterIds?.forEach(id => {
+        errorResults.push({ parameterId: id, generatedSummary: `ERROR: ${rationaleForError}`, chosenLabel: undefined, rationale: undefined });
       });
       return errorResults;
     }
     
-    console.log('internalJudgeLlmEvaluationFlow LLM usage:', usage);
-    console.log('internalJudgeLlmEvaluationFlow LLM output (array):', JSON.stringify(output, null, 2));
+    // console.log('internalJudgeLlmEvaluationFlow LLM usage:', usage);
+    // console.log('internalJudgeLlmEvaluationFlow LLM output (array):', JSON.stringify(output, null, 2));
     return output;
   }
 );
+
+    
