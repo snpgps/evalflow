@@ -792,7 +792,7 @@ export default function RunDetailsPage() {
             <DialogTitle className="flex items-center"><MessageSquareQuote className="mr-2 h-5 w-5 text-primary"/>Question Bot's Judgement</DialogTitle>
             <DialogDescription>Analyze a specific judgment made by the LLM. Provide your reasoning for a deeper AI analysis.</DialogDescription>
           </DialogHeader>
-          <div className="flex-grow min-h-0 overflow-hidden">
+          <div className="flex-grow min-h-0 overflow-y-auto">
             <ScrollArea className="h-full w-full">
               {questioningItemData && (
                 <div className="space-y-4 p-6 text-sm">
