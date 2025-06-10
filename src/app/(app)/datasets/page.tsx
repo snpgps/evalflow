@@ -336,7 +336,7 @@ export default function DatasetsPage() {
     if (fileName.endsWith('.xlsx')) {
         try {
             const arrayBuffer = await fileData.blob.arrayBuffer();
-            const workbook = XLSX.read(arrayBuffer, { type: 'array', sheets: 0, bookFiles: false, bookProps: false, bookDeps: false, bookSheets: false, bookStrings: false, sheetStubs: true });
+            const workbook = XLSX.read(arrayBuffer, { type: 'array', sheets: 0, bookFiles: false, bookProps: false, bookDeps: false, bookSheets: false, sheetStubs: true });
             const filteredSheetNames = workbook.SheetNames
               .map(name => String(name).trim())
               .filter(name => name !== '');
@@ -583,7 +583,7 @@ export default function DatasetsPage() {
     if (!fileData.name.toLowerCase().endsWith('.xlsx')) return [];
     try {
       const arrayBuffer = await fileData.blob.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array', sheets: 0, bookFiles: false, bookProps: false, bookDeps: false, bookSheets: false, bookStrings: false, sheetStubs: true });
+      const workbook = XLSX.read(arrayBuffer, { type: 'array', sheets: 0, bookFiles: false, bookProps: false, bookDeps: false, bookSheets: false, sheetStubs: true });
       return workbook.SheetNames.map(name => String(name).trim()).filter(name => name !== '');
     } catch (e) {
       console.error("Error getting sheet names for pre-selection check:", e);
