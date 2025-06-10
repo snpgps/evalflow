@@ -510,7 +510,16 @@ export default function RunDetailsPage() {
       const result = await suggestRecursivePromptImprovements(flowInput); setSuggestionResult(result);
     } catch (error: any) { console.error("Error suggesting improvements:", error); setSuggestionError(error.message || "Failed to get suggestions."); } finally { setIsLoadingSuggestion(false); }
   };
-  const hasMismatches = useMemo(() => { if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; return runDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase(); })); }, [runDetails, evalParamDetailsForLLM]);
+  const hasMismatches = useMemo(() => { 
+    if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; 
+    return runDetails.results.some(item => 
+      evalParamDetailsForLLM.some(paramDetail => { 
+        const llmOutput = item.judgeLlmOutput[paramDetail.id]; 
+        const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; 
+        return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase(); 
+      })
+    ); 
+  }, [runDetails, evalParamDetailsForLLM]);
 
   if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
   if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
