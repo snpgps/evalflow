@@ -42,7 +42,7 @@ const ChartContainer = React.forwardRef<
   HTMLDivElement,
   ChartContainerBaseProps & {
     config: ChartConfig
-    children: React.ReactNode // Changed: ChartContainer takes general ReactNode for its chart content
+    children: React.ReactElement // Changed: Children must be a single ReactElement
   }
 >(({ id, className, children, config, ...props }, ref) => {
   const uniqueId = React.useId()
