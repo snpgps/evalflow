@@ -697,7 +697,7 @@ export default function AiInsightsPage() {
       </div>
       <div>
         <Label htmlFor="analysisTypeSelect" className="font-semibold">Type of Analysis</Label>
-        <Select value={analysisType} onValueChange={handleAnalysisTypeChange} required disabled={!selectedRunId}>
+        <Select value={analysisType} onValueChange={handleAnalysisTypeChange as (value: string) => void} required disabled={!selectedRunId}>
             <SelectTrigger id="analysisTypeSelect">
                 <SelectValue placeholder="Select analysis type" />
             </SelectTrigger>
@@ -876,7 +876,7 @@ export default function AiInsightsPage() {
                                 <Card key={sa.id} className="p-3 bg-muted/50">
                                     <div className="flex justify-between items-start">
                                         <div>
-                                            <p className="font-semibold">{sa.analysisName} <Badge variant="outline" className="ml-1 text-xs">{sa.analysisType === 'evaluation' ? 'Eval Param Problems' : 'User Intents'}</Badge></p>
+                                            <div className="font-semibold flex items-center">{sa.analysisName} <Badge variant="outline" className="ml-1 text-xs">{sa.analysisType === 'evaluation' ? 'Eval Param Problems' : 'User Intents'}</Badge></div>
                                             <p className="text-xs text-muted-foreground">
                                                 Saved: {new Date(sa.createdAt.toDate()).toLocaleString()} | For: 
                                                 {sa.analysisType === 'evaluation' && <span className="font-medium"> {sa.targetEvalParamName} - &quot;{sa.desiredTargetLabel}&quot;</span>}
