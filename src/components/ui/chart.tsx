@@ -40,11 +40,9 @@ type ChartContainerBaseProps = Omit<React.ComponentProps<"div">, "children">;
 
 const ChartContainer = React.forwardRef<
   HTMLDivElement,
-  ChartContainerBaseProps & { // Use the base props type
+  ChartContainerBaseProps & {
     config: ChartConfig
-    children: React.ComponentProps<
-      typeof RechartsPrimitive.ResponsiveContainer
-    >["children"]
+    children: React.ReactNode // Changed: ChartContainer takes general ReactNode for its chart content
   }
 >(({ id, className, children, config, ...props }, ref) => {
   const uniqueId = React.useId()
@@ -62,6 +60,7 @@ const ChartContainer = React.forwardRef<
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
+        {/* ChartContainer provides the ResponsiveContainer wrapper internally */}
         <RechartsPrimitive.ResponsiveContainer>
           {children}
         </RechartsPrimitive.ResponsiveContainer>
