@@ -17,6 +17,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/hooks/use-toast';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // Interfaces for Evaluation Parameters
 interface CategorizationLabelToStore {
@@ -177,7 +183,6 @@ export default function EvaluationParametersPage() {
   const addContextDocMutation = useMutation<void, Error, { payload: NewContextDocumentPayload; file: File }>({
     mutationFn: async ({ payload, file }) => {
       if (!currentUserId) throw new Error("User not identified.");
-      // The payload already includes createdAt: serverTimestamp() due to NewContextDocumentPayload type
       const docRef = await addDoc(collection(db, 'users', currentUserId, 'contextDocuments'), payload);
       const storagePath = `users/${currentUserId}/contextDocuments/${docRef.id}/${file.name}`;
       const fileStorageRef = storageRef(storage, storagePath);
@@ -260,9 +265,9 @@ export default function EvaluationParametersPage() {
       name: contextDocName.trim(),
       description: contextDocDescription.trim(),
       fileName: contextDocFile.name,
-      storagePath: '', // storagePath set after upload
+      storagePath: '', 
       userId: currentUserId,
-      createdAt: serverTimestamp() // Added missing field
+      createdAt: serverTimestamp() 
     };
     addContextDocMutation.mutate({ payload, file: contextDocFile });
   };
@@ -318,10 +323,42 @@ export default function EvaluationParametersPage() {
         <CardHeader> <CardTitle>Defined Evaluation Parameters</CardTitle> <CardDescription>Manage your existing evaluation parameters. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription> </CardHeader>
         <CardContent>
           {!currentUserId && !isLoadingUserId ? ( <div className="text-center text-muted-foreground py-8"><p>Please log in to see your evaluation parameters.</p></div> ) : evalParameters.length === 0 && !isLoadingParameters ? ( <div className="text-center text-muted-foreground py-8"><p>No evaluation parameters defined yet. Click "Add New Evaluation Parameter" to get started.</p></div> ) : (
-            <Table>
-              <TableHeader><TableRow><TableHead className="w-[50px] hidden md:table-cell">Order</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Definition</TableHead><TableHead>Rationale Req.</TableHead><TableHead className="text-right w-auto md:w-[200px]">Actions</TableHead></TableRow></TableHeader>
-              <TableBody>{evalParameters.map((param) => (<TableRow key={param.id} className="hover:bg-muted/50"><TableCell className="cursor-grab hidden md:table-cell"><GripVertical className="h-5 w-5 text-muted-foreground" /></TableCell><TableCell className="font-medium">{param.name}</TableCell><TableCell className="text-sm text-muted-foreground max-w-xs sm:max-w-md truncate hidden sm:table-cell">{param.definition}</TableCell><TableCell>{param.requiresRationale ? <CheckCircle className="h-5 w-5 text-green-500" title="Rationale requested"/> : <XCircle className="h-5 w-5 text-muted-foreground" title="Rationale not requested"/>}</TableCell><TableCell className="text-right"><div className="flex flex-col sm:flex-row items-end sm:items-center justify-end gap-1"><Button variant="outline" size="sm" onClick={() => openManageLabelsDialog(param)} disabled={!currentUserId || updateLabelsMutation.isPending && editingLabelsForParam?.id === param.id}><Tags className="h-4 w-4 mr-0 sm:mr-2"/><span className="hidden sm:inline">Labels ({param.categorizationLabels?.length || 0})</span></Button><Button variant="ghost" size="icon" onClick={() => openEditParamDialog(param)} className="mr-1" disabled={updateParamMutation.isPending || deleteMutation.isPending || !currentUserId}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => handleDeleteParameter(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || (updateParamMutation.isPending && editingEvalParam?.id === param.id) || !currentUserId}><Trash2 className="h-4 w-4" /></Button></div></TableCell></TableRow>))}</TableBody>
-            </Table>
+            <TooltipProvider>
+              <Table>
+                <TableHeader><TableRow><TableHead className="w-[50px] hidden md:table-cell">Order</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Definition</TableHead><TableHead>Rationale Req.</TableHead><TableHead className="text-right w-auto md:w-[200px]">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {evalParameters.map((param) => (
+                    <TableRow key={param.id} className="hover:bg-muted/50">
+                      <TableCell className="cursor-grab hidden md:table-cell"><GripVertical className="h-5 w-5 text-muted-foreground" /></TableCell>
+                      <TableCell className="font-medium">{param.name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-xs sm:max-w-md truncate hidden sm:table-cell">{param.definition}</TableCell>
+                      <TableCell>
+                        {param.requiresRationale ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <CheckCircle className="h-5 w-5 text-green-500" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Rationale requested</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <XCircle className="h-5 w-5 text-muted-foreground" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Rationale not requested</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right"><div className="flex flex-col sm:flex-row items-end sm:items-center justify-end gap-1"><Button variant="outline" size="sm" onClick={() => openManageLabelsDialog(param)} disabled={!currentUserId || updateLabelsMutation.isPending && editingLabelsForParam?.id === param.id}><Tags className="h-4 w-4 mr-0 sm:mr-2"/><span className="hidden sm:inline">Labels ({param.categorizationLabels?.length || 0})</span></Button><Button variant="ghost" size="icon" onClick={() => openEditParamDialog(param)} className="mr-1" disabled={updateParamMutation.isPending || deleteMutation.isPending || !currentUserId}><Edit2 className="h-4 w-4" /></Button><Button variant="ghost" size="icon" onClick={() => handleDeleteParameter(param.id)} className="text-destructive hover:text-destructive/90" disabled={deleteMutation.isPending || (updateParamMutation.isPending && editingEvalParam?.id === param.id) || !currentUserId}><Trash2 className="h-4 w-4" /></Button></div></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TooltipProvider>
           )}
         </CardContent>
       </Card>
@@ -374,4 +411,3 @@ export default function EvaluationParametersPage() {
     </div>
   );
 }
-
