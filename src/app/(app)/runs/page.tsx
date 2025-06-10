@@ -377,10 +377,17 @@ export default function EvalRunsPage() {
            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
             <DialogTrigger asChild><Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending} className="w-full sm:w-auto"><PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run</Button></DialogTrigger>
             <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh]">
-              <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b"> <DialogTitle>Configure New Evaluation Run</DialogTitle> <DialogDescription>Select components and parameters for your new eval run.</DialogDescription> </DialogHeader>
-              {isLoadingDialogData ? ( <div className="py-8 flex justify-center items-center flex-grow"><Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading options...</span></div> ) : (
-                <>
-                 <ScrollArea className="flex-grow">
+              <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b">
+                <DialogTitle>Configure New Evaluation Run</DialogTitle>
+                <DialogDescription>Select components and parameters for your new eval run.</DialogDescription>
+              </DialogHeader>
+              {isLoadingDialogData ? (
+                <div className="py-8 flex justify-center items-center flex-grow">
+                  <Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading options...</span>
+                </div>
+              ) : (
+                <div className="flex-grow min-h-0 overflow-y-auto">
+                  <ScrollArea className="h-full">
                     <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
                       <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
                       <div> <Label htmlFor="run-type">Run Type</Label> <RadioGroup value={newRunType} onValueChange={(value: 'Product' | 'GroundTruth') => setNewRunType(value)} className="flex space-x-4 mt-1"> <div className="flex items-center space-x-2"> <RadioGroupItem value="Product" id="type-product" /> <Label htmlFor="type-product" className="font-normal">Product Run</Label> </div> <div className="flex items-center space-x-2"> <RadioGroupItem value="GroundTruth" id="type-gt" /> <Label htmlFor="type-gt" className="font-normal">Ground Truth Run</Label> </div> </RadioGroup> <p className="text-xs text-muted-foreground mt-1"> Product runs evaluate outputs. Ground Truth runs compare outputs to known correct labels.</p> </div>
@@ -423,8 +430,15 @@ export default function EvalRunsPage() {
                       <div> <Label htmlFor="run-concurrency">LLM Concurrency Limit</Label> <Input id="run-concurrency" type="number" value={newRunConcurrencyLimit} onChange={(e) => setNewRunConcurrencyLimit(Math.max(1, parseInt(e.target.value, 10) || 1))} min="1" max="20" /> <p className="text-xs text-muted-foreground mt-1">Number of LLM calls in parallel (e.g., 3-5). Max: 20.</p> </div>
                     </form>
                   </ScrollArea>
-                  <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t"> <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button> <Button type="submit" form="new-eval-run-form" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId || !newRunName.trim()} > {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />} Create Run </Button> </DialogFooter>
-                </>
+                </div>
+              )}
+              {!isLoadingDialogData && (
+                <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
+                  <Button type="button" variant="outline" onClick={() => {setIsNewRunDialogOpen(false); resetNewRunForm();}}>Cancel</Button>
+                  <Button type="submit" form="new-eval-run-form" disabled={addEvalRunMutation.isPending || !selectedDatasetId || !selectedConnectorId || !selectedPromptId || selectedEvalParamIds.length === 0 || !selectedDatasetVersionId || !selectedPromptVersionId || !newRunName.trim()} >
+                    {addEvalRunMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlayCircle className="mr-2 h-4 w-4" />} Create Run
+                  </Button>
+                </DialogFooter>
               )}
             </DialogContent>
           </Dialog>
