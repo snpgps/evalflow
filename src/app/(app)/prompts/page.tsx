@@ -20,22 +20,22 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
-import { fetchPromptTemplates } from '@/lib/promptActions'; // UPDATED IMPORT
+import { fetchPromptTemplates } from '@/lib/promptActions'; 
 
 // Firestore-aligned interfaces for Product Parameters
-interface ProductParameterForPrompts {
+export interface ProductParameterForPrompts { // Added export keyword
   id: string;
   name: string;
   description: string;
 }
 
 // Firestore-aligned interfaces for Evaluation Parameters
-export interface CategorizationLabelForPrompts { // Exported for use in datasets/page.tsx
+export interface CategorizationLabelForPrompts { 
     name: string;
     definition: string;
     example?: string;
 }
-export interface EvalParameterForPrompts { // Exported for use in datasets/page.tsx
+export interface EvalParameterForPrompts { 
   id: string;
   name: string;
   definition: string;
@@ -45,7 +45,7 @@ export interface EvalParameterForPrompts { // Exported for use in datasets/page.
 
 
 // Interfaces for client-side state and display
-export interface PromptVersion { // Exported for use in other files if needed
+export interface PromptVersion { 
   id: string;
   versionNumber: number;
   template: string;
@@ -53,7 +53,7 @@ export interface PromptVersion { // Exported for use in other files if needed
   createdAt: string; // ISO String
 }
 
-export interface PromptTemplate { // Exported for use in other files if needed
+export interface PromptTemplate { 
   id: string;
   name: string;
   description: string;
@@ -244,7 +244,7 @@ export default function PromptsPage() {
     },
     onSuccess: (newPromptId) => {
       queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
-      setSelectedPromptId(newPromptId); // Automatically select the new prompt
+      setSelectedPromptId(newPromptId); 
       toast({ title: "Success", description: "Prompt template created." });
       setIsPromptDialogOpen(false);
       resetPromptDialogForm();
