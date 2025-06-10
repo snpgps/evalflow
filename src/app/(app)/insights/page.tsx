@@ -11,7 +11,7 @@ import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Ligh
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from '@/components/ui/badge'; // Added import
+import { Badge } from '@/components/ui/badge';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, query, orderBy, type Timestamp } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -164,10 +164,13 @@ export default function AiInsightsPage() {
     queryKey: ['selectedEvalRunDetailsForInsights', currentUserId, selectedRunId],
     queryFn: () => fetchFullEvalRunDetails(currentUserId, selectedRunId),
     enabled: !!currentUserId && !!selectedRunId,
-    onSuccess: (data) => {
-      if (data?.promptId && data.promptVersionId) {
+  });
+
+  useEffect(() => {
+    if (selectedEvalRunDetails) {
+      if (selectedEvalRunDetails.promptId && selectedEvalRunDetails.promptVersionId) {
         if (!currentProductPrompt) { // Only prefill if empty, to respect user edits
-             fetchOriginalPromptText(currentUserId, data.promptId, data.promptVersionId)
+             fetchOriginalPromptText(currentUserId, selectedEvalRunDetails.promptId, selectedEvalRunDetails.promptVersionId)
                 .then(text => { if(text) setCurrentProductPrompt(text); });
         }
       }
@@ -178,7 +181,8 @@ export default function AiInsightsPage() {
       setSuggestionResult(null);
       setProblemAnalysisResult(null);
     }
-  });
+  }, [selectedEvalRunDetails, currentUserId, currentProductPrompt]);
+
 
   const { data: allEvalParamsDetails = [], isLoading: isLoadingAllEvalParams } = useQuery<EvalParameterForPrompts[], Error>({
     queryKey: ['allEvalParamsDetailsForInsights', currentUserId],
@@ -343,6 +347,8 @@ export default function AiInsightsPage() {
   // Shared handlers for select changes
   const handleRunSelectChange = (runId: string) => {
     setSelectedRunId(runId);
+    // Clear dependent states when run changes
+    setCurrentProductPrompt(''); // Clear prompt to allow re-fetch
     setTargetEvalParamId(null);
     setDesiredTargetLabel(null);
     setSuggestionResult(null);
@@ -670,4 +676,6 @@ export default function AiInsightsPage() {
     </div>
   );
 }
+    
+
     
