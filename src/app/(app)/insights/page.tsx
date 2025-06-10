@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Lightbulb, ListChecks, Save, Trash2, HelpCircle, Users } from "lucide-react";
+import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Lightbulb, ListChecks, Save, Trash2, HelpCircle, Users, Info } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -284,15 +284,24 @@ export default function AiInsightsPage() {
     enabled: !!currentUserId && !!selectedRunId,
   });
 
+  // Helper to get selected prompt ID and version ID to avoid direct dependency on selectedPrompt/selectedVersion states
+  const getSelectedPromptContext = () => {
+    if (selectedEvalRunDetails) {
+      return {
+        promptId: selectedEvalRunDetails.promptId,
+        versionId: selectedEvalRunDetails.promptVersionId,
+      };
+    }
+    return { promptId: null, versionId: null };
+  };
 
   useEffect(() => {
     if (selectedEvalRunDetails) {
-      if (selectedEvalRunDetails.promptId && selectedEvalRunDetails.promptVersionId) {
+      const { promptId, versionId } = getSelectedPromptContext();
+      if (promptId && versionId) {
         // Only fetch if currentProductPrompt is not already set for this run, or if run changes
-        if (!currentProductPrompt || (selectedEvalRunDetails.promptId !== (selectedPrompt?.id || '') && selectedEvalRunDetails.promptVersionId !== (selectedVersion?.id || ''))) { 
-             fetchOriginalPromptText(currentUserId, selectedEvalRunDetails.promptId, selectedEvalRunDetails.promptVersionId)
-                .then(text => { if(text) setCurrentProductPrompt(text); });
-        }
+         fetchOriginalPromptText(currentUserId, promptId, versionId)
+            .then(text => { if(text) setCurrentProductPrompt(text); });
       }
       setTargetEvalParamId(null);
       setDesiredTargetLabel(null);
@@ -306,7 +315,7 @@ export default function AiInsightsPage() {
       setProblemAnalysisResult(null);
       setViewingSavedAnalysisId(null);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- currentProductPrompt should not re-trigger this if only its content changes but not run context
+  // eslint-disable-next-line react-hooks/exhaustive-deps 
   }, [selectedEvalRunDetails, currentUserId]);
 
 
@@ -550,6 +559,7 @@ export default function AiInsightsPage() {
     
     const overallSummaryKey = 'overallSummary' in problemAnalysisResult ? 'overallSummary' : ('overallSummaryOfUserIntents' in problemAnalysisResult ? 'overallSummaryOfUserIntents' : null);
     if (overallSummaryKey && problemAnalysisResult[overallSummaryKey as keyof typeof problemAnalysisResult] !== undefined) {
+        // Only add overallSummary if it's not undefined. Firestore doesn't like undefined.
         dataToSave.overallSummary = problemAnalysisResult[overallSummaryKey as keyof typeof problemAnalysisResult] as string;
     }
 
