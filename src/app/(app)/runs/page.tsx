@@ -386,9 +386,8 @@ export default function EvalRunsPage() {
                   <Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading options...</span>
                 </div>
               ) : (
-                <div className="flex-grow min-h-0 overflow-hidden"> 
-                  <ScrollArea className="h-full w-full"> 
-                    <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
+                <ScrollArea className="flex-grow min-h-0 w-full">
+                  <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
                       <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
                       <div> <Label htmlFor="run-type">Run Type</Label> <RadioGroup value={newRunType} onValueChange={(value: 'Product' | 'GroundTruth') => setNewRunType(value)} className="flex space-x-4 mt-1"> <div className="flex items-center space-x-2"> <RadioGroupItem value="Product" id="type-product" /> <Label htmlFor="type-product" className="font-normal">Product Run</Label> </div> <div className="flex items-center space-x-2"> <RadioGroupItem value="GroundTruth" id="type-gt" /> <Label htmlFor="type-gt" className="font-normal">Ground Truth Run</Label> </div> </RadioGroup> <p className="text-xs text-muted-foreground mt-1"> Product runs evaluate outputs. Ground Truth runs compare outputs to known correct labels.</p> </div>
                       <div> <Label htmlFor="run-dataset">Dataset</Label> <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required> <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger> <SelectContent>{datasets?.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent> </Select> </div>
@@ -428,9 +427,8 @@ export default function EvalRunsPage() {
                       )}
                       <div> <Label htmlFor="run-nrows">Test on first N rows (0 for all)</Label> <Input id="run-nrows" type="number" value={runOnNRows} onChange={(e) => { const val = parseInt(e.target.value, 10); setRunOnNRows(isNaN(val) ? 0 : val); }} min="0" /> <p className="text-xs text-muted-foreground mt-1">0 uses all (capped for preview). Max recommended for processing: 200.</p> </div>
                       <div> <Label htmlFor="run-concurrency">LLM Concurrency Limit</Label> <Input id="run-concurrency" type="number" value={newRunConcurrencyLimit} onChange={(e) => setNewRunConcurrencyLimit(Math.max(1, parseInt(e.target.value, 10) || 1))} min="1" max="20" /> <p className="text-xs text-muted-foreground mt-1">Number of LLM calls in parallel (e.g., 3-5). Max: 20.</p> </div>
-                    </form>
-                  </ScrollArea>
-                </div>
+                  </form>
+                </ScrollArea>
               )}
               {!isLoadingDialogData && (
                 <DialogFooter className="flex-shrink-0 p-6 pt-4 border-t">
