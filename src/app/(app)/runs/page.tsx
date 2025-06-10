@@ -376,7 +376,7 @@ export default function EvalRunsPage() {
           <div className="flex items-center gap-3"> <PlayCircle className="h-7 w-7 text-primary" /> <div> <CardTitle className="text-xl md:text-2xl font-headline">Evaluation Runs</CardTitle> <CardDescription>Manage and track your AI model evaluation runs. Choose between Product or Ground Truth comparison.</CardDescription> </div> </div>
            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
             <DialogTrigger asChild><Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending} className="w-full sm:w-auto"><PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run</Button></DialogTrigger>
-            <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh]">
+            <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh] p-0"> {/* Added p-0 here */}
               <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b">
                 <DialogTitle>Configure New Evaluation Run</DialogTitle>
                 <DialogDescription>Select components and parameters for your new eval run.</DialogDescription>
@@ -386,7 +386,7 @@ export default function EvalRunsPage() {
                   <Loader2 className="h-8 w-8 animate-spin" /> <span className="ml-2">Loading options...</span>
                 </div>
               ) : (
-                <div className="flex-grow min-h-0 overflow-hidden">
+                <div className="flex-grow min-h-0"> {/* Removed overflow-hidden as ScrollArea handles it */}
                   <ScrollArea className="h-full w-full">
                     <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-6 space-y-4">
                       <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
