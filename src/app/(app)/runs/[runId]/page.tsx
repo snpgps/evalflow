@@ -267,7 +267,7 @@ export default function RunDetailsPage() {
     staleTime: Infinity,
 });
 
-  const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & { id: string; updatedAt?: FieldValue } >({
+  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue } >({
     mutationFn: async (updatePayload) => {
       if (!currentUserId) throw new Error("User not identified.");
       const { id, ...dataFromPayload } = updatePayload;
@@ -280,7 +280,12 @@ export default function RunDetailsPage() {
           }
         }
       }
+      // Ensure updatedAt is always set, completedAt is conditional to the payload
       updateForFirestore.updatedAt = serverTimestamp();
+      if (updatePayload.completedAt) {
+        updateForFirestore.completedAt = updatePayload.completedAt;
+      }
+
       const runDocRef = doc(db, 'users', currentUserId, 'evaluationRuns', id);
       await updateDoc(runDocRef, updateForFirestore);
     },
@@ -297,7 +302,7 @@ export default function RunDetailsPage() {
             errorMessage: `Update during run failed: ${error.message}`
          };
          if (errorUpdatePayload.errorMessage === undefined) { errorUpdatePayload.errorMessage = "Undefined error occurred during update."; }
-         updateRunMutation.mutate(errorUpdatePayload);
+         updateRunMutation.mutate(errorUpdatePayload as any); // Cast as any to bypass stricter payload type temporarily for error case
       }
       if(isPreviewDataLoading) setIsPreviewDataLoading(false);
     }
