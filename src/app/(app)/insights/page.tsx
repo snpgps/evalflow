@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Lightbulb, ListChecks, Save, Trash2, HelpCircle, Users, Info } from "lucide-react";
+import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Lightbulb, ListChecks, Save, Trash2, HelpCircle, Users, Info, PanelLeftClose, PanelRightOpen } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,11 +32,11 @@ import {
   type ProblemCategory,
 } from '@/ai/flows/analyze-eval-problem-categories';
 import {
-  analyzeSummarizationProblems, // This function name remains the same, but its internal logic/prompt changed
+  analyzeSummarizationProblems,
   type AnalyzeSummarizationProblemsInput,
-  type AnalyzeSummarizationProblemsOutput as UserIntentAnalysisOutput, // Aliasing the output type for clarity
-  type UserIntentCategory, // This type is now for user intents
-} from '@/ai/flows/analyze-summarization-problems'; // Path is still the same file
+  type AnalyzeSummarizationProblemsOutput as UserIntentAnalysisOutput,
+  type UserIntentCategory,
+} from '@/ai/flows/analyze-summarization-problems';
 import type { EvalParameterForPrompts, CategorizationLabelForPrompts } from '@/app/(app)/prompts/page';
 import type { ProductParameterForPrompts } from '@/app/(app)/prompts/page';
 import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
@@ -74,11 +74,10 @@ interface StoredAnalysisDataForFirestore {
   desiredTargetLabel?: string;
   targetSummarizationDefId?: string;
   targetSummarizationDefName?: string;
-  // This field will hold either ProblemCategory[] or UserIntentCategory[]
   problemCategories: ProblemCategory[] | UserIntentCategory[];
   overallSummary?: string;
   sourceDataCount: number;
-  productContext?: string; // Added for summarization analysis context
+  productContext?: string;
 }
 
 interface StoredAnalysis extends Omit<StoredAnalysisDataForFirestore, 'createdAt' | 'problemCategories' | 'overallSummary' | 'sourceDataCount' | 'productContext'> {
@@ -189,13 +188,13 @@ const fetchStoredAnalysesForRun = async (userId: string | null, runId: string | 
             id: docSnap.id,
             analysisName: data.analysisName,
             createdAt: data.createdAt as Timestamp,
-            analysisType: data.analysisType || 'evaluation', // Default to evaluation for older data
+            analysisType: data.analysisType || 'evaluation', 
             targetEvalParamId: data.targetEvalParamId,
             targetEvalParamName: data.targetEvalParamName,
             desiredTargetLabel: data.desiredTargetLabel,
             targetSummarizationDefId: data.targetSummarizationDefId,
             targetSummarizationDefName: data.targetSummarizationDefName,
-            sourceDataCount: data.sourceDataCount || data.mismatchCountAnalyzed || 0, // Legacy field name
+            sourceDataCount: data.sourceDataCount || data.mismatchCountAnalyzed || 0, 
             productContext: data.productContext,
         } as StoredAnalysis;
     });
@@ -235,12 +234,11 @@ export default function AiInsightsPage() {
   const [currentProductPrompt, setCurrentProductPrompt] = useState('');
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   
-  // States for "Insights from Evals" tab
   const [analysisType, setAnalysisType] = useState<'evaluation' | 'summarization'>('evaluation');
   const [targetEvalParamId, setTargetEvalParamId] = useState<string | null>(null);
   const [desiredTargetLabel, setDesiredTargetLabel] = useState<string | null>(null);
   const [selectedSummarizationDefId, setSelectedSummarizationDefId] = useState<string | null>(null);
-  const [productContextForAnalysis, setProductContextForAnalysis] = useState(''); // New state for product context input
+  const [productContextForAnalysis, setProductContextForAnalysis] = useState(''); 
   
   const [mismatchDisplayData, setMismatchDisplayData] = useState<any[]>([]);
   const [mismatchDetailsForFlow, setMismatchDetailsForFlow] = useState<MismatchDetail[]>([]);
@@ -285,7 +283,6 @@ export default function AiInsightsPage() {
     enabled: !!currentUserId && !!selectedRunId,
   });
 
-  // Helper to get selected prompt ID and version ID to avoid direct dependency on selectedPrompt/selectedVersion states
   const getSelectedPromptContext = () => {
     if (selectedEvalRunDetails) {
       return {
@@ -300,14 +297,13 @@ export default function AiInsightsPage() {
     if (selectedEvalRunDetails) {
       const { promptId, versionId } = getSelectedPromptContext();
       if (promptId && versionId) {
-        // Only fetch if currentProductPrompt is not already set for this run, or if run changes
          fetchOriginalPromptText(currentUserId, promptId, versionId)
             .then(text => { if(text) setCurrentProductPrompt(text); });
       }
       setTargetEvalParamId(null);
       setDesiredTargetLabel(null);
       setSelectedSummarizationDefId(null);
-      setProductContextForAnalysis(''); // Reset product context
+      setProductContextForAnalysis(''); 
       setMismatchDisplayData([]);
       setMismatchDetailsForFlow([]);
       setSummariesForDisplay([]);
@@ -377,8 +373,8 @@ export default function AiInsightsPage() {
   useEffect(() => {
     if (analysisType === 'evaluation') {
         if (selectedEvalRunDetails && targetEvalParamId && desiredTargetLabel && allEvalParamsDetails.length > 0) {
-            const currentParamDetails = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
-            if (!currentParamDetails) {
+            const currentEvalParamDetails = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
+            if (!currentEvalParamDetails) {
                 if (mismatchDisplayData.length > 0) setMismatchDisplayData([]);
                 if (mismatchDetailsForFlow.length > 0) setMismatchDetailsForFlow([]);
                 return;
@@ -387,11 +383,12 @@ export default function AiInsightsPage() {
             const newMismatchesForFlow: MismatchDetail[] = [];
             selectedEvalRunDetails.results?.forEach(item => {
                 const llmOutput = item.judgeLlmOutput?.[targetEvalParamId];
+
                 if (llmOutput && typeof llmOutput.chosenLabel === 'string' && llmOutput.chosenLabel !== desiredTargetLabel && !llmOutput.error) {
                     if (newMismatchesForDisplay.length < 5) { 
                         newMismatchesForDisplay.push({ inputData: item.inputData, llmChosenLabel: llmOutput.chosenLabel, llmRationale: llmOutput.rationale, desiredTargetLabel: desiredTargetLabel });
                     }
-                    newMismatchesForFlow.push({ inputData: item.inputData, evaluationParameterName: currentParamDetails.name, evaluationParameterDefinition: currentParamDetails.definition, llmChosenLabel: llmOutput.chosenLabel, groundTruthLabel: desiredTargetLabel, llmRationale: llmOutput.rationale });
+                    newMismatchesForFlow.push({ inputData: item.inputData, evaluationParameterName: currentEvalParamDetails.name, evaluationParameterDefinition: currentEvalParamDetails.definition, llmChosenLabel: llmOutput.chosenLabel, groundTruthLabel: desiredTargetLabel, llmRationale: llmOutput.rationale });
                 }
             });
             if (JSON.stringify(newMismatchesForDisplay) !== JSON.stringify(mismatchDisplayData)) { setMismatchDisplayData(newMismatchesForDisplay); }
@@ -479,7 +476,7 @@ export default function AiInsightsPage() {
                 targetSummarizationDefinitionName: currentSummarizationDef.name,
                 targetSummarizationDefinitionText: currentSummarizationDef.definition,
                 productSchemaDescription: productParametersSchemaText,
-                productContext: productContextForAnalysis.trim() || undefined // Pass the product context
+                productContext: productContextForAnalysis.trim() || undefined 
             };
             const result = await analyzeSummarizationProblems(input);
             setProblemAnalysisResult(result);
@@ -530,8 +527,8 @@ export default function AiInsightsPage() {
     }
     let defaultName = "Analysis";
     if (analysisType === 'evaluation' && targetEvalParamId && desiredTargetLabel) {
-        const currentParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
-        if (currentParam) defaultName = `Eval Analysis for ${currentParam.name} - Label: ${desiredTargetLabel}`;
+        const currentEvalParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
+        if (currentEvalParam) defaultName = `Eval Analysis for ${currentEvalParam.name} - Label: ${desiredTargetLabel}`;
     } else if (analysisType === 'summarization' && selectedSummarizationDefId) {
         const currentDef = allSummarizationDefs.find(d => d.id === selectedSummarizationDefId);
         if (currentDef) defaultName = `User Intent Analysis for ${currentDef.name}`;
@@ -547,7 +544,6 @@ export default function AiInsightsPage() {
     }
     if (!problemAnalysisResult) return;
 
-    // problemCategories can be ProblemCategory[] or UserIntentCategory[], Firestore will handle it.
     const categoriesToSave = 'problemCategories' in problemAnalysisResult ? problemAnalysisResult.problemCategories : ('userIntentCategories' in problemAnalysisResult ? problemAnalysisResult.userIntentCategories : []);
 
     let overallSummaryToSave: string | undefined = undefined;
@@ -608,10 +604,19 @@ export default function AiInsightsPage() {
                 setProductContextForAnalysis(fullAnalysis.productContext || '');
             }
             
-            const resultToSet: AnalyzeEvalProblemCategoriesOutput | UserIntentAnalysisOutput = {
-              ...(fullAnalysis.analysisType === 'evaluation' && { problemCategories: fullAnalysis.problemCategories as ProblemCategory[], overallSummary: fullAnalysis.overallSummary }),
-              ...(fullAnalysis.analysisType === 'summarization' && { userIntentCategories: fullAnalysis.problemCategories as UserIntentCategory[], overallSummaryOfUserIntents: fullAnalysis.overallSummary }),
-            };
+            let resultToSet: AnalyzeEvalProblemCategoriesOutput | UserIntentAnalysisOutput;
+            if (fullAnalysis.analysisType === 'evaluation') {
+                resultToSet = {
+                    problemCategories: fullAnalysis.problemCategories as ProblemCategory[],
+                    overallSummary: fullAnalysis.overallSummary
+                };
+            } else { // analysisType === 'summarization'
+                resultToSet = {
+                    userIntentCategories: fullAnalysis.problemCategories as UserIntentCategory[],
+                    overallSummaryOfUserIntents: fullAnalysis.overallSummary
+                };
+            }
+            
             setProblemAnalysisResult(resultToSet);
 
             toast({title: "Viewing Saved Analysis", description: `Displaying "${fullAnalysis.analysisName}".`});
@@ -650,7 +655,6 @@ export default function AiInsightsPage() {
     setTargetEvalParamId(null);
     setDesiredTargetLabel(null);
     setSelectedSummarizationDefId(null);
-    // Keep productContextForAnalysis as it might be useful if user switches back and forth
     setMismatchDisplayData([]);
     setMismatchDetailsForFlow([]);
     setSummariesForDisplay([]);
@@ -857,7 +861,7 @@ export default function AiInsightsPage() {
                        {analysisType === 'evaluation' && (category as ProblemCategory).exampleMismatch && (
                          <CardContent>
                             <Accordion type="single" collapsible className="w-full">
-                              <AccordionItem value="item-1">
+                              <AccordionItem value={`item-mismatch-${index}`}>
                                 <AccordionTrigger className="text-xs py-2 hover:no-underline">View Example Mismatch Details</AccordionTrigger>
                                 <AccordionContent>
                                   <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1 mt-1">
@@ -874,7 +878,7 @@ export default function AiInsightsPage() {
                        {analysisType === 'summarization' && (category as UserIntentCategory).exampleSummaryIllustratingIntent && (
                          <CardContent>
                             <Accordion type="single" collapsible className="w-full">
-                              <AccordionItem value="item-1">
+                              <AccordionItem value={`item-summary-${index}`}>
                                 <AccordionTrigger className="text-xs py-2 hover:no-underline">View Example Summary Details</AccordionTrigger>
                                 <AccordionContent>
                                    <div className="p-2 bg-muted/50 rounded-sm text-xs space-y-1 mt-1">
