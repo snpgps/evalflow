@@ -344,16 +344,26 @@ export default function RunDetailsPage() {
 
 
   useEffect(() => {
-    if (evalParamDetailsForLLM && runDetails?.runType === 'GroundTruth') {
-      const initialFilters: Record<string, 'all' | 'match' | 'mismatch'> = {};
+    const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
+  
+    if (hasEvalParams && runDetails?.runType === 'GroundTruth') {
+      const newInitialFilters: Record<string, 'all' | 'match' | 'mismatch'> = {};
       evalParamDetailsForLLM.forEach(param => {
-        initialFilters[param.id] = 'all';
+        newInitialFilters[param.id] = 'all'; // Default to 'all'
       });
-      setFilterStates(initialFilters);
+  
+      // Only update if the new filters are actually different from the current ones
+      if (JSON.stringify(filterStates) !== JSON.stringify(newInitialFilters)) {
+        setFilterStates(newInitialFilters);
+      }
     } else {
-      setFilterStates({}); 
+      // Only update if filterStates is not already empty
+      // This handles cases where runType is not GroundTruth or no eval params are loaded yet
+      if (Object.keys(filterStates).length > 0) {
+        setFilterStates({});
+      }
     }
-  }, [evalParamDetailsForLLM, runDetails?.runType]);
+  }, [evalParamDetailsForLLM, runDetails?.runType, filterStates]);
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
