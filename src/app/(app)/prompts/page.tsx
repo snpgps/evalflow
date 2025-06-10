@@ -678,7 +678,7 @@ export default function PromptsPage() {
               disabled={!selectedVersion || updatePromptVersionMutation.isPending}
             />
           </div>
-          <div className="w-full lg:basis-1/3 lg:shrink lg:grow-0 border-t lg:border-t-0 lg:border-l p-4 bg-muted/20 flex flex-col min-w-0">
+          <div className="w-full lg:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l p-4 bg-muted/20 flex flex-col min-w-0">
             <ScrollArea className="flex-1 max-h-[40vh] lg:max-h-none">
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">Product Parameters</h3>
@@ -770,7 +770,7 @@ export default function PromptsPage() {
 
   return (
     <div className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-theme(spacing.28))] gap-6 p-4 md:p-0">
-      <Card className="w-full md:w-1/4 md:min-w-[300px] flex flex-col shadow-lg md:max-h-none">
+      <Card className="w-full md:w-[300px] md:shrink-0 flex flex-col shadow-lg md:max-h-none">
         <CardHeader className="border-b">
           <CardTitle>Prompt Templates</CardTitle>
           <CardDescription>Manage your Judge LLM prompts.</CardDescription>
