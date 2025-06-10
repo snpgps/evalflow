@@ -22,7 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 import { db, storage } from '@/lib/firebase';
-import { doc, getDoc, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp, type FieldValue, query, orderBy } from 'firebase/firestore';
+import { doc, getDoc, getDocs, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp, type FieldValue, query, orderBy } from 'firebase/firestore';
 import { ref as storageRef, getBlob } from 'firebase/storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
@@ -422,7 +422,7 @@ export default function RunDetailsPage() {
   };
 
   const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId], queryFn: () => fetchProductParametersForSchema(currentUserId!), enabled: !!currentUserId && isSuggestionDialogOpen, });
-  const handleSuggestImprovementsClick = async () => { /* Omitted for brevity, unchanged */
+  const handleSuggestImprovementsClick = async () => { 
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest Improvements", description: "Missing critical run data or configuration.", variant: "destructive" }); return; }
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
@@ -450,7 +450,7 @@ export default function RunDetailsPage() {
   const canStartLLMCategorization = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && evalParamDetailsForLLM.length > 0;
   const canDownloadResults = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
   const canSuggestImprovements = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails.results && runDetails.results.length > 0 && hasMismatches;
-  const getStatusBadge = (status: EvalRun['status']) => { /* Omitted for brevity, unchanged */
+  const getStatusBadge = (status: EvalRun['status']) => { 
     switch (status) {
       case 'Completed': return <Badge variant="default" className="text-base bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1.5 h-4 w-4" />Completed</Badge>;
       case 'Running': return <Badge variant="default" className="text-base bg-blue-500 hover:bg-blue-600"><Clock className="mr-1.5 h-4 w-4 animate-spin" />Running</Badge>;
