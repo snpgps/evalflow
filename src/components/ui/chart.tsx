@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -34,9 +35,12 @@ function useChart() {
   return context
 }
 
+// Define a base type for ChartContainer props that omits 'children' from HTMLDivElement's props
+type ChartContainerBaseProps = Omit<React.ComponentProps<"div">, "children">;
+
 const ChartContainer = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<"div"> & {
+  ChartContainerBaseProps & { // Use the base props type
     config: ChartConfig
     children: React.ComponentProps<
       typeof RechartsPrimitive.ResponsiveContainer
