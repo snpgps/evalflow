@@ -124,7 +124,7 @@ interface ContextDocumentDisplayDetail {
 }
 
 interface QuestioningItemContext {
-    rowIndex: number; 
+    rowIndex: number;
     inputData: Record<string, any>;
     paramId: string;
     paramName: string;
@@ -146,7 +146,7 @@ function sanitizeDataForFirestore(data: any): any {
       if (Object.prototype.hasOwnProperty.call(data, key)) {
         const value = data[key];
         if (value === undefined) {
-          sanitizedObject[key] = null; 
+          sanitizedObject[key] = null;
         } else {
           sanitizedObject[key] = sanitizeDataForFirestore(value);
         }
@@ -154,7 +154,7 @@ function sanitizeDataForFirestore(data: any): any {
     }
     return sanitizedObject;
   }
-  return data; 
+  return data;
 }
 
 
@@ -345,24 +345,24 @@ export default function RunDetailsPage() {
 
   useEffect(() => {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-  
+
     if (hasEvalParams && runDetails?.runType === 'GroundTruth') {
       const newInitialFilters: Record<string, 'all' | 'match' | 'mismatch'> = {};
       evalParamDetailsForLLM.forEach(param => {
         newInitialFilters[param.id] = 'all'; // Default to 'all'
       });
-  
+
       // Only update if the new filters are actually different from the current ones
       if (JSON.stringify(filterStates) !== JSON.stringify(newInitialFilters)) {
         setFilterStates(newInitialFilters);
       }
     } else {
       // Only update if filterStates is not already empty
-      // This handles cases where runType is not GroundTruth or no eval params are loaded yet
       if (Object.keys(filterStates).length > 0) {
         setFilterStates({});
       }
     }
+    // Add filterStates to dependencies because its current value is used in the comparison.
   }, [evalParamDetailsForLLM, runDetails?.runType, filterStates]);
 
 
@@ -384,7 +384,7 @@ export default function RunDetailsPage() {
       for (const key in dataFromPayload) {
         if (Object.prototype.hasOwnProperty.call(dataFromPayload, key)) {
           const value = (dataFromPayload as any)[key];
-          if (value !== undefined) { 
+          if (value !== undefined) {
             updateForFirestore[key] = value;
           }
         }
@@ -479,7 +479,7 @@ export default function RunDetailsPage() {
         if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows !== 0) { addLog(`Data Preview: User requested ${rowsToAttemptFromConfig} rows, but processing capped at ${MAX_ROWS_FOR_PROCESSING}.`); } else if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows === 0) { addLog(`Data Preview: "All rows" selected (${rowsToAttemptFromConfig}), processing capped at ${MAX_ROWS_FOR_PROCESSING}.`); }
         addLog(`Data Preview: Preparing ${dataSliceForStorage.length} rows for processing (User N: ${runDetails.runOnNRows === 0 ? 'All' : runDetails.runOnNRows}, System Cap: ${MAX_ROWS_FOR_PROCESSING}).`);
         const sampleForStorage: Array<Record<string, any>> = []; const productParamToOriginalColMap = versionConfig.columnMapping; const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
-        
+
         dataSliceForStorage.forEach((originalRow, index) => {
             const mappedRowForStorage: Record<string, any> = {};
             let rowHasAnyMappedData = false;
@@ -492,14 +492,14 @@ export default function RunDetailsPage() {
             for (const productParamName in productParamToOriginalColMap) {
                 const mappedOriginalColName = productParamToOriginalColMap[productParamName];
                 const normalizedMappedOriginalColName = String(mappedOriginalColName).trim().toLowerCase();
-                
+
                 const actualKeyInOriginalRow = normalizedOriginalRowKeys[normalizedMappedOriginalColName];
 
                 if (actualKeyInOriginalRow !== undefined) {
                     mappedRowForStorage[productParamName] = originalRow[actualKeyInOriginalRow];
                     rowHasAnyMappedData = true;
                 } else {
-                    mappedRowForStorage[productParamName] = undefined; 
+                    mappedRowForStorage[productParamName] = undefined;
                     addLog(`Data Preview: Warning: Row ${index + 1} missing/unmatched original column "${mappedOriginalColName}" (normalized: ${normalizedMappedOriginalColName}) for PRODUCT param "${productParamName}". Available (normalized): ${Object.keys(normalizedOriginalRowKeys).join(', ')}`);
                 }
             }
@@ -515,7 +515,7 @@ export default function RunDetailsPage() {
                         mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[actualKeyInOriginalRowForGt];
                         rowHasAnyMappedData = true;
                     } else {
-                         mappedRowForStorage[`_gt_${evalParamId}`] = undefined; 
+                         mappedRowForStorage[`_gt_${evalParamId}`] = undefined;
                         addLog(`Data Preview: Warning: Row ${index + 1} missing/unmatched GT column "${mappedGtColName}" (normalized: ${normalizedMappedGtColName}) for EVAL ID "${evalParamId}". Available (normalized): ${Object.keys(normalizedOriginalRowKeys).join(', ')}`);
                     }
                 }
@@ -528,9 +528,9 @@ export default function RunDetailsPage() {
             }
         });
 
-        addLog(`Data Preview: Processed ${sampleForStorage.length} rows for storage.`); 
+        addLog(`Data Preview: Processed ${sampleForStorage.length} rows for storage.`);
         const sanitizedSample = sanitizeDataForFirestore(sampleForStorage);
-        updateRunMutation.mutate({ id: runId, previewedDatasetSample: sanitizedSample, status: 'DataPreviewed', results: [] }); 
+        updateRunMutation.mutate({ id: runId, previewedDatasetSample: sanitizedSample, status: 'DataPreviewed', results: [] });
         toast({ title: "Data Preview Ready", description: `${sanitizedSample.length} rows fetched and mapped.`});
     } catch (error: any) { addLog(`Data Preview: Error: ${error.message}`, "error"); setPreviewDataError(error.message); toast({ title: "Preview Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `Data preview failed: ${error.message}` });
     } finally { setIsPreviewDataLoading(false); }
@@ -540,33 +540,33 @@ export default function RunDetailsPage() {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
     const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
 
-    if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) { 
-        const errorMsg = "Missing critical run configuration or no evaluation/summarization parameters selected."; 
-        toast({ title: "Cannot start LLM Task", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return; 
+    if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) {
+        const errorMsg = "Missing critical run configuration or no evaluation/summarization parameters selected.";
+        toast({ title: "Cannot start LLM Task", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return;
     }
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start LLM Task", description: "No dataset sample. Please fetch and preview data first.", variant: "destructive"}); addLog("Error: Attempted to start LLM task without previewed data.", "error"); return; }
-    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [] }); 
+    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [] });
     setSimulationLog([]); addLog("LLM task process initialized."); let collectedResults: EvalRunResultItem[] = [];
     try {
       const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateText) throw new Error("Failed to fetch prompt template text.");
-      addLog(`Fetched prompt template (v${runDetails.promptVersionNumber}).`); 
+      addLog(`Fetched prompt template (v${runDetails.promptVersionNumber}).`);
       if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} evaluation parameter details for LLM call.`);
       if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization definition details for LLM call.`);
-      
+
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} previewed rows with concurrency: ${effectiveConcurrencyLimit}.`);
       const parameterIdsRequiringRationale = hasEvalParams ? evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id) : [];
-      
+
       for (let batchStartIndex = 0; batchStartIndex < rowsToProcess; batchStartIndex += effectiveConcurrencyLimit) {
         const batchEndIndex = Math.min(batchStartIndex + effectiveConcurrencyLimit, rowsToProcess); const currentBatchRows = datasetToProcess.slice(batchStartIndex, batchEndIndex); addLog(`Preparing batch: Rows ${batchStartIndex + 1} to ${batchEndIndex}. Size: ${currentBatchRows.length}.`);
         const batchPromises = currentBatchRows.map(async (rawRowFromPreview, indexInBatch) => {
           const overallRowIndex = batchStartIndex + indexInBatch; const inputDataForRow: Record<string, any> = {}; const groundTruthDataForRow: Record<string, string> = {};
           for (const key in rawRowFromPreview) { if (key.startsWith('_gt_')) { groundTruthDataForRow[key.substring('_gt_'.length)] = String(rawRowFromPreview[key]); } else { inputDataForRow[key] = rawRowFromPreview[key]; } }
           let fullPromptForLLM = promptTemplateText; for (const productParamName in inputDataForRow) { fullPromptForLLM = fullPromptForLLM.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName])); }
-          
+
           let structuredCriteriaText = "";
           if (hasEvalParams) {
-            structuredCriteriaText += "\n\n--- EVALUATION CRITERIA (LABELING) ---\n"; 
-            evalParamDetailsForLLM.forEach(ep => { structuredCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaText += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaText += `  - "${label.name}": ${label.definition || 'No definition.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaText += " (No specific categorization labels)\n"; } structuredCriteriaText += "\n"; }); 
+            structuredCriteriaText += "\n\n--- EVALUATION CRITERIA (LABELING) ---\n";
+            evalParamDetailsForLLM.forEach(ep => { structuredCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaText += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaText += `  - "${label.name}": ${label.definition || 'No definition.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaText += " (No specific categorization labels)\n"; } structuredCriteriaText += "\n"; });
             structuredCriteriaText += "--- END EVALUATION CRITERIA ---\n";
           }
           if (hasSummarizationDefs) { // This condition is always checked now, regardless of runType
@@ -576,20 +576,20 @@ export default function RunDetailsPage() {
           }
           fullPromptForLLM += structuredCriteriaText;
 
-          const genkitInput: JudgeLlmEvaluationInput = { 
-            fullPromptText: fullPromptForLLM, 
-            evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [], 
+          const genkitInput: JudgeLlmEvaluationInput = {
+            fullPromptText: fullPromptForLLM,
+            evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [],
             summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [],
-            parameterIdsRequiringRationale: parameterIdsRequiringRationale 
+            parameterIdsRequiringRationale: parameterIdsRequiringRationale
           };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex };
           if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
           try { addLog(`Sending prompt for row ${overallRowIndex + 1} to Genkit flow...`); const judgeOutput = await judgeLlmEvaluation(genkitInput); addLog(`Genkit flow for row ${overallRowIndex + 1} responded.`); itemResultShell.judgeLlmOutput = judgeOutput;
-          } catch(flowError: any) { addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error"); 
-            const errorOutputForAllParams: Record<string, { chosenLabel?: string; generatedSummary?: string; error?: string }> = {}; 
-            runDetails.selectedEvalParamIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: flowError.message || 'Unknown error processing row with LLM.' }; }); 
-            runDetails.selectedSummarizationDefIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { generatedSummary: 'ERROR: Processing row with LLM.', error: flowError.message || 'Unknown error processing row with LLM.' }; }); 
-            itemResultShell.judgeLlmOutput = errorOutputForAllParams; 
+          } catch(flowError: any) { addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error");
+            const errorOutputForAllParams: Record<string, { chosenLabel?: string; generatedSummary?: string; error?: string }> = {};
+            runDetails.selectedEvalParamIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: flowError.message || 'Unknown error processing row with LLM.' }; });
+            runDetails.selectedSummarizationDefIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { generatedSummary: 'ERROR: Processing row with LLM.', error: flowError.message || 'Unknown error processing row with LLM.' }; });
+            itemResultShell.judgeLlmOutput = errorOutputForAllParams;
           }
           return itemResultShell;
         });
@@ -599,32 +599,32 @@ export default function RunDetailsPage() {
         const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
         updateRunMutation.mutate({ id: runId, progress: currentProgress, results: sanitizeDataForFirestore(collectedResults), status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing' });
       }
-      addLog("LLM tasks completed."); 
-      updateRunMutation.mutate({ id: runId, status: 'Completed', results: sanitizeDataForFirestore(collectedResults), progress: 100, completedAt: serverTimestamp() }); 
+      addLog("LLM tasks completed.");
+      updateRunMutation.mutate({ id: runId, status: 'Completed', results: sanitizeDataForFirestore(collectedResults), progress: 100, completedAt: serverTimestamp() });
       toast({ title: "LLM Tasks Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
-    } catch (error: any) { addLog(`Error during LLM tasks: ${error.message}`, "error"); console.error("LLM Task Error: ", error); toast({ title: "LLM Error", description: error.message, variant: "destructive" }); 
+    } catch (error: any) { addLog(`Error during LLM tasks: ${error.message}`, "error"); console.error("LLM Task Error: ", error); toast({ title: "LLM Error", description: error.message, variant: "destructive" });
     updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM task failed: ${error.message}`, results: sanitizeDataForFirestore(collectedResults) }); }
   };
 
   const handleDownloadResults = () => {
     if (!runDetails || !runDetails.results || runDetails.results.length === 0 ) { toast({ title: "No Results", description: "No results to download.", variant: "destructive" }); return; }
     const dataForExcel: any[] = []; const inputDataKeys = new Set<string>(); runDetails.results.forEach(item => { Object.keys(item.inputData).forEach(key => inputDataKeys.add(key)); }); const sortedInputDataKeys = Array.from(inputDataKeys).sort();
-    
-    runDetails.results.forEach(item => { 
-      const row: Record<string, any> = {}; 
+
+    runDetails.results.forEach(item => {
+      const row: Record<string, any> = {};
       sortedInputDataKeys.forEach(key => { row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : ''; });
-      
-      evalParamDetailsForLLM?.forEach(paramDetail => { 
-        const output = item.judgeLlmOutput[paramDetail.id]; 
+
+      evalParamDetailsForLLM?.forEach(paramDetail => {
+        const output = item.judgeLlmOutput[paramDetail.id];
         row[`${paramDetail.name} - LLM Label`] = output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A');
-        if (runDetails.runType === 'GroundTruth') { 
-          const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A'; 
-          row[`${paramDetail.name} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A'; 
-          const llmLabel = output?.chosenLabel; 
-          row[`${paramDetail.name} - Match`] = (llmLabel && gtValue !== 'N/A' && !output?.error && String(llmLabel).toLowerCase() === String(gtValue).toLowerCase()) ? 'Yes' : 'No'; 
+        if (runDetails.runType === 'GroundTruth') {
+          const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A';
+          row[`${paramDetail.name} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A';
+          const llmLabel = output?.chosenLabel;
+          row[`${paramDetail.name} - Match`] = (llmLabel && gtValue !== 'N/A' && !output?.error && String(llmLabel).toLowerCase() === String(gtValue).toLowerCase()) ? 'Yes' : 'No';
         }
-        row[`${paramDetail.name} - LLM Rationale`] = output?.rationale || ''; 
-        if(output?.error) row[`${paramDetail.name} - LLM Error`] = output.error; 
+        row[`${paramDetail.name} - LLM Rationale`] = output?.rationale || '';
+        if(output?.error) row[`${paramDetail.name} - LLM Error`] = output.error;
       });
 
       summarizationDefDetailsForLLM?.forEach(summDefDetail => {
@@ -633,14 +633,14 @@ export default function RunDetailsPage() {
         if(output?.error) row[`${summDefDetail.name} - LLM Error`] = output.error;
       });
 
-      dataForExcel.push(row); 
+      dataForExcel.push(row);
     });
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results"); const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`; XLSX.writeFile(workbook, fileName); toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
   };
 
   const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId], queryFn: () => fetchProductParametersForSchema(currentUserId!), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
-  
-  const handleSuggestImprovementsClick = async () => { 
+
+  const handleSuggestImprovementsClick = async () => {
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest Improvements", description: "Missing critical run data, evaluation parameters, or results for Ground Truth comparison.", variant: "destructive" }); return; }
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
@@ -654,10 +654,16 @@ export default function RunDetailsPage() {
       const result = await suggestRecursivePromptImprovements(flowInput); setSuggestionResult(result);
     } catch (error: any) { console.error("Error suggesting improvements:", error); setSuggestionError(error.message || "Failed to get suggestions."); } finally { setIsLoadingSuggestion(false); }
   };
-  
+
   const handleOpenQuestionDialog = (item: EvalRunResultItem, paramId: string, rowIndex: number) => {
     const paramDetail = evalParamDetailsForLLM.find(p => p.id === paramId);
-    if (!paramDetail || !item.judgeLlmOutput[paramId]) return;
+    const outputData = item.judgeLlmOutput[paramId];
+
+    if (!paramDetail || !outputData || typeof outputData.chosenLabel !== 'string') {
+        console.error("Attempted to open question dialog with invalid data for judgeLlmOutput. ParamDetail:", paramDetail, "OutputData:", outputData);
+        toast({ title: "Internal Error", description: "Could not open question dialog due to inconsistent data.", variant: "destructive" });
+        return;
+    }
 
     setQuestioningItemData({
         rowIndex,
@@ -666,7 +672,11 @@ export default function RunDetailsPage() {
         paramName: paramDetail.name,
         paramDefinition: paramDetail.definition,
         paramLabels: paramDetail.labels,
-        judgeLlmOutput: item.judgeLlmOutput[paramId],
+        judgeLlmOutput: {
+            chosenLabel: outputData.chosenLabel, // Known to be string due to guard and button logic
+            rationale: outputData.rationale,
+            error: outputData.error,
+        },
         groundTruthLabel: item.groundTruth ? item.groundTruth[paramId] : undefined,
     });
     setUserQuestionText('');
@@ -708,15 +718,15 @@ export default function RunDetailsPage() {
     }
   };
 
-  const hasMismatches = useMemo(() => { 
-    if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; 
-    return runDetails.results.some(item => 
-      evalParamDetailsForLLM.some(paramDetail => { 
-        const llmOutput = item.judgeLlmOutput[paramDetail.id]; 
-        const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; 
-        return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase(); 
+  const hasMismatches = useMemo(() => {
+    if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false;
+    return runDetails.results.some(item =>
+      evalParamDetailsForLLM.some(paramDetail => {
+        const llmOutput = item.judgeLlmOutput[paramDetail.id];
+        const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
+        return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase();
       })
-    ); 
+    );
   }, [runDetails, evalParamDetailsForLLM]);
 
   const handleFilterChange = (paramId: string, value: 'all' | 'match' | 'mismatch') => {
@@ -731,7 +741,7 @@ export default function RunDetailsPage() {
 
     return runDetails.results.filter(item => {
       for (const paramId in filterStates) {
-        if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) continue; 
+        if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) continue;
 
         const filterValue = filterStates[paramId];
         if (filterValue === 'all') continue;
@@ -764,7 +774,7 @@ export default function RunDetailsPage() {
   const canStartLLMTask = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook && ( (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0) ); // Adjusted for either task type
   const canDownloadResults = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
   const canSuggestImprovements = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-  const getStatusBadge = (status: EvalRun['status']) => { 
+  const getStatusBadge = (status: EvalRun['status']) => {
     switch (status) {
       case 'Completed': return <Badge variant="default" className="text-base bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1.5 h-4 w-4" />Completed</Badge>;
       case 'Running': return <Badge variant="default" className="text-base bg-blue-500 hover:bg-blue-600"><Clock className="mr-1.5 h-4 w-4 animate-spin" />Running</Badge>;
@@ -868,14 +878,14 @@ export default function RunDetailsPage() {
                     <TableBody>{filteredResultsToDisplay.map((item, index) => (<TableRow key={`result-${index}`}><TableCell className="text-xs align-top"><pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre></TableCell>
                       {evalParamDetailsForLLM?.map(paramDetail => {
                         const paramId = paramDetail.id; const outputForCell = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = outputForCell?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && !outputForCell?.error && String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
-                        return ( 
-                          <TableCell key={paramId} className="text-xs align-top"> 
+                        return (
+                          <TableCell key={paramId} className="text-xs align-top">
                             <div className="flex justify-between items-start">
                               <div>
-                                <div><strong>LLM Label:</strong> {outputForCell?.chosenLabel || (outputForCell?.error ? 'ERROR' : 'N/A')}</div> 
-                                {outputForCell?.error && <div className="text-destructive text-[10px]">Error: {outputForCell.error}</div>} 
-                                {showGroundTruth && !outputForCell?.error && ( <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}> <div className="flex items-center"> <strong>GT:</strong>&nbsp;{gtLabel} {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>} </div> </div> )} 
-                                {outputForCell?.rationale && ( <details className="mt-1"> <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center"> <MessageSquareText className="h-3 w-3 mr-1"/> LLM Rationale </summary> <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{outputForCell.rationale}</p> </details> )} 
+                                <div><strong>LLM Label:</strong> {outputForCell?.chosenLabel || (outputForCell?.error ? 'ERROR' : 'N/A')}</div>
+                                {outputForCell?.error && <div className="text-destructive text-[10px]">Error: {outputForCell.error}</div>}
+                                {showGroundTruth && !outputForCell?.error && ( <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}> <div className="flex items-center"> <strong>GT:</strong>&nbsp;{gtLabel} {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>} </div> </div> )}
+                                {outputForCell?.rationale && ( <details className="mt-1"> <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center"> <MessageSquareText className="h-3 w-3 mr-1"/> LLM Rationale </summary> <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{outputForCell.rationale}</p> </details> )}
                               </div>
                               {outputForCell && !outputForCell.error && outputForCell.chosenLabel && (
                                 <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 ml-1" title="Question this Judgement" onClick={() => handleOpenQuestionDialog(item, paramId, index)}>
@@ -883,7 +893,7 @@ export default function RunDetailsPage() {
                                 </Button>
                               )}
                             </div>
-                          </TableCell> 
+                          </TableCell>
                         );
                       })}
                       {summarizationDefDetailsForLLM?.map(summDef => {
@@ -995,13 +1005,13 @@ export default function RunDetailsPage() {
                       {runDetails?.runType === 'GroundTruth' && <div><strong>Ground Truth Label:</strong> {questioningItemData.groundTruthLabel || 'N/A'}</div>}
                     </CardContent>
                   </Card>
-                  
+
                   <div>
                     <Label htmlFor="userQuestionText">Your Question/Reasoning for Discrepancy:</Label>
-                    <Textarea 
-                      id="userQuestionText" 
-                      value={userQuestionText} 
-                      onChange={(e) => setUserQuestionText(e.target.value)} 
+                    <Textarea
+                      id="userQuestionText"
+                      value={userQuestionText}
+                      onChange={(e) => setUserQuestionText(e.target.value)}
                       placeholder="e.g., 'I believe the LLM missed the nuance in the user's request regarding X...' or 'The ground truth is Y because...'"
                       rows={4}
                       className="mt-1"
@@ -1027,9 +1037,9 @@ export default function RunDetailsPage() {
                       <CardContent className="p-0 space-y-2 text-xs">
                         <p><strong>Analysis:</strong> {judgmentAnalysisResult.analysis}</p>
                         <div className="flex items-center gap-2">
-                          <strong>Agrees with User Concern:</strong> 
-                          <Badge 
-                            variant={judgmentAnalysisResult.agreesWithUserConcern ? "default" : "secondary"} 
+                          <strong>Agrees with User Concern:</strong>
+                          <Badge
+                            variant={judgmentAnalysisResult.agreesWithUserConcern ? "default" : "secondary"}
                             className={judgmentAnalysisResult.agreesWithUserConcern ? "bg-green-100 text-green-700 border-green-300" : ""}
                           >
                             {judgmentAnalysisResult.agreesWithUserConcern ? 'Yes' : 'No'}
