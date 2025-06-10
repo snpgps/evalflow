@@ -387,7 +387,7 @@ export default function AiInsightsPage() {
             const newMismatchesForFlow: MismatchDetail[] = [];
             selectedEvalRunDetails.results?.forEach(item => {
                 const llmOutput = item.judgeLlmOutput?.[targetEvalParamId];
-                if (llmOutput && llmOutput.chosenLabel !== desiredTargetLabel && !llmOutput.error) {
+                if (llmOutput && typeof llmOutput.chosenLabel === 'string' && llmOutput.chosenLabel !== desiredTargetLabel && !llmOutput.error) {
                     if (newMismatchesForDisplay.length < 5) { 
                         newMismatchesForDisplay.push({ inputData: item.inputData, llmChosenLabel: llmOutput.chosenLabel, llmRationale: llmOutput.rationale, desiredTargetLabel: desiredTargetLabel });
                     }
@@ -550,19 +550,23 @@ export default function AiInsightsPage() {
     // problemCategories can be ProblemCategory[] or UserIntentCategory[], Firestore will handle it.
     const categoriesToSave = 'problemCategories' in problemAnalysisResult ? problemAnalysisResult.problemCategories : ('userIntentCategories' in problemAnalysisResult ? problemAnalysisResult.userIntentCategories : []);
 
+    let overallSummaryToSave: string | undefined = undefined;
+    if ('overallSummary' in problemAnalysisResult && problemAnalysisResult.overallSummary) {
+      overallSummaryToSave = problemAnalysisResult.overallSummary;
+    } else if ('overallSummaryOfUserIntents' in problemAnalysisResult && problemAnalysisResult.overallSummaryOfUserIntents) {
+      overallSummaryToSave = problemAnalysisResult.overallSummaryOfUserIntents;
+    }
+
+
     const dataToSave: Partial<StoredAnalysisDataForFirestore> & Pick<StoredAnalysisDataForFirestore, 'analysisName' | 'createdAt' | 'analysisType' | 'problemCategories' | 'sourceDataCount'> = {
       analysisName: analysisNameToSave.trim(),
       createdAt: serverTimestamp(),
       analysisType: analysisType,
       problemCategories: categoriesToSave,
       sourceDataCount: analysisType === 'evaluation' ? mismatchDetailsForFlow.length : summariesForFlow.length,
+      overallSummary: overallSummaryToSave,
     };
     
-    const overallSummaryKey = 'overallSummary' in problemAnalysisResult ? 'overallSummary' : ('overallSummaryOfUserIntents' in problemAnalysisResult ? 'overallSummaryOfUserIntents' : null);
-    if (overallSummaryKey && problemAnalysisResult[overallSummaryKey as keyof typeof problemAnalysisResult] !== undefined) {
-        dataToSave.overallSummary = problemAnalysisResult[overallSummaryKey as keyof typeof problemAnalysisResult] as string;
-    }
-
 
     if (analysisType === 'evaluation' && targetEvalParamId && desiredTargetLabel) {
         const currentParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
@@ -847,7 +851,7 @@ export default function AiInsightsPage() {
                   <h3 className="text-lg font-semibold"> {viewingSavedAnalysisId ? `Details for Saved Analysis: "${storedAnalyses.find(sa => sa.id === viewingSavedAnalysisId)?.analysisName}"` : (analysisType === 'evaluation' ? "Identified Problem Categories:" : "Identified User Intent Categories:")} </h3>
                   {(('problemCategories' in problemAnalysisResult && problemAnalysisResult.problemCategories.length === 0) || ('userIntentCategories' in problemAnalysisResult && problemAnalysisResult.userIntentCategories.length === 0) ) && ( <p className="text-muted-foreground">The AI could not identify distinct categories.</p> )}
                   
-                  {('problemCategories' in problemAnalysisResult ? problemAnalysisResult.problemCategories : ('userIntentCategories' in problemAnalysisResult ? problemAnalysisResult.userIntentCategories : [])).map((category: ProblemCategory | UserIntentCategory, index) => (
+                  {(('problemCategories' in problemAnalysisResult ? problemAnalysisResult.problemCategories : ('userIntentCategories' in problemAnalysisResult ? problemAnalysisResult.userIntentCategories : [])) as Array<ProblemCategory | UserIntentCategory>).map((category, index) => (
                      <Card key={`problem-intent-${index}`} className="w-full">
                        <CardHeader> <CardTitle className="text-md">{category.categoryName} <Badge variant="secondary" className="ml-2">{category.count} item(s)</Badge></CardTitle> <CardDescription>{category.description}</CardDescription> </CardHeader>
                        {analysisType === 'evaluation' && (category as ProblemCategory).exampleMismatch && (
@@ -902,7 +906,7 @@ export default function AiInsightsPage() {
                                 <Card key={sa.id} className="p-3 bg-muted/50">
                                     <div className="flex justify-between items-start">
                                         <div className="min-w-0">
-                                            <div className="font-semibold flex items-center flex-wrap gap-x-2">
+                                          <div className="font-semibold flex items-center flex-wrap gap-x-2">
                                               <span className="truncate">{sa.analysisName}</span>
                                               <Badge variant="outline" className="ml-1 text-xs shrink-0">{sa.analysisType === 'evaluation' ? 'Eval Param Problems' : 'User Intents'}</Badge>
                                             </div>
@@ -948,6 +952,4 @@ export default function AiInsightsPage() {
     </div>
   );
 }
-    
-
     
