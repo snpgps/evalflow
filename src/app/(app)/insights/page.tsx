@@ -254,9 +254,17 @@ export default function AiInsightsPage() {
   const [problemAnalysisError, setProblemAnalysisError] = useState<string | null>(null);
   const [viewingSavedAnalysisId, setViewingSavedAnalysisId] = useState<string | null>(null);
 
+  const [analysisLog, setAnalysisLog] = useState<string[]>([]);
+
 
   const [isSaveAnalysisDialogOpen, setIsSaveAnalysisDialogOpen] = useState(false);
   const [analysisNameToSave, setAnalysisNameToSave] = useState('');
+
+  const addAnalysisLog = (message: string, type: 'info' | 'error' = 'info') => {
+    const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
+    console[type === 'error' ? 'error' : 'log'](logEntry); // Keep console log for debugging
+    setAnalysisLog(prev => [...prev, logEntry].slice(-50)); // Keep last 50 logs
+  };
 
 
   useEffect(() => {
@@ -311,6 +319,7 @@ export default function AiInsightsPage() {
       setSuggestionResult(null);
       setProblemAnalysisResult(null);
       setViewingSavedAnalysisId(null);
+      setAnalysisLog([]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps 
   }, [selectedEvalRunDetails, currentUserId]);
@@ -452,23 +461,51 @@ export default function AiInsightsPage() {
     setViewingSavedAnalysisId(null);
     setProblemAnalysisResult(null);
     setProblemAnalysisError(null);
+    setAnalysisLog([]);
+    addAnalysisLog("Analysis started...");
 
     if (analysisType === 'evaluation') {
-        if (mismatchDetailsForFlow.length === 0) { toast({ title: "No Mismatches", description: "No rows found where the LLM output differs from your desired target label.", variant: "default" }); return; }
+        addAnalysisLog("Analysis Type: Evaluation Parameter Problems");
+        if (mismatchDetailsForFlow.length === 0) { 
+            addAnalysisLog("No mismatch data found for analysis.", "error");
+            toast({ title: "No Mismatches", description: "No rows found where the LLM output differs from your desired target label.", variant: "default" }); return; 
+        }
         const currentEvalParam = allEvalParamsDetails.find(p => p.id === targetEvalParamId);
-        if (!currentEvalParam || !desiredTargetLabel) { toast({ title: "Input Error", description: "Target evaluation parameter or desired label not fully selected.", variant: "destructive"}); return; }
+        if (!currentEvalParam || !desiredTargetLabel) { 
+            addAnalysisLog("Target evaluation parameter or desired label not fully selected.", "error");
+            toast({ title: "Input Error", description: "Target evaluation parameter or desired label not fully selected.", variant: "destructive"}); return; 
+        }
+        addAnalysisLog(`Target Parameter: ${currentEvalParam.name}, Desired Label: ${desiredTargetLabel}`);
+        addAnalysisLog(`Analyzing ${mismatchDetailsForFlow.length} mismatch details.`);
         setIsLoadingProblemAnalysis(true);
         try {
             const input: AnalyzeEvalProblemCategoriesInput = { mismatchDetails: mismatchDetailsForFlow, targetEvaluationParameterName: currentEvalParam.name, targetEvaluationParameterDefinition: currentEvalParam.definition, desiredTargetLabel: desiredTargetLabel, productSchemaDescription: productParametersSchemaText };
+            addAnalysisLog("Sending request to AI for problem category analysis...");
             const result = await analyzeEvalProblemCategories(input);
             setProblemAnalysisResult(result);
+            addAnalysisLog("Problem category analysis successful.");
             toast({ title: "Problem Analysis Complete!", description: "Review the categorized problems below." });
-        } catch (error) { console.error("Error analyzing eval problems:", error); const errorMessage = (error as Error).message || "Failed to analyze problems."; setProblemAnalysisError(errorMessage); toast({ title: "Analysis Error", description: errorMessage, variant: "destructive" });
-        } finally { setIsLoadingProblemAnalysis(false); }
+        } catch (error) { 
+            const errorMessage = (error as Error).message || "Failed to analyze problems."; 
+            addAnalysisLog(`Error during problem analysis: ${errorMessage}`, "error");
+            console.error("Error analyzing eval problems:", error); 
+            setProblemAnalysisError(errorMessage); 
+            toast({ title: "Analysis Error", description: errorMessage, variant: "destructive" });
+        } finally { setIsLoadingProblemAnalysis(false); addAnalysisLog("Analysis finished."); }
     } else if (analysisType === 'summarization') {
-        if (summariesForFlow.length === 0) { toast({ title: "No Summaries", description: "No generated summaries found for the selected definition in this run.", variant: "default" }); return; }
+        addAnalysisLog("Analysis Type: User Intent from Summaries");
+        if (summariesForFlow.length === 0) { 
+            addAnalysisLog("No summary data found for analysis.", "error");
+            toast({ title: "No Summaries", description: "No generated summaries found for the selected definition in this run.", variant: "default" }); return; 
+        }
         const currentSummarizationDef = allSummarizationDefs.find(d => d.id === selectedSummarizationDefId);
-        if (!currentSummarizationDef) { toast({ title: "Input Error", description: "Target summarization definition not selected.", variant: "destructive"}); return; }
+        if (!currentSummarizationDef) { 
+            addAnalysisLog("Target summarization definition not selected.", "error");
+            toast({ title: "Input Error", description: "Target summarization definition not selected.", variant: "destructive"}); return; 
+        }
+        addAnalysisLog(`Target Summarization Definition: ${currentSummarizationDef.name}`);
+        if (productContextForAnalysis.trim()) addAnalysisLog(`Product Context: ${productContextForAnalysis.trim()}`);
+        addAnalysisLog(`Analyzing ${summariesForFlow.length} generated summaries.`);
         setIsLoadingProblemAnalysis(true);
         try {
             const input: AnalyzeSummarizationProblemsInput = {
@@ -478,11 +515,18 @@ export default function AiInsightsPage() {
                 productSchemaDescription: productParametersSchemaText,
                 productContext: productContextForAnalysis.trim() || undefined 
             };
+            addAnalysisLog("Sending request to AI for user intent analysis...");
             const result = await analyzeSummarizationProblems(input);
             setProblemAnalysisResult(result);
+            addAnalysisLog("User intent analysis successful.");
             toast({ title: "User Intent Analysis Complete!", description: "Review the categorized user intents below." });
-        } catch (error) { console.error("Error analyzing user intents from summaries:", error); const errorMessage = (error as Error).message || "Failed to analyze summaries for intents."; setProblemAnalysisError(errorMessage); toast({ title: "Analysis Error", description: errorMessage, variant: "destructive" });
-        } finally { setIsLoadingProblemAnalysis(false); }
+        } catch (error) { 
+            const errorMessage = (error as Error).message || "Failed to analyze summaries for intents."; 
+            addAnalysisLog(`Error during user intent analysis: ${errorMessage}`, "error");
+            console.error("Error analyzing user intents from summaries:", error); 
+            setProblemAnalysisError(errorMessage); 
+            toast({ title: "Analysis Error", description: errorMessage, variant: "destructive" });
+        } finally { setIsLoadingProblemAnalysis(false); addAnalysisLog("Analysis finished."); }
     }
   };
 
@@ -513,6 +557,7 @@ export default function AiInsightsPage() {
         if (viewingSavedAnalysisId === deletedAnalysisId) { 
             setProblemAnalysisResult(null); 
             setViewingSavedAnalysisId(null);
+            setAnalysisLog([]);
         }
     },
     onError: (error) => {
@@ -588,9 +633,12 @@ export default function AiInsightsPage() {
     setViewingSavedAnalysisId(analysisId);
     setProblemAnalysisResult(null); 
     setProblemAnalysisError(null);
+    setAnalysisLog([]); 
+    addAnalysisLog(`Loading saved analysis: ${analysisId}...`);
     try {
         const fullAnalysis = await fetchSingleStoredAnalysisDetails(currentUserId, selectedRunId, analysisId);
         if (fullAnalysis) {
+            addAnalysisLog(`Successfully loaded "${fullAnalysis.analysisName}".`);
             setAnalysisType(fullAnalysis.analysisType); 
             if (fullAnalysis.analysisType === 'evaluation') {
                 setTargetEvalParamId(fullAnalysis.targetEvalParamId || null);
@@ -611,9 +659,9 @@ export default function AiInsightsPage() {
                     overallSummary: fullAnalysis.overallSummary
                 };
             } else { // analysisType === 'summarization'
-                resultToSet = {
+                 resultToSet = { 
                     userIntentCategories: fullAnalysis.problemCategories as UserIntentCategory[],
-                    overallSummaryOfUserIntents: fullAnalysis.overallSummary
+                    overallSummaryOfUserIntents: fullAnalysis.overallSummary 
                 };
             }
             
@@ -621,10 +669,12 @@ export default function AiInsightsPage() {
 
             toast({title: "Viewing Saved Analysis", description: `Displaying "${fullAnalysis.analysisName}".`});
         } else {
+            addAnalysisLog(`Error: Could not load details for saved analysis ID ${analysisId}.`, 'error');
             toast({title: "Error", description: "Could not load details for the saved analysis.", variant: "destructive"});
             setViewingSavedAnalysisId(null);
         }
     } catch (error: any) {
+        addAnalysisLog(`Error loading saved analysis: ${error.message}`, 'error');
         toast({title: "Error Loading Analysis", description: error.message, variant: "destructive"});
         setViewingSavedAnalysisId(null);
     }
@@ -648,6 +698,7 @@ export default function AiInsightsPage() {
     setProblemAnalysisResult(null); setProblemAnalysisError(null);
     setViewingSavedAnalysisId(null);
     setAnalysisType('evaluation'); 
+    setAnalysisLog([]);
   };
 
   const handleAnalysisTypeChange = (newType: 'evaluation' | 'summarization') => {
@@ -662,6 +713,7 @@ export default function AiInsightsPage() {
     setProblemAnalysisResult(null);
     setProblemAnalysisError(null);
     setViewingSavedAnalysisId(null);
+    setAnalysisLog([]);
   };
 
   
@@ -670,18 +722,21 @@ export default function AiInsightsPage() {
     setDesiredTargetLabel(null); 
     setProblemAnalysisResult(null); setProblemAnalysisError(null);
     setViewingSavedAnalysisId(null);
+    setAnalysisLog([]);
   };
   
   const handleLabelSelectChange = (label: string) => { 
     setDesiredTargetLabel(label);
     setProblemAnalysisResult(null); setProblemAnalysisError(null);
     setViewingSavedAnalysisId(null);
+    setAnalysisLog([]);
   };
 
   const handleSummarizationDefSelectChange = (defId: string) => { 
     setSelectedSummarizationDefId(defId);
     setProblemAnalysisResult(null); setProblemAnalysisError(null);
     setViewingSavedAnalysisId(null);
+    setAnalysisLog([]);
   };
 
 
@@ -848,7 +903,15 @@ export default function AiInsightsPage() {
                 } className="w-full sm:w-auto"> {isLoadingProblemAnalysis ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (analysisType === 'evaluation' ? <ListChecks className="mr-2 h-4 w-4" /> : <Users className="mr-2 h-4 w-4" /> )} {isLoadingProblemAnalysis ? 'Analyzing...' : (analysisType === 'evaluation' ? 'Find Problem Categories' : 'Find User Intents')} </Button>
                 <Button variant="outline" onClick={handleSaveCurrentAnalysis} disabled={!problemAnalysisResult || saveAnalysisMutation.isPending || viewingSavedAnalysisId !== null} className="w-full sm:w-auto"> <Save className="mr-2 h-4 w-4" /> Save Current Analysis </Button>
               </CardContent>
-              {isLoadingProblemAnalysis && ( <CardFooter className="pt-6 border-t"> <div className="flex items-center space-x-2"> <Loader2 className="h-6 w-6 animate-spin text-primary" /> <p className="text-muted-foreground">AI is analyzing...</p> </div> </CardFooter> )}
+              {(isLoadingProblemAnalysis || analysisLog.length > 0) && (
+                <CardFooter className="pt-4 border-t">
+                    <Card className="w-full max-h-40 overflow-y-auto p-2 bg-muted/50 text-xs">
+                        <p className="font-semibold mb-1">Analysis Log:</p>
+                        {analysisLog.map((log, i) => <p key={`analysis-log-${i}`} className="whitespace-pre-wrap font-mono">{log}</p>)}
+                        {isLoadingProblemAnalysis && analysisLog.length === 0 && <p className="whitespace-pre-wrap font-mono">Initializing analysis...</p>}
+                    </Card>
+                </CardFooter>
+              )}
               {problemAnalysisError && !isLoadingProblemAnalysis && ( <CardFooter className="pt-6 border-t"> <Alert variant="destructive"> <AlertTriangle className="h-4 w-4" /> <AlertTitle>Analysis Error</AlertTitle> <AlertDescription>{problemAnalysisError}</AlertDescription> </Alert> </CardFooter> )}
               {problemAnalysisResult && !isLoadingProblemAnalysis && (
                 <CardFooter className="flex flex-col items-start space-y-4 pt-6 border-t">
@@ -956,6 +1019,4 @@ export default function AiInsightsPage() {
     </div>
   );
 }
-    
-
     
