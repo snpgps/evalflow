@@ -194,33 +194,31 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
     inputSchema: AnalyzeSummarizationProblemsInputSchema,
     outputSchema: AnalyzeSummarizationProblemsOutputSchema,
   },
-  async (input) => {
+  async (input): Promise<AnalyzeSummarizationProblemsOutput> => {
     try { // Top-level try-catch for the entire flow
-      if (!input.generatedSummaryDetails || input.generatedSummaryDetails.length === 0) {
+      if (!input || !input.generatedSummaryDetails || input.generatedSummaryDetails.length === 0) {
           return { userIntentCategories: [], overallSummaryOfUserIntents: "No summaries provided to analyze user intents." };
       }
 
       const allSummaries = input.generatedSummaryDetails;
-      let usageString = 'N/A'; // For safer stringification
 
       if (allSummaries.length <= BATCH_SIZE) {
         // Process as a single batch
         try {
           const { output, usage } = await batchAnalysisPrompt(input);
-          if (usage !== undefined) { try { usageString = JSON.stringify(usage); } catch (e) { usageString = 'Could not stringify usage details.'; console.error("Failed to stringify usage for single batch:", e, usage);}}
           if (!output) {
-            console.error('LLM did not return a parsable output for single batch user intent analysis. Usage:', usageString);
+            console.error('LLM did not return a parsable output for single batch user intent analysis. Usage:', usage ? JSON.stringify(usage).substring(0, 100) : 'N/A');
             return {
                 userIntentCategories: [],
-                overallSummaryOfUserIntents: "Error: The AI model did not return a parsable output. Usage: " + usageString
+                overallSummaryOfUserIntents: "Error: The AI model did not return a parsable output for user intent analysis."
             };
           }
           return output;
         } catch (error: any) {
-            console.error('Error in single batch internalAnalyzeSummarizationProblemsFlow:', error);
+            console.error('Error in single batch internalAnalyzeUserIntentsFromSummariesFlow:', error);
             return {
                 userIntentCategories: [],
-                overallSummaryOfUserIntents: `Error executing user intent analysis flow: ${error.message || 'Unknown error'}. Check server logs.`
+                overallSummaryOfUserIntents: `Error executing user intent analysis flow: ${error.message || 'Unknown error'}.`
             };
         }
       } else {
@@ -241,17 +239,19 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
               collectedBatchedCategories.push(...batchOutput.userIntentCategories);
               totalSummariesProcessedInBatches += batchSummaries.length;
             } else {
-              let batchUsageString = 'N/A';
-              if (batchUsage !== undefined) { try { batchUsageString = JSON.stringify(batchUsage); } catch (e) { batchUsageString = 'Could not stringify usage details.'; console.error("Failed to stringify usage for batch:", e, batchUsage);}}
-              console.warn(`Batch ${Math.floor(i / BATCH_SIZE) + 1} returned no parsable categories. Usage:`, batchUsageString);
+              console.warn(`Batch ${Math.floor(i / BATCH_SIZE) + 1} returned no parsable categories. Usage:`, batchUsage ? JSON.stringify(batchUsage).substring(0,100) : 'N/A');
             }
           } catch (batchError: any) {
             console.error(`Error processing batch ${Math.floor(i / BATCH_SIZE) + 1} for user intent analysis:`, batchError);
+            // Log and continue, aggregation step will handle potentially fewer categories.
           }
         }
 
-        if (collectedBatchedCategories.length === 0) {
-          return { userIntentCategories: [], overallSummaryOfUserIntents: "No user intent categories could be derived from any batch. All batches might have failed or returned empty results." };
+        if (collectedBatchedCategories.length === 0 && totalSummariesProcessedInBatches === 0 && allSummaries.length > 0) {
+            return { userIntentCategories: [], overallSummaryOfUserIntents: "No user intent categories could be derived. All batches might have failed or returned empty. Check server logs." };
+        }
+         if (collectedBatchedCategories.length === 0 && allSummaries.length > 0) {
+            return { userIntentCategories: [], overallSummaryOfUserIntents: "No distinct user intent categories were identified from the provided summaries after batch processing." };
         }
 
         console.log(`All ${Math.ceil(allSummaries.length / BATCH_SIZE)} batches processed. Starting aggregation of ${collectedBatchedCategories.length} categories from ${totalSummariesProcessedInBatches} summaries.`);
@@ -265,12 +265,10 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
           };
           const { output: finalOutput, usage: aggregationUsage } = await aggregationAnalysisPrompt(aggregationInput);
           if (!finalOutput) {
-            let aggUsageString = 'N/A';
-            if (aggregationUsage !== undefined) { try { aggUsageString = JSON.stringify(aggregationUsage); } catch (e) { aggUsageString = 'Could not stringify usage details.'; console.error("Failed to stringify usage for aggregation:", e, aggregationUsage);}}
-            console.error('Aggregation step for user intents returned no parsable output. Usage:', aggUsageString);
+            console.error('Aggregation step for user intents returned no parsable output. Usage:', aggregationUsage ? JSON.stringify(aggregationUsage).substring(0,100) : 'N/A');
             return {
-                userIntentCategories: [], 
-                overallSummaryOfUserIntents: "Failed to aggregate batched user intent categories. The LLM did not return a parsable output for the aggregation step. Usage: " + aggUsageString,
+                userIntentCategories: [],
+                overallSummaryOfUserIntents: "Failed to aggregate batched user intent categories. The LLM did not return a parsable output for aggregation."
             };
           }
           console.log("Aggregation complete for user intent analysis.");
@@ -279,7 +277,7 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
           console.error('Error in aggregation step for user intents:', aggregationError);
           return {
               userIntentCategories: [],
-              overallSummaryOfUserIntents: `Error during aggregation of user intent categories: ${aggregationError.message || 'Unknown aggregation error'}. Check server logs.`,
+              overallSummaryOfUserIntents: `Error during aggregation of user intent categories: ${aggregationError.message || 'Unknown aggregation error'}.`
           };
         }
       }
@@ -287,10 +285,8 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
         console.error('Top-level unhandled error in internalAnalyzeUserIntentsFromSummariesFlow:', flowError);
         return {
             userIntentCategories: [],
-            overallSummaryOfUserIntents: `Critical flow error: ${flowError.message || 'An unexpected internal server error occurred'}. Please check server logs.`
+            overallSummaryOfUserIntents: `Critical flow error: ${flowError.message || 'An unexpected internal server error occurred'}.`
         };
     }
   }
 );
-
-    
