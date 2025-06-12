@@ -39,15 +39,26 @@ const internalTestAnthropicConnectionFlow = ai.defineFlow(
     outputSchema: TestAnthropicConnectionOutputSchema,
   },
   async (input) => {
+    // Check if the model is Anthropic and if the plugin is conceptually disabled
+    if (input.modelId.startsWith('anthropic/')) {
+      const anthropicPluginErrorMessage = "Anthropic plugin is currently not active due to package installation issues. Please resolve the '@genkit-ai/anthropic' package problem to enable Anthropic model tests.";
+      console.warn(`Test for Anthropic model ${input.modelId} skipped: ${anthropicPluginErrorMessage}`);
+      return {
+        success: false,
+        error: anthropicPluginErrorMessage,
+        modelUsed: input.modelId,
+      };
+    }
+
     try {
-      console.log(`Attempting to test Anthropic connection with model: ${input.modelId}`);
+      console.log(`Attempting to test connection with model: ${input.modelId}`);
       const { text, usage, finishReason, model } = await ai.generate({
         model: input.modelId,
         prompt: input.testPrompt,
         config: { temperature: 0.3 }, // Simple config for a test
       });
 
-      console.log('Anthropic test call successful. Response:', text, 'Usage:', usage, 'Finish Reason:', finishReason);
+      console.log('Test call successful. Response:', text, 'Usage:', usage, 'Finish Reason:', finishReason);
       return {
         success: true,
         responseText: text,
@@ -55,7 +66,7 @@ const internalTestAnthropicConnectionFlow = ai.defineFlow(
         usage: usage,
       };
     } catch (error: any) {
-      console.error(`Error testing Anthropic connection with model ${input.modelId}:`, error);
+      console.error(`Error testing connection with model ${input.modelId}:`, error);
       return {
         success: false,
         error: error.message || 'An unknown error occurred during the test.',
@@ -64,3 +75,4 @@ const internalTestAnthropicConnectionFlow = ai.defineFlow(
     }
   }
 );
+
