@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, PlugZap, Eye, EyeOff, AlertTriangle, Loader2, PlayIcon, FileText as FileTextIcon } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, PlugZap, Eye, EyeOff, AlertTriangle, Loader2, PlayIcon, FileText as FileTextIcon, Send } from "lucide-react";
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { db } from '@/lib/firebase';
@@ -37,22 +37,24 @@ const VERTEX_AI_MODELS = [
   "gemini-1.0-pro",
   "gemini-1.0-pro-001",
   "gemini-1.0-pro-vision",
-  "gemini-2.0-flash",
+  // "gemini-2.0-flash", // This might be an experimental or non-standard name, verify availability
   "text-bison",
   "chat-bison",
 ];
 const OPENAI_MODELS = [
-  "gpt-4.1",
-  "gpt-4.1-mini",
-  "gpt-4.1-nano",
+  // "gpt-4.1", // Might be internal or preview names
+  // "gpt-4.1-mini",
+  // "gpt-4.1-nano",
   "gpt-4o",
   "gpt-4o-mini",
-  "gpt-4.5",
+  "gpt-4-turbo",
+  "gpt-4",
+  // "gpt-4.5", // Often an unconfirmed or speculative name
   "gpt-3.5-turbo",
 ];
 const AZURE_OPENAI_MODELS = [
-  "gpt-4 (via Azure)",
-  "gpt-35-turbo (via Azure)",
+  "gpt-4 (via Azure)", // Placeholder, actual deployment name needed
+  "gpt-35-turbo (via Azure)", // Placeholder, actual deployment name needed
 ];
 const ANTHROPIC_MODELS = [
   "claude-3-opus-20240229",
@@ -93,7 +95,7 @@ export default function ModelConnectorsPage() {
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
   const [editingConnector, setEditingConnector] = useState<ModelConnector | null>(null);
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
 
@@ -102,11 +104,17 @@ export default function ModelConnectorsPage() {
   const [apiKey, setApiKey] = useState('');
   const [config, setConfig] = useState('{}');
   const [selectedModelForDropdown, setSelectedModelForDropdown] = useState('');
-  const [testingConnectorId, setTestingConnectorId] = useState<string | null>(null);
+
+  // State for Test Connection Dialog
+  const [isTestConnectionDialogOpen, setIsTestConnectionDialogOpen] = useState(false);
+  const [connectorToTest, setConnectorToTest] = useState<ModelConnector | null>(null);
+  const [testPrompt, setTestPrompt] = useState<string>("Hello Claude, please respond with a short friendly greeting and mention your model name if you know it.");
+  const [testResult, setTestResult] = useState<TestAnthropicConnectionOutput | null>(null);
+  const [isSubmittingTest, setIsSubmittingTest] = useState(false);
 
 
   useEffect(() => {
-    if (!isDialogOpen && !editingConnector) return;
+    if (!isFormDialogOpen && !editingConnector) return;
     if (!provider && !editingConnector) return;
 
     const effectiveProvider = editingConnector?.provider || provider;
@@ -127,21 +135,17 @@ export default function ModelConnectorsPage() {
       if (relevantProvidersForModelDropdown.includes(effectiveProvider) && selectedModelForDropdown) {
         currentConfigJson.model = selectedModelForDropdown;
       } else if (!selectedModelForDropdown && currentConfigJson.model && relevantProvidersForModelDropdown.includes(effectiveProvider)) {
-        // If model was deselected from dropdown, remove it from config
          delete currentConfigJson.model;
       }
 
-
       const newConfigString = Object.keys(currentConfigJson).length === 0 ? '{}' : JSON.stringify(currentConfigJson, null, 2);
-
       if (newConfigString !== config.trim()) {
          setConfig(newConfigString);
       }
-
     } catch (e) {
       console.error("Error processing config for model update:", e);
     }
-  }, [provider, selectedModelForDropdown, editingConnector, isDialogOpen, config]);
+  }, [provider, selectedModelForDropdown, editingConnector, isFormDialogOpen, config]);
 
 
   const addConnectorMutation = useMutation<void, Error, ModelConnectorCreationPayload>({
@@ -153,7 +157,7 @@ export default function ModelConnectorsPage() {
       queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
       toast({ title: "Success", description: "Model connector added." });
       resetForm();
-      setIsDialogOpen(false);
+      setIsFormDialogOpen(false);
     },
     onError: (error) => {
       toast({ title: "Error", description: `Failed to add connector: ${error.message}`, variant: "destructive" });
@@ -171,7 +175,7 @@ export default function ModelConnectorsPage() {
       queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
       toast({ title: "Success", description: "Model connector updated." });
       resetForm();
-      setIsDialogOpen(false);
+      setIsFormDialogOpen(false);
     },
     onError: (error) => {
       toast({ title: "Error", description: `Failed to update connector: ${error.message}`, variant: "destructive" });
@@ -212,7 +216,6 @@ export default function ModelConnectorsPage() {
       toast({title: "Configuration Error", description: "Additional Configuration contains invalid JSON. Please correct it or leave it as {} an empty object.", variant: "destructive"});
       return;
     }
-
 
     const connectorData = {
       name: connectorName.trim(),
@@ -269,7 +272,7 @@ export default function ModelConnectorsPage() {
       setSelectedModelForDropdown('');
       console.warn("Failed to parse connector.config in openEditDialog for model dropdown", e);
     }
-    setIsDialogOpen(true);
+    setIsFormDialogOpen(true);
   };
 
   const handleDelete = (id: string) => {
@@ -282,13 +285,13 @@ export default function ModelConnectorsPage() {
     }
   };
 
-  const handleOpenNewDialog = () => {
+  const handleOpenNewFormDialog = () => {
     if (!currentUserId) {
       toast({title: "Login Required", description: "Please log in to add connectors.", variant: "destructive"});
       return;
     }
     resetForm();
-    setIsDialogOpen(true);
+    setIsFormDialogOpen(true);
   };
 
   const toggleApiKeyVisibility = (id: string) => {
@@ -300,8 +303,11 @@ export default function ModelConnectorsPage() {
     try {
       const parsedConfig = JSON.parse(connector.config);
       if (parsedConfig.model && typeof parsedConfig.model === 'string') {
+        // For Anthropic, the model ID in Genkit usually includes the provider prefix.
         if (connector.provider === 'Anthropic') return `anthropic/${parsedConfig.model}`;
-        // Add other providers here if needed
+        if (connector.provider === 'Vertex AI' || connector.provider === 'GoogleAI') return `googleai/${parsedConfig.model}`; // Assuming Vertex AI uses googleai prefix
+        if (connector.provider === 'OpenAI') return `openai/${parsedConfig.model}`;
+        // Add other providers here if their Genkit ID structure is known
       }
     } catch (e) {
       // console.warn("Could not parse config for Genkit model ID for connector:", connector.name);
@@ -309,24 +315,31 @@ export default function ModelConnectorsPage() {
     return undefined;
   };
 
-  const handleTestAnthropicConnection = async (connector: ModelConnector) => {
-    const genkitModelId = getGenkitModelId(connector);
-    if (connector.provider !== 'Anthropic' || !genkitModelId) {
-      toast({ title: "Cannot Test", description: "This test is only for configured Anthropic connectors.", variant: "destructive"});
+  const openTestConnectionDialog = (connector: ModelConnector) => {
+    setConnectorToTest(connector);
+    setTestPrompt("Hello Claude, please respond with a short friendly greeting and mention your model name if you know it."); // Reset prompt
+    setTestResult(null); // Clear previous results
+    setIsTestConnectionDialogOpen(true);
+  };
+
+  const handleRunAnthropicTest = async () => {
+    if (!connectorToTest) return;
+    const genkitModelId = getGenkitModelId(connectorToTest);
+    if (connectorToTest.provider !== 'Anthropic' || !genkitModelId) {
+      setTestResult({ success: false, error: "This test is only for configured Anthropic connectors with a valid model ID.", modelUsed: genkitModelId });
       return;
     }
-    setTestingConnectorId(connector.id);
+
+    setIsSubmittingTest(true);
+    setTestResult(null);
     try {
-      const result = await testAnthropicConnection({ modelId: genkitModelId, testPrompt: "Hello Claude, please respond with a single word: 'Acknowledged'." });
-      if (result.success) {
-        toast({ title: `Test Success: ${connector.name}`, description: `Response: ${result.responseText}` });
-      } else {
-        toast({ title: `Test Failed: ${connector.name}`, description: result.error || "Unknown error", variant: "destructive" });
-      }
+      const input: TestAnthropicConnectionInput = { modelId: genkitModelId, testPrompt: testPrompt };
+      const result = await testAnthropicConnection(input);
+      setTestResult(result);
     } catch (error: any) {
-      toast({ title: `Test Error: ${connector.name}`, description: error.message || "Flow execution failed.", variant: "destructive" });
+      setTestResult({ success: false, error: error.message || "Flow execution failed.", modelUsed: genkitModelId });
     } finally {
-      setTestingConnectorId(null);
+      setIsSubmittingTest(false);
     }
   };
 
@@ -378,9 +391,9 @@ export default function ModelConnectorsPage() {
                 For Anthropic connection tests to succeed, ensure the <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">ANTHROPIC_API_KEY</code> environment variable is set correctly in your Next.js server environment. The API key stored here is for record-keeping and other potential uses.
               </AlertDescription>
             </Alert>
-          <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
+          <Dialog open={isFormDialogOpen} onOpenChange={(isOpen) => { setIsFormDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={handleOpenNewDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
+              <Button onClick={handleOpenNewFormDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
                 <PlusCircle className="mr-2 h-5 w-5" /> Add New Connector
               </Button>
             </DialogTrigger>
@@ -447,7 +460,6 @@ export default function ModelConnectorsPage() {
                         if (parsed.model && typeof parsed.model === 'string' && currentModelsForProvider.includes(parsed.model) && provider && ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider)) {
                            setSelectedModelForDropdown(parsed.model);
                         } else if (provider && ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider) && !parsed.model) {
-                           // If model field is removed from JSON, clear dropdown if provider expects it
                            setSelectedModelForDropdown('');
                         }
                       } catch (err) { /* Ignore parse errors while typing */ }
@@ -461,7 +473,7 @@ export default function ModelConnectorsPage() {
                    </p>
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={() => {setIsFormDialogOpen(false); resetForm();}}>Cancel</Button>
                   <Button type="submit" disabled={addConnectorMutation.isPending || updateConnectorMutation.isPending || !currentUserId}>
                      {(addConnectorMutation.isPending || updateConnectorMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {editingConnector ? 'Save Changes' : 'Add Connector'}
@@ -523,18 +535,18 @@ export default function ModelConnectorsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => handleTestAnthropicConnection(conn)}
-                                disabled={testingConnectorId === conn.id}
+                                onClick={() => openTestConnectionDialog(conn)}
+                                disabled={isSubmittingTest && connectorToTest?.id === conn.id}
                                 title="Test Anthropic Connection"
                                 className="h-8 w-8"
                               >
-                                {testingConnectorId === conn.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayIcon className="h-4 w-4 text-green-600" />}
+                                <PlayIcon className="h-4 w-4 text-green-600" />
                               </Button>
                             )}
-                            <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending || testingConnectorId === conn.id} className="h-8 w-8">
+                            <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending || (isSubmittingTest && connectorToTest?.id === conn.id)} className="h-8 w-8">
                               <Edit2 className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90 h-8 w-8" disabled={!currentUserId || (deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id) || testingConnectorId === conn.id}>
+                            <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90 h-8 w-8" disabled={!currentUserId || (deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id) || (isSubmittingTest && connectorToTest?.id === conn.id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -547,6 +559,67 @@ export default function ModelConnectorsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={isTestConnectionDialogOpen} onOpenChange={(isOpen) => { if(!isOpen) { setConnectorToTest(null); setTestResult(null); } setIsTestConnectionDialogOpen(isOpen); }}>
+        <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+                <DialogTitle>Test Anthropic Connection: {connectorToTest?.name}</DialogTitle>
+                <DialogDescription>Send a test prompt to the selected Anthropic model.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+                <div>
+                    <Label htmlFor="test-prompt-textarea">Test Prompt</Label>
+                    <Textarea 
+                        id="test-prompt-textarea"
+                        value={testPrompt}
+                        onChange={(e) => setTestPrompt(e.target.value)}
+                        placeholder="Enter your test prompt here..."
+                        rows={4}
+                    />
+                </div>
+                {isSubmittingTest && (
+                    <div className="flex items-center space-x-2 text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span>Testing connection...</span>
+                    </div>
+                )}
+                {testResult && !isSubmittingTest && (
+                    <div className="mt-4 space-y-2">
+                        <Label>Test Result:</Label>
+                        {testResult.success ? (
+                            <Alert variant="default" className="bg-green-50 border-green-300 text-green-700">
+                                <AlertTitle className="text-green-800">Connection Successful!</AlertTitle>
+                                <AlertDescription className="text-sm text-green-700 whitespace-pre-wrap break-words">
+                                    <p className="font-semibold">Model: {testResult.modelUsed || 'N/A'}</p>
+                                    <p className="font-semibold mt-1">Response:</p>
+                                    <p className="mt-0.5">{testResult.responseText}</p>
+                                    {testResult.usage && <p className="text-xs mt-2 opacity-80">Usage: {JSON.stringify(testResult.usage)}</p>}
+                                </AlertDescription>
+                            </Alert>
+                        ) : (
+                            <Alert variant="destructive">
+                                <AlertTriangle className="h-4 w-4" />
+                                <AlertTitle>Connection Failed</AlertTitle>
+                                <AlertDescription className="whitespace-pre-wrap break-words">
+                                    <p className="font-semibold">Model Attempted: {testResult.modelUsed || 'N/A'}</p>
+                                    <p className="mt-0.5">{testResult.error}</p>
+                                </AlertDescription>
+                            </Alert>
+                        )}
+                    </div>
+                )}
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsTestConnectionDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleRunAnthropicTest} disabled={isSubmittingTest || !testPrompt.trim()}>
+                    {isSubmittingTest ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Send className="mr-2 h-4 w-4"/>}
+                    Send Test Prompt
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
+
