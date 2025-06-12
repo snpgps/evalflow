@@ -5,7 +5,7 @@
  * and generate summaries for summarization definitions.
  *
  * - judgeLlmEvaluation - A function that takes a full prompt, evaluation parameter details,
- *   summarization parameter IDs, and a list of parameters requiring rationale, then calls an LLM.
+ *   summarization parameter IDs, a list of parameters requiring rationale, and an optional modelName, then calls an LLM.
  * - JudgeLlmEvaluationInput - The input type.
  * - JudgeLlmEvaluationOutput - The return type (structured evaluation and summaries).
  */
@@ -26,6 +26,9 @@ const JudgeLlmEvaluationInputSchema = z.object({
   ),
   parameterIdsRequiringRationale: z.array(z.string()).optional().describe(
     "An optional array of evaluation parameter IDs for which a 'rationale' field is mandatory in the output object for that parameter."
+  ),
+  modelName: z.string().optional().describe(
+    "The Genkit model identifier, e.g., 'googleai/gemini-1.5-pro' or 'anthropic/claude-3-opus-20240229'. If not provided, Genkit's default model will be used."
   ),
 });
 export type JudgeLlmEvaluationInput = z.infer<typeof JudgeLlmEvaluationInputSchema>;
@@ -165,7 +168,8 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
     outputSchema: LlmOutputArraySchema,
   },
   async (input) => {
-    // console.log('internalJudgeLlmEvaluationFlow received input for prompt:', JSON.stringify(input.fullPromptText, null, 2)); // Log only prompt text to avoid overly verbose logs of IDs
+    // console.log('internalJudgeLlmEvaluationFlow received input for prompt:', JSON.stringify(input.fullPromptText, null, 2)); 
+    // console.log('internalJudgeLlmEvaluationFlow to use model:', input.modelName || 'Genkit Default');
     
     if ((!input.evaluationParameterIds || input.evaluationParameterIds.length === 0) && 
         (!input.summarizationParameterIds || input.summarizationParameterIds.length === 0)) {
@@ -177,11 +181,12 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
     let usage: any = null;
 
     try {
-      const result = await judgePrompt(input);
-      output = result.output; // output is already parsed against LlmOutputArraySchema by Genkit
+      // Pass modelName to the prompt call if provided
+      const result = await judgePrompt(input, { model: input.modelName || undefined });
+      output = result.output; 
       usage = result.usage;
     } catch (err: any) {
-      console.error(`Error calling judgePrompt within internalJudgeLlmEvaluationFlow. Error:`, err);
+      console.error(`Error calling judgePrompt within internalJudgeLlmEvaluationFlow (Model: ${input.modelName || 'Default'}). Error:`, err);
       const errorMessage = `LLM call failed: ${err.message || 'Unknown error during LLM call.'}`;
       const errorResults: z.infer<typeof LlmOutputArraySchema> = [];
       input.evaluationParameterIds?.forEach(id => {
@@ -194,9 +199,9 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
     }
 
     if (!output) {
-      console.error('LLM did not return a parsable output matching the LlmOutputArraySchema. Usage/Error Details (if any):', usage);
+      console.error('LLM did not return a parsable output matching the LlmOutputArraySchema. Model used:', input.modelName || 'Default', '. Usage/Error Details (if any):', usage);
       const errorResults: z.infer<typeof LlmOutputArraySchema> = [];
-      const rationaleForError = `LLM did not return a parsable output. Usage/details: ${JSON.stringify(usage || 'N/A')}`;
+      const rationaleForError = `LLM did not return a parsable output. Model: ${input.modelName || 'Default'}. Usage/details: ${JSON.stringify(usage || 'N/A')}`;
       input.evaluationParameterIds?.forEach(id => {
         errorResults.push({ parameterId: id, chosenLabel: "ERROR_NO_LLM_OUTPUT", rationale: rationaleForError, generatedSummary: undefined });
       });

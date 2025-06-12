@@ -31,6 +31,7 @@ import { judgeLlmEvaluation, type JudgeLlmEvaluationInput, type JudgeLlmEvaluati
 import { suggestRecursivePromptImprovements, type SuggestRecursivePromptImprovementsInput, type SuggestRecursivePromptImprovementsOutput, type MismatchDetail } from '@/ai/flows/suggest-recursive-prompt-improvements';
 import { analyzeJudgmentDiscrepancy, type AnalyzeJudgmentDiscrepancyInput, type AnalyzeJudgmentDiscrepancyOutput } from '@/ai/flows/analyze-judgment-discrepancy';
 import * as XLSX from 'xlsx';
+import { useProject } from '@/contexts/ProjectContext';
 
 // Interfaces
 interface EvalRunResultItem {
@@ -54,6 +55,7 @@ interface EvalRun {
   modelConnectorId: string;
   modelConnectorName?: string;
   modelConnectorProvider?: string;
+  modelIdentifierForGenkit?: string; // For passing to Genkit flows
   promptId: string;
   promptName?: string;
   promptVersionId?: string;
@@ -71,6 +73,7 @@ interface EvalRun {
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
   userId?: string;
+  projectId?: string;
 }
 
 interface DatasetVersionConfig {
@@ -158,8 +161,8 @@ function sanitizeDataForFirestore(data: any): any {
 }
 
 
-const fetchEvalRunDetails = async (userId: string, runId: string): Promise<EvalRun | null> => {
-  const runDocRef = doc(db, 'users', userId, 'evaluationRuns', runId);
+const fetchEvalRunDetails = async (userId: string, projectId: string, runId: string): Promise<EvalRun | null> => {
+  const runDocRef = doc(db, 'users', userId, 'projects', projectId, 'evaluationRuns', runId);
   const runDocSnap = await getDoc(runDocRef);
   if (runDocSnap.exists()) {
     return { id: runDocSnap.id, ...runDocSnap.data() } as EvalRun;
@@ -167,8 +170,8 @@ const fetchEvalRunDetails = async (userId: string, runId: string): Promise<EvalR
   return null;
 };
 
-const fetchDatasetVersionConfig = async (userId: string, datasetId: string, versionId: string): Promise<DatasetVersionConfig | null> => {
-    const versionDocRef = doc(db, 'users', userId, 'datasets', datasetId, 'versions', versionId);
+const fetchDatasetVersionConfig = async (userId: string, projectId: string, datasetId: string, versionId: string): Promise<DatasetVersionConfig | null> => {
+    const versionDocRef = doc(db, 'users', userId, 'projects', projectId, 'datasets', datasetId, 'versions', versionId);
     const versionDocSnap = await getDoc(versionDocRef);
     if (versionDocSnap.exists()) {
         const data = versionDocSnap.data();
@@ -182,18 +185,18 @@ const fetchDatasetVersionConfig = async (userId: string, datasetId: string, vers
     return null;
 };
 
-const fetchPromptVersionText = async (userId: string, promptId: string, versionId: string): Promise<string | null> => {
-  const versionDocRef = doc(db, 'users', userId, 'promptTemplates', promptId, 'versions', versionId);
+const fetchPromptVersionText = async (userId: string, projectId: string, promptId: string, versionId: string): Promise<string | null> => {
+  const versionDocRef = doc(db, 'users', userId, 'projects', projectId, 'promptTemplates', promptId, 'versions', versionId);
   const versionDocSnap = await getDoc(versionDocRef);
   return versionDocSnap.exists() ? (versionDocSnap.data()?.template as string) : null;
 };
 
-const fetchEvaluationParameterDetailsForPrompt = async (userId: string, paramIds: string[]): Promise<EvalParamDetailForPrompt[]> => {
-  if (!userId || !paramIds || paramIds.length === 0) {
+const fetchEvaluationParameterDetailsForPrompt = async (userId: string, projectId: string, paramIds: string[]): Promise<EvalParamDetailForPrompt[]> => {
+  if (!userId || !projectId || !paramIds || paramIds.length === 0) {
     return [];
   }
   const details: EvalParamDetailForPrompt[] = [];
-  const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
+  const evalParamsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'evaluationParameters');
 
   for (const paramId of paramIds) {
     const paramDocRef = doc(evalParamsCollectionRef, paramId);
@@ -208,16 +211,16 @@ const fetchEvaluationParameterDetailsForPrompt = async (userId: string, paramIds
         requiresRationale: data.requiresRationale || false,
       });
     } else {
-         console.warn(`Evaluation parameter with ID ${paramId} not found for user ${userId}.`);
+         console.warn(`Evaluation parameter with ID ${paramId} not found for user ${userId} in project ${projectId}.`);
     }
   }
   return details;
 };
 
-const fetchSummarizationDefDetailsForPrompt = async (userId: string, defIds: string[]): Promise<SummarizationDefDetailForPrompt[]> => {
-    if (!userId || !defIds || defIds.length === 0) return [];
+const fetchSummarizationDefDetailsForPrompt = async (userId: string, projectId: string, defIds: string[]): Promise<SummarizationDefDetailForPrompt[]> => {
+    if (!userId || !projectId || !defIds || defIds.length === 0) return [];
     const details: SummarizationDefDetailForPrompt[] = [];
-    const defsCollectionRef = collection(db, 'users', userId, 'summarizationDefinitions');
+    const defsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'summarizationDefinitions');
     for (const defId of defIds) {
         const defDocRef = doc(defsCollectionRef, defId);
         const defDocSnap = await getDoc(defDocRef);
@@ -225,15 +228,15 @@ const fetchSummarizationDefDetailsForPrompt = async (userId: string, defIds: str
             const data = defDocSnap.data();
             details.push({ id: defDocSnap.id, name: data.name, definition: data.definition, example: data.example });
         } else {
-            console.warn(`Summarization definition with ID ${defId} not found.`);
+            console.warn(`Summarization definition with ID ${defId} not found in project ${projectId}.`);
         }
     }
     return details;
 };
 
-const fetchProductParametersForSchema = async (userId: string): Promise<ProductParameterForSchema[]> => {
-  if (!userId) return [];
-  const paramsCollectionRef = collection(db, 'users', userId, 'productParameters');
+const fetchProductParametersForSchema = async (userId: string, projectId: string): Promise<ProductParameterForSchema[]> => {
+  if (!userId || !projectId) return [];
+  const paramsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'productParameters');
   const q = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => {
@@ -248,10 +251,10 @@ const fetchProductParametersForSchema = async (userId: string): Promise<ProductP
   });
 };
 
-const fetchContextDocumentDetailsForRun = async (userId: string, docIds: string[]): Promise<ContextDocumentDisplayDetail[]> => {
-    if (!userId || !docIds || docIds.length === 0) return [];
+const fetchContextDocumentDetailsForRun = async (userId: string, projectId: string, docIds: string[]): Promise<ContextDocumentDisplayDetail[]> => {
+    if (!userId || !projectId || !docIds || docIds.length === 0) return [];
     const details: ContextDocumentDisplayDetail[] = [];
-    const contextDocsCollectionRef = collection(db, 'users', userId, 'contextDocuments');
+    const contextDocsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'contextDocuments');
     for (const docId of docIds) {
         const docRef = doc(contextDocsCollectionRef, docId);
         const docSnap = await getDoc(docRef);
@@ -259,7 +262,7 @@ const fetchContextDocumentDetailsForRun = async (userId: string, docIds: string[
             const data = docSnap.data();
             details.push({ id: docSnap.id, name: data.name, fileName: data.fileName });
         } else {
-            console.warn(`Context document with ID ${docId} not found.`);
+            console.warn(`Context document with ID ${docId} not found in project ${projectId}.`);
         }
     }
     return details;
@@ -271,6 +274,7 @@ export default function RunDetailsPage() {
   const runId = reactParams.runId as string;
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
+  const { selectedProjectId, isLoadingProjects } = useProject();
   const queryClient = useQueryClient();
   const router = useRouter();
 
@@ -302,14 +306,14 @@ export default function RunDetailsPage() {
 
   const addLog = (message: string, type: 'info' | 'error' = 'info') => {
     const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
-    console[type === 'error' ? 'error' : 'log'](logEntry);
+    console[type === 'error' : 'log'](logEntry);
     setSimulationLog(prev => [...prev, logEntry].slice(-100));
   };
 
   const { data: runDetails, isLoading: isLoadingRunDetails, error: fetchRunError, refetch: refetchRunDetails } = useQuery<EvalRun | null, Error>({
-    queryKey: ['evalRunDetails', currentUserId, runId],
-    queryFn: () => fetchEvalRunDetails(currentUserId!, runId),
-    enabled: !!currentUserId && !!runId && !isLoadingUserId,
+    queryKey: ['evalRunDetails', currentUserId, selectedProjectId, runId],
+    queryFn: () => fetchEvalRunDetails(currentUserId!, selectedProjectId!, runId),
+    enabled: !!currentUserId && !!selectedProjectId && !!runId && !isLoadingUserId && !isLoadingProjects,
     refetchInterval: (query) => {
       const data = query.state.data as EvalRun | null;
       return (data?.status === 'Running' || data?.status === 'Processing') ? 5000 : false;
@@ -317,28 +321,28 @@ export default function RunDetailsPage() {
   });
 
   const { data: evalParamDetailsForLLM = [], isLoading: isLoadingEvalParamsForLLMHook } = useQuery<EvalParamDetailForPrompt[], Error>({
-    queryKey: ['evalParamDetailsForLLM', currentUserId, runDetails?.selectedEvalParamIds?.join(',')],
+    queryKey: ['evalParamDetailsForLLM', currentUserId, selectedProjectId, runDetails?.selectedEvalParamIds?.join(',')],
     queryFn: async () => {
-      if (!currentUserId || !runDetails?.selectedEvalParamIds || runDetails.selectedEvalParamIds.length === 0) return [];
+      if (!currentUserId || !selectedProjectId || !runDetails?.selectedEvalParamIds || runDetails.selectedEvalParamIds.length === 0) return [];
       addLog("Fetching evaluation parameter details for LLM/UI...");
-      const details = await fetchEvaluationParameterDetailsForPrompt(currentUserId, runDetails.selectedEvalParamIds);
+      const details = await fetchEvaluationParameterDetailsForPrompt(currentUserId, selectedProjectId, runDetails.selectedEvalParamIds);
       addLog(`Fetched ${details.length} evaluation parameter details.`);
       return details;
     },
-    enabled: !!currentUserId && !!runDetails?.selectedEvalParamIds && runDetails.selectedEvalParamIds.length > 0,
+    enabled: !!currentUserId && !!selectedProjectId && !!runDetails?.selectedEvalParamIds && runDetails.selectedEvalParamIds.length > 0,
     staleTime: Infinity,
   });
 
   const { data: summarizationDefDetailsForLLM = [], isLoading: isLoadingSummarizationDefsForLLMHook } = useQuery<SummarizationDefDetailForPrompt[], Error>({
-    queryKey: ['summarizationDefDetailsForLLM', currentUserId, runDetails?.selectedSummarizationDefIds?.join(',')],
+    queryKey: ['summarizationDefDetailsForLLM', currentUserId, selectedProjectId, runDetails?.selectedSummarizationDefIds?.join(',')],
     queryFn: async () => {
-        if (!currentUserId || !runDetails?.selectedSummarizationDefIds || runDetails.selectedSummarizationDefIds.length === 0) return [];
+        if (!currentUserId || !selectedProjectId || !runDetails?.selectedSummarizationDefIds || runDetails.selectedSummarizationDefIds.length === 0) return [];
         addLog("Fetching summarization definition details for LLM/UI...");
-        const details = await fetchSummarizationDefDetailsForPrompt(currentUserId, runDetails.selectedSummarizationDefIds);
+        const details = await fetchSummarizationDefDetailsForPrompt(currentUserId, selectedProjectId, runDetails.selectedSummarizationDefIds);
         addLog(`Fetched ${details.length} summarization definition details.`);
         return details;
     },
-    enabled: !!currentUserId && !!runDetails?.selectedSummarizationDefIds && runDetails.selectedSummarizationDefIds.length > 0,
+    enabled: !!currentUserId && !!selectedProjectId && !!runDetails?.selectedSummarizationDefIds && runDetails.selectedSummarizationDefIds.length > 0,
     staleTime: Infinity,
   });
 
@@ -352,33 +356,30 @@ export default function RunDetailsPage() {
         newInitialFilters[param.id] = 'all'; // Default to 'all'
       });
 
-      // Only update if the new filters are actually different from the current ones
       if (JSON.stringify(filterStates) !== JSON.stringify(newInitialFilters)) {
         setFilterStates(newInitialFilters);
       }
     } else {
-      // Only update if filterStates is not already empty
       if (Object.keys(filterStates).length > 0) {
         setFilterStates({});
       }
     }
-    // Add filterStates to dependencies because its current value is used in the comparison.
   }, [evalParamDetailsForLLM, runDetails?.runType, filterStates]);
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
-    queryKey: ['selectedContextDocDetails', currentUserId, runDetails?.selectedContextDocumentIds?.join(',')],
+    queryKey: ['selectedContextDocDetails', currentUserId, selectedProjectId, runDetails?.selectedContextDocumentIds?.join(',')],
     queryFn: () => {
-        if (!currentUserId || !runDetails?.selectedContextDocumentIds || runDetails.selectedContextDocumentIds.length === 0) return [];
-        return fetchContextDocumentDetailsForRun(currentUserId, runDetails.selectedContextDocumentIds);
+        if (!currentUserId || !selectedProjectId || !runDetails?.selectedContextDocumentIds || runDetails.selectedContextDocumentIds.length === 0) return [];
+        return fetchContextDocumentDetailsForRun(currentUserId, selectedProjectId, runDetails.selectedContextDocumentIds);
     },
-    enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
+    enabled: !!currentUserId && !!selectedProjectId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
     staleTime: Infinity,
 });
 
   const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue } >({
     mutationFn: async (updatePayload) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId || !selectedProjectId) throw new Error("User or Project not identified.");
       const { id, ...dataFromPayload } = updatePayload;
       const updateForFirestore: Record<string, any> = {};
       for (const key in dataFromPayload) {
@@ -394,12 +395,12 @@ export default function RunDetailsPage() {
         updateForFirestore.completedAt = updatePayload.completedAt;
       }
 
-      const runDocRef = doc(db, 'users', currentUserId, 'evaluationRuns', id);
+      const runDocRef = doc(db, 'users', currentUserId, 'projects', selectedProjectId, 'evaluationRuns', id);
       await updateDoc(runDocRef, updateForFirestore);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['evalRunDetails', currentUserId, runId] });
-      queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
+      queryClient.invalidateQueries({ queryKey: ['evalRunDetails', currentUserId, selectedProjectId, runId] });
+      queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId, selectedProjectId] });
     },
     onError: (error) => {
       toast({ title: "Error updating run", description: error.message, variant: "destructive" });
@@ -456,13 +457,13 @@ export default function RunDetailsPage() {
 
 
   const handleFetchAndPreviewData = async () => {
-    if (!runDetails || !currentUserId || !runDetails.datasetId || !runDetails.datasetVersionId) {
+    if (!runDetails || !currentUserId || !selectedProjectId || !runDetails.datasetId || !runDetails.datasetVersionId) {
       toast({ title: "Configuration Missing", description: "Dataset or version ID missing for this run.", variant: "destructive" }); return;
     }
     setIsPreviewDataLoading(true); setPreviewDataError(null); setSimulationLog([]); addLog("Data Preview: Process started.");
     try {
         addLog("Data Preview: Fetching dataset version configuration...");
-        const versionConfig = await fetchDatasetVersionConfig(currentUserId, runDetails.datasetId, runDetails.datasetVersionId);
+        const versionConfig = await fetchDatasetVersionConfig(currentUserId, selectedProjectId, runDetails.datasetId, runDetails.datasetVersionId);
         if (!versionConfig || !versionConfig.storagePath || !versionConfig.columnMapping || Object.keys(versionConfig.columnMapping).length === 0) { throw new Error("Dataset version configuration (storage path or product column mapping) is incomplete or missing."); }
         addLog(`Data Preview: Storage path: ${versionConfig.storagePath}`); addLog(`Data Preview: Product Column mapping: ${JSON.stringify(versionConfig.columnMapping)}`);
         if (versionConfig.groundTruthMapping && Object.keys(versionConfig.groundTruthMapping).length > 0) { addLog(`Data Preview: Ground Truth Mapping: ${JSON.stringify(versionConfig.groundTruthMapping)}`); } else if (runDetails.runType === 'GroundTruth') { addLog(`Data Preview: Warning: Run type is Ground Truth, but no ground truth mapping found.`); }
@@ -540,7 +541,7 @@ export default function RunDetailsPage() {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
     const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
 
-    if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) {
+    if (!runDetails || !currentUserId || !selectedProjectId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) {
         const errorMsg = "Missing critical run configuration or no evaluation/summarization parameters selected.";
         toast({ title: "Cannot start LLM Task", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return;
     }
@@ -548,10 +549,11 @@ export default function RunDetailsPage() {
     updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [] });
     setSimulationLog([]); addLog("LLM task process initialized."); let collectedResults: EvalRunResultItem[] = [];
     try {
-      const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateText) throw new Error("Failed to fetch prompt template text.");
+      const promptTemplateText = await fetchPromptVersionText(currentUserId, selectedProjectId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateText) throw new Error("Failed to fetch prompt template text.");
       addLog(`Fetched prompt template (v${runDetails.promptVersionNumber}).`);
       if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} evaluation parameter details for LLM call.`);
       if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization definition details for LLM call.`);
+      if(runDetails.modelIdentifierForGenkit) addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); else addLog(`Warning: No specific Genkit model identifier found for run. Using default.`);
 
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} previewed rows with concurrency: ${effectiveConcurrencyLimit}.`);
       const parameterIdsRequiringRationale = hasEvalParams ? evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id) : [];
@@ -569,7 +571,7 @@ export default function RunDetailsPage() {
             evalParamDetailsForLLM.forEach(ep => { structuredCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaText += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaText += `  - "${label.name}": ${label.definition || 'No definition.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaText += " (No specific categorization labels)\n"; } structuredCriteriaText += "\n"; });
             structuredCriteriaText += "--- END EVALUATION CRITERIA ---\n";
           }
-          if (hasSummarizationDefs) { // This condition is always checked now, regardless of runType
+          if (hasSummarizationDefs) { 
             structuredCriteriaText += "\n\n--- SUMMARIZATION TASKS ---\n";
             summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaText += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) structuredCriteriaText += `Example Output Hint: "${sd.example}"\n`; structuredCriteriaText += "Provide your summary for this task.\n\n"; });
             structuredCriteriaText += "--- END SUMMARIZATION TASKS ---\n";
@@ -580,11 +582,12 @@ export default function RunDetailsPage() {
             fullPromptText: fullPromptForLLM,
             evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [],
             summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [],
-            parameterIdsRequiringRationale: parameterIdsRequiringRationale
+            parameterIdsRequiringRationale: parameterIdsRequiringRationale,
+            modelName: runDetails.modelIdentifierForGenkit || undefined,
           };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex };
           if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
-          try { addLog(`Sending prompt for row ${overallRowIndex + 1} to Genkit flow...`); const judgeOutput = await judgeLlmEvaluation(genkitInput); addLog(`Genkit flow for row ${overallRowIndex + 1} responded.`); itemResultShell.judgeLlmOutput = judgeOutput;
+          try { addLog(`Sending prompt for row ${overallRowIndex + 1} to Genkit flow (Model: ${runDetails.modelIdentifierForGenkit || 'Default'})...`); const judgeOutput = await judgeLlmEvaluation(genkitInput); addLog(`Genkit flow for row ${overallRowIndex + 1} responded.`); itemResultShell.judgeLlmOutput = judgeOutput;
           } catch(flowError: any) { addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error");
             const errorOutputForAllParams: Record<string, { chosenLabel?: string; generatedSummary?: string; error?: string }> = {};
             runDetails.selectedEvalParamIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: flowError.message || 'Unknown error processing row with LLM.' }; });
@@ -638,13 +641,13 @@ export default function RunDetailsPage() {
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results"); const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`; XLSX.writeFile(workbook, fileName); toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
   };
 
-  const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId], queryFn: () => fetchProductParametersForSchema(currentUserId!), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
+  const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId, selectedProjectId], queryFn: () => fetchProductParametersForSchema(currentUserId!, selectedProjectId!), enabled: !!currentUserId && !!selectedProjectId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
 
   const handleSuggestImprovementsClick = async () => {
-    if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest Improvements", description: "Missing critical run data, evaluation parameters, or results for Ground Truth comparison.", variant: "destructive" }); return; }
+    if (!runDetails || !currentUserId || !selectedProjectId || !runDetails.promptId || !runDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest Improvements", description: "Missing critical run data, evaluation parameters, or results for Ground Truth comparison.", variant: "destructive" }); return; }
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
-      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt template text.");
+      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, selectedProjectId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt template text.");
       const mismatchDetails: MismatchDetail[] = [];
       runDetails.results.forEach(item => { evalParamDetailsForLLM.forEach(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase()) { mismatchDetails.push({ inputData: item.inputData, evaluationParameterName: paramDetail.name, evaluationParameterDefinition: paramDetail.definition, llmChosenLabel: llmOutput.chosenLabel, groundTruthLabel: gtLabel, llmRationale: llmOutput.rationale, }); } }); });
       if (mismatchDetails.length === 0) { setSuggestionError("No mismatches found. Nothing to improve!"); setIsLoadingSuggestion(false); return; }
@@ -673,7 +676,7 @@ export default function RunDetailsPage() {
         paramDefinition: paramDetail.definition,
         paramLabels: paramDetail.labels,
         judgeLlmOutput: {
-            chosenLabel: outputData.chosenLabel, // Known to be string due to guard and button logic
+            chosenLabel: outputData.chosenLabel, 
             rationale: outputData.rationale,
             error: outputData.error,
         },
@@ -686,7 +689,7 @@ export default function RunDetailsPage() {
   };
 
   const handleSubmitQuestionAnalysis = async () => {
-    if (!questioningItemData || !currentUserId || !runDetails?.promptId || !runDetails?.promptVersionId) {
+    if (!questioningItemData || !currentUserId || !selectedProjectId || !runDetails?.promptId || !runDetails?.promptVersionId) {
       setJudgmentAnalysisError("Missing data to perform analysis.");
       return;
     }
@@ -694,7 +697,7 @@ export default function RunDetailsPage() {
     setJudgmentAnalysisError(null);
     setJudgmentAnalysisResult(null);
     try {
-      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
+      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, selectedProjectId, runDetails.promptId, runDetails.promptVersionId);
       if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt template for analysis.");
 
       const inputForFlow: AnalyzeJudgmentDiscrepancyInput = {
@@ -762,16 +765,18 @@ export default function RunDetailsPage() {
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
 
-  if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
+  if (isLoadingUserId || isLoadingProjects || (isLoadingRunDetails && currentUserId && selectedProjectId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
+  if (!currentUserId) return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>;
+  if (!selectedProjectId) return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please select a project to view run details.</CardContent></Card>;
   if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
-  if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
+  if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found in project "{selectedProjectId}".</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
 
   const displayedPreviewData = runDetails.previewedDatasetSample || [];
   const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
   const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => { if (!timestamp) return 'N/A'; return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString(); };
   const isRunTerminal = runDetails.status === 'Completed';
   const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed';
-  const canStartLLMTask = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook && ( (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0) ); // Adjusted for either task type
+  const canStartLLMTask = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook && ( (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0) ); 
   const canDownloadResults = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
   const canSuggestImprovements = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
   const getStatusBadge = (status: EvalRun['status']) => {
@@ -802,8 +807,8 @@ export default function RunDetailsPage() {
         </CardHeader>
         {(isPreviewDataLoading || (runDetails.status === 'Running' || runDetails.status === 'Processing') || isLoadingEvalParamsForLLMHook || isLoadingSummarizationDefsForLLMHook) && ( <CardContent> <Label>{(runDetails.status === 'Running' || runDetails.status === 'Processing') ? 'LLM Progress' : (isPreviewDataLoading ? 'Data Fetch Progress' : 'Loading Config...')}: {(runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress || 0}%` : (isPreviewDataLoading || isLoadingEvalParamsForLLMHook || isLoadingSummarizationDefsForLLMHook ? 'In Progress...' : 'Idle')}</Label> <Progress value={(runDetails.status === 'Running' || runDetails.status === 'Processing') ? runDetails.progress || 0 : (isPreviewDataLoading || isLoadingEvalParamsForLLMHook || isLoadingSummarizationDefsForLLMHook ? 50 : 0)} className="w-full h-2 mt-1 mb-2" /> </CardContent> )}
          {simulationLog.length > 0 && ( <CardContent> <Card className="max-h-40 overflow-y-auto p-2 bg-muted/50 text-xs"> <p className="font-semibold mb-1">Log:</p> {simulationLog.map((log, i) => <p key={i} className="whitespace-pre-wrap font-mono">{log}</p>)} </Card> </CardContent> )}
-         {previewDataError && !isPreviewDataLoading && ( <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Data Preview Error</AlertTitle><AlertDescription className="whitespace-pre-wrap break-words">{previewDataError}</AlertDescription></Alert></CardContent> )}
-         {runDetails.errorMessage && runDetails.status === 'Failed' && !isPreviewDataLoading && ( <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Run Failed</AlertTitle><AlertDescription className="whitespace-pre-wrap break-words">{runDetails.errorMessage}</AlertDescription></Alert></CardContent> )}
+         {previewDataError && !isPreviewDataLoading && ( <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Data Preview Error</AlertTitle><AlertDescription className="whitespace-pre-wrap break-words">{previewDataError}</AlertDescription></AlertContent> )}
+         {runDetails.errorMessage && runDetails.status === 'Failed' && !isPreviewDataLoading && ( <CardContent><Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Run Failed</AlertTitle><AlertDescription className="whitespace-pre-wrap break-words">{runDetails.errorMessage}</AlertDescription></AlertContent> )}
       </Card>
 
       <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2">
@@ -820,7 +825,7 @@ export default function RunDetailsPage() {
 
       <Tabs defaultValue="results_table">
         <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 mb-4"> <TabsTrigger value="config">Run Configuration</TabsTrigger> <TabsTrigger value="results_table">LLM Results Table</TabsTrigger> <TabsTrigger value="breakdown">Metrics Breakdown</TabsTrigger> </TabsList>
-        <TabsContent value="config"> <Card> <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader> <CardContent className="space-y-3 text-sm"> <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"> <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p> <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p> <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId}</p> <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p> <p><strong>Test on Rows Config:</strong> {runDetails.runOnNRows === 0 ? 'All (capped)' : `First ${runDetails.runOnNRows} (capped)`}</p> <p><strong>LLM Concurrency Limit:</strong> {runDetails.concurrencyLimit || 'Default (3)'}</p> <div><strong>Evaluation Parameters:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for labeling.")} </div>
+        <TabsContent value="config"> <Card> <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader> <CardContent className="space-y-3 text-sm"> <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"> <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p> <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p> <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId} {runDetails.modelIdentifierForGenkit && <Badge variant="outline" className="ml-1 text-xs">Using: {runDetails.modelIdentifierForGenkit}</Badge>}</p> <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p> <p><strong>Test on Rows Config:</strong> {runDetails.runOnNRows === 0 ? 'All (capped)' : `First ${runDetails.runOnNRows} (capped)`}</p> <p><strong>LLM Concurrency Limit:</strong> {runDetails.concurrencyLimit || 'Default (3)'}</p> <div><strong>Evaluation Parameters:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for labeling.")} </div>
           <div><strong>Summarization Definitions:</strong> {summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {summarizationDefDetailsForLLM.map(sd => <li key={sd.id}>{sd.name} (ID: {sd.id})</li>)} </ul> ) : (runDetails.selectedSummarizationDefNames && runDetails.selectedSummarizationDefNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedSummarizationDefNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for summarization.")} </div>
           {runDetails.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0 && (
             <div><strong>Context Documents:</strong>
@@ -991,8 +996,8 @@ export default function RunDetailsPage() {
             <DialogTitle className="flex items-center"><MessageSquareQuote className="mr-2 h-5 w-5 text-primary"/>Question Bot's Judgement</DialogTitle>
             <DialogDescription>Analyze a specific judgment made by the LLM. Provide your reasoning for a deeper AI analysis.</DialogDescription>
           </DialogHeader>
-          <div className="flex-grow min-h-0 overflow-y-auto"> {/* Ensured this container allows internal ScrollArea to function */}
-            <ScrollArea className="h-full w-full"> {/* ScrollArea wraps the entire content */}
+          <div className="flex-grow min-h-0 overflow-y-auto"> 
+            <ScrollArea className="h-full w-full"> 
               {questioningItemData && (
                 <div className="space-y-4 p-6 text-sm">
                   <Card className="p-3 bg-muted/40">
