@@ -15,15 +15,13 @@ import {
   Settings,
   Users,
   LifeBuoy,
-  TestTubeDiagonal, // Added for Test Connections
+  // TestTubeDiagonal, // Removed as per new requirement
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  // SidebarGroup, // Removed as it's not used
-  // SidebarGroupLabel, // Removed as it's not used
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
@@ -34,7 +32,7 @@ const navItems = [
   { href: '/schema-definition', label: 'Schema Definition', icon: ListChecks },
   { href: '/evaluation-parameters', label: 'Evaluation Parameters', icon: Target },
   { href: '/model-connectors', label: 'Model Connectors', icon: PlugZap },
-  { href: '/test-connections', label: 'Test Connections', icon: TestTubeDiagonal }, // New Item
+  // { href: '/test-connections', label: 'Test Connections', icon: TestTubeDiagonal }, // Removed
   { href: '/datasets', label: 'Datasets', icon: Database },
   { href: '/prompts', label: 'Prompts', icon: FileText },
   { href: '/runs', label: 'Eval Runs', icon: PlayCircle },
