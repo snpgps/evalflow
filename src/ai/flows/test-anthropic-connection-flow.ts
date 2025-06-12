@@ -44,7 +44,7 @@ const internalTestAnthropicConnectionFlow = ai.defineFlow(
       const { text, usage, finishReason, model } = await ai.generate({
         model: input.modelId,
         prompt: input.testPrompt,
-        config: { temperature: 0.3 }, // Simple config for a test
+        config: { temperature: 0.3 }, 
       });
 
       console.log('Test call successful. Response:', text, 'Usage:', usage, 'Finish Reason:', finishReason);
@@ -56,15 +56,26 @@ const internalTestAnthropicConnectionFlow = ai.defineFlow(
       };
     } catch (error: any) {
       console.error(`Error testing connection with model ${input.modelId}:`, error);
-      // Check for specific error structures, like Genkit's internal errors
+      
       let errorMessage = 'An unknown error occurred during the test.';
       if (error.message) {
         errorMessage = error.message;
       }
-      if (error.cause && typeof error.cause === 'object' && error.cause !== null && 'message' in error.cause) {
+
+      if (input.modelId.startsWith('anthropic/') && error.message && (error.message.includes('NOT_FOUND') || error.message.includes('Model not found'))) {
+        errorMessage = `Model '${input.modelId}' not found by Genkit. This often means the 'genkitx-anthropic' plugin couldn't initialize correctly or access the specified model.
+
+Possible reasons:
+1. Server-Side ANTHROPIC_API_KEY: Ensure the ANTHROPIC_API_KEY environment variable is correctly set in the Next.js server environment where Genkit is running. The plugin might need this key during its initial startup to register models. Restart your server after setting/changing it.
+2. Model Name: Double-check if '${input.modelId}' is the exact identifier expected by the 'genkitx-anthropic' plugin.
+3. API Key Permissions: The API key might be invalid or lack permissions for this specific model.
+4. Plugin Issue: There could be an issue with the 'genkitx-anthropic' plugin itself.
+
+Original error: ${error.message}`;
+      } else if (error.cause && typeof error.cause === 'object' && error.cause !== null && 'message' in error.cause) {
          errorMessage += ` (Cause: ${error.cause.message})`;
       }
-      if (error.details) {
+      if (error.details && errorMessage !== error.message) { // Avoid duplicating original error if already included
         errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
       }
       
