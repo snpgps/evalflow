@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ProjectProvider } from '@/contexts/ProjectContext'; // Import ProjectProvider
 
 const queryClient = new QueryClient();
 
@@ -26,7 +27,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoadingUserId && !currentUserId) {
-      router.push('/login'); // Updated redirect
+      router.push('/login');
     }
   }, [currentUserId, isLoadingUserId, router]);
 
@@ -79,7 +80,9 @@ export default function AppLayout({
 }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppContent>{children}</AppContent>
+      <ProjectProvider> {/* Wrap AppContent with ProjectProvider */}
+        <AppContent>{children}</AppContent>
+      </ProjectProvider>
     </QueryClientProvider>
   );
 }
