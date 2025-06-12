@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { PlusCircle, Edit2, Trash2, PlugZap, Eye, EyeOff, AlertTriangle, Loader2, PlayIcon, FileText as FileTextIcon, Send } from "lucide-react";
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -109,6 +110,10 @@ export default function ModelConnectorsPage() {
   const [testPrompt, setTestPrompt] = useState<string>("Hello, please respond with a short friendly greeting and mention your model name if you know it.");
   const [testResult, setTestResult] = useState<TestAnthropicConnectionOutput | TestGoogleAIConnectionOutput | null>(null);
   const [isSubmittingTest, setIsSubmittingTest] = useState(false);
+
+  // State for Delete Confirmation Dialog
+  const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
+  const [connectorIdPendingDelete, setConnectorIdPendingDelete] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -273,15 +278,23 @@ export default function ModelConnectorsPage() {
     setIsFormDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-     if (!currentUserId) {
-        toast({title: "Error", description: "User not identified.", variant: "destructive"});
-        return;
+  const handleDeleteInitiate = (id: string) => {
+    if (!currentUserId) {
+      toast({ title: "Error", description: "User not identified.", variant: "destructive" });
+      return;
     }
-    if (confirm('Are you sure you want to delete this model connector?')) {
-        deleteConnectorMutation.mutate(id);
-    }
+    setConnectorIdPendingDelete(id);
+    setIsConfirmDeleteDialogOpen(true);
   };
+
+  const confirmDeleteConnector = () => {
+    if (connectorIdPendingDelete) {
+      deleteConnectorMutation.mutate(connectorIdPendingDelete);
+    }
+    // setIsConfirmDeleteDialogOpen(false); // This will be handled by onOpenChange
+    // setConnectorIdPendingDelete(null); // This will be handled by onOpenChange
+  };
+
 
   const handleOpenNewFormDialog = () => {
     if (!currentUserId) {
@@ -567,7 +580,7 @@ export default function ModelConnectorsPage() {
                             <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending || (isSubmittingTest && connectorToTest?.id === conn.id)} className="h-8 w-8">
                               <Edit2 className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90 h-8 w-8" disabled={!currentUserId || (deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id) || (isSubmittingTest && connectorToTest?.id === conn.id)}>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteInitiate(conn.id)} className="text-destructive hover:text-destructive/90 h-8 w-8" disabled={!currentUserId || (deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id) || (isSubmittingTest && connectorToTest?.id === conn.id)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -639,6 +652,38 @@ export default function ModelConnectorsPage() {
             </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog 
+        open={isConfirmDeleteDialogOpen} 
+        onOpenChange={(open) => {
+          setIsConfirmDeleteDialogOpen(open);
+          if (!open) {
+            setConnectorIdPendingDelete(null); 
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the model connector.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConnectorIdPendingDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteConnector} 
+              disabled={deleteConnectorMutation.isPending && deleteConnectorMutation.variables === connectorIdPendingDelete}
+              className={deleteConnectorMutation.isPending && deleteConnectorMutation.variables === connectorIdPendingDelete ? "bg-destructive/70" : ""}
+            >
+              {deleteConnectorMutation.isPending && deleteConnectorMutation.variables === connectorIdPendingDelete ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Confirm Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   );
