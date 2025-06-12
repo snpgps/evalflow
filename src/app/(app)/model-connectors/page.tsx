@@ -57,8 +57,7 @@ const ANTHROPIC_MODELS = [
   "claude-3-opus-20240229",
   "claude-3-sonnet-20240229",
   "claude-3-haiku-20240307",
-  "claude-3-5-haiku",
-  "claude-3-5-haiku-20241022",
+  "claude-3-5-sonnet-20240620", // Added standard 3.5 Sonnet
   "claude-2.1",
   "claude-2.0",
   "claude-instant-1.2",
@@ -653,12 +652,12 @@ export default function ModelConnectorsPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog 
-        open={isConfirmDeleteDialogOpen} 
+      <AlertDialog
+        open={isConfirmDeleteDialogOpen}
         onOpenChange={(open) => {
           setIsConfirmDeleteDialogOpen(open);
           if (!open) {
-            setConnectorIdPendingDelete(null); 
+            setConnectorIdPendingDelete(null);
           }
         }}
       >
@@ -671,8 +670,8 @@ export default function ModelConnectorsPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConnectorIdPendingDelete(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmDeleteConnector} 
+            <AlertDialogAction
+              onClick={confirmDeleteConnector}
               disabled={deleteConnectorMutation.isPending && deleteConnectorMutation.variables === connectorIdPendingDelete}
               className={deleteConnectorMutation.isPending && deleteConnectorMutation.variables === connectorIdPendingDelete ? "bg-destructive/70" : ""}
             >
