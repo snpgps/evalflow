@@ -39,20 +39,6 @@ const internalTestAnthropicConnectionFlow = ai.defineFlow(
     outputSchema: TestAnthropicConnectionOutputSchema,
   },
   async (input) => {
-    // Check if the model ID suggests an Anthropic model.
-    // This is a temporary measure because the @genkit-ai/anthropic package installation is failing.
-    if (input.modelId.startsWith('anthropic/')) {
-      console.warn(`Anthropic model test (${input.modelId}) skipped: Anthropic plugin is not active due to package installation issues.`);
-      return {
-        success: false,
-        error: `Connection test for '${input.modelId}' failed. The Anthropic Genkit plugin (@genkit-ai/anthropic) is currently not active due to package installation issues. Please verify the package name and availability. If the package name is correct, there might be a temporary registry issue or the package is no longer published under that name.`,
-        modelUsed: input.modelId,
-      };
-    }
-
-    // For other models (e.g., Google AI), proceed with the test.
-    // This part will likely not be hit if the UI only calls this for Anthropic models,
-    // but it's here for structural completeness.
     try {
       console.log(`Attempting to test connection with model: ${input.modelId}`);
       const { text, usage, finishReason, model } = await ai.generate({
@@ -70,9 +56,21 @@ const internalTestAnthropicConnectionFlow = ai.defineFlow(
       };
     } catch (error: any) {
       console.error(`Error testing connection with model ${input.modelId}:`, error);
+      // Check for specific error structures, like Genkit's internal errors
+      let errorMessage = 'An unknown error occurred during the test.';
+      if (error.message) {
+        errorMessage = error.message;
+      }
+      if (error.cause && typeof error.cause === 'object' && error.cause !== null && 'message' in error.cause) {
+         errorMessage += ` (Cause: ${error.cause.message})`;
+      }
+      if (error.details) {
+        errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
+      }
+      
       return {
         success: false,
-        error: error.message || 'An unknown error occurred during the test.',
+        error: errorMessage,
         modelUsed: input.modelId,
       };
     }
