@@ -453,8 +453,19 @@ export default function EvalRunsPage() {
         <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-3"> <PlayCircle className="h-7 w-7 text-primary" /> <div> <CardTitle className="text-xl md:text-2xl font-headline">Evaluation Runs</CardTitle> <CardDescription>Manage and track your AI model evaluation runs. Choose between Product or Ground Truth comparison.</CardDescription> </div> </div>
            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
-            <DialogTrigger asChild><Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending || !selectedProjectId} className="w-full sm:w-auto"><PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run</Button></DialogTrigger>
-            <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh] p-0">
+            <DialogTrigger asChild>
+              <Button 
+                onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} 
+                disabled={addEvalRunMutation.isPending || !selectedProjectId} 
+                className="w-full sm:w-auto"
+              >
+                <PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run
+              </Button>
+            </DialogTrigger>
+            <DialogContent 
+              key={selectedProjectId || 'no-project-dialog'} 
+              className="sm:max-w-lg flex flex-col max-h-[85vh] p-0"
+            >
               <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b">
                 <DialogTitle>Configure New Evaluation Run</DialogTitle>
                 <DialogDescription>Select components and parameters for your new eval run.</DialogDescription>
@@ -542,3 +553,5 @@ export default function EvalRunsPage() {
     </div>
   );
 }
+
+    
