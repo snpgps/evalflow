@@ -31,7 +31,6 @@ import { judgeLlmEvaluation, type JudgeLlmEvaluationInput, type JudgeLlmEvaluati
 import { suggestRecursivePromptImprovements, type SuggestRecursivePromptImprovementsInput, type SuggestRecursivePromptImprovementsOutput, type MismatchDetail } from '@/ai/flows/suggest-recursive-prompt-improvements';
 import { analyzeJudgmentDiscrepancy, type AnalyzeJudgmentDiscrepancyInput, type AnalyzeJudgmentDiscrepancyOutput } from '@/ai/flows/analyze-judgment-discrepancy';
 import * as XLSX from 'xlsx';
-import { useProject } from '@/contexts/ProjectContext';
 
 // Interfaces
 interface EvalRunResultItem {
@@ -73,7 +72,6 @@ interface EvalRun {
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
   userId?: string;
-  projectId?: string;
 }
 
 interface DatasetVersionConfig {
@@ -161,8 +159,9 @@ function sanitizeDataForFirestore(data: any): any {
 }
 
 
-const fetchEvalRunDetails = async (userId: string, projectId: string, runId: string): Promise<EvalRun | null> => {
-  const runDocRef = doc(db, 'users', userId, 'projects', projectId, 'evaluationRuns', runId);
+const fetchEvalRunDetails = async (userId: string | null, runId: string): Promise<EvalRun | null> => {
+  if (!userId) return null;
+  const runDocRef = doc(db, 'users', userId, 'evaluationRuns', runId);
   const runDocSnap = await getDoc(runDocRef);
   if (runDocSnap.exists()) {
     return { id: runDocSnap.id, ...runDocSnap.data() } as EvalRun;
@@ -170,8 +169,9 @@ const fetchEvalRunDetails = async (userId: string, projectId: string, runId: str
   return null;
 };
 
-const fetchDatasetVersionConfig = async (userId: string, projectId: string, datasetId: string, versionId: string): Promise<DatasetVersionConfig | null> => {
-    const versionDocRef = doc(db, 'users', userId, 'projects', projectId, 'datasets', datasetId, 'versions', versionId);
+const fetchDatasetVersionConfig = async (userId: string | null, datasetId: string, versionId: string): Promise<DatasetVersionConfig | null> => {
+    if (!userId) return null;
+    const versionDocRef = doc(db, 'users', userId, 'datasets', datasetId, 'versions', versionId);
     const versionDocSnap = await getDoc(versionDocRef);
     if (versionDocSnap.exists()) {
         const data = versionDocSnap.data();
@@ -185,18 +185,19 @@ const fetchDatasetVersionConfig = async (userId: string, projectId: string, data
     return null;
 };
 
-const fetchPromptVersionText = async (userId: string, projectId: string, promptId: string, versionId: string): Promise<string | null> => {
-  const versionDocRef = doc(db, 'users', userId, 'projects', projectId, 'promptTemplates', promptId, 'versions', versionId);
+const fetchPromptVersionText = async (userId: string | null, promptId: string, versionId: string): Promise<string | null> => {
+  if (!userId) return null;
+  const versionDocRef = doc(db, 'users', userId, 'promptTemplates', promptId, 'versions', versionId);
   const versionDocSnap = await getDoc(versionDocRef);
   return versionDocSnap.exists() ? (versionDocSnap.data()?.template as string) : null;
 };
 
-const fetchEvaluationParameterDetailsForPrompt = async (userId: string, projectId: string, paramIds: string[]): Promise<EvalParamDetailForPrompt[]> => {
-  if (!userId || !projectId || !paramIds || paramIds.length === 0) {
+const fetchEvaluationParameterDetailsForPrompt = async (userId: string | null, paramIds: string[]): Promise<EvalParamDetailForPrompt[]> => {
+  if (!userId || !paramIds || paramIds.length === 0) {
     return [];
   }
   const details: EvalParamDetailForPrompt[] = [];
-  const evalParamsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'evaluationParameters');
+  const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
 
   for (const paramId of paramIds) {
     const paramDocRef = doc(evalParamsCollectionRef, paramId);
@@ -211,16 +212,16 @@ const fetchEvaluationParameterDetailsForPrompt = async (userId: string, projectI
         requiresRationale: data.requiresRationale || false,
       });
     } else {
-         console.warn(`Evaluation parameter with ID ${paramId} not found for user ${userId} in project ${projectId}.`);
+         console.warn(`Evaluation parameter with ID ${paramId} not found for user ${userId}.`);
     }
   }
   return details;
 };
 
-const fetchSummarizationDefDetailsForPrompt = async (userId: string, projectId: string, defIds: string[]): Promise<SummarizationDefDetailForPrompt[]> => {
-    if (!userId || !projectId || !defIds || defIds.length === 0) return [];
+const fetchSummarizationDefDetailsForPrompt = async (userId: string | null, defIds: string[]): Promise<SummarizationDefDetailForPrompt[]> => {
+    if (!userId || !defIds || defIds.length === 0) return [];
     const details: SummarizationDefDetailForPrompt[] = [];
-    const defsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'summarizationDefinitions');
+    const defsCollectionRef = collection(db, 'users', userId, 'summarizationDefinitions');
     for (const defId of defIds) {
         const defDocRef = doc(defsCollectionRef, defId);
         const defDocSnap = await getDoc(defDocRef);
@@ -228,15 +229,15 @@ const fetchSummarizationDefDetailsForPrompt = async (userId: string, projectId: 
             const data = defDocSnap.data();
             details.push({ id: defDocSnap.id, name: data.name, definition: data.definition, example: data.example });
         } else {
-            console.warn(`Summarization definition with ID ${defId} not found in project ${projectId}.`);
+            console.warn(`Summarization definition with ID ${defId} not found for user ${userId}.`);
         }
     }
     return details;
 };
 
-const fetchProductParametersForSchema = async (userId: string, projectId: string): Promise<ProductParameterForSchema[]> => {
-  if (!userId || !projectId) return [];
-  const paramsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'productParameters');
+const fetchProductParametersForSchema = async (userId: string | null): Promise<ProductParameterForSchema[]> => {
+  if (!userId) return [];
+  const paramsCollectionRef = collection(db, 'users', userId, 'productParameters');
   const q = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => {
@@ -251,10 +252,10 @@ const fetchProductParametersForSchema = async (userId: string, projectId: string
   });
 };
 
-const fetchContextDocumentDetailsForRun = async (userId: string, projectId: string, docIds: string[]): Promise<ContextDocumentDisplayDetail[]> => {
-    if (!userId || !projectId || !docIds || docIds.length === 0) return [];
+const fetchContextDocumentDetailsForRun = async (userId: string | null, docIds: string[]): Promise<ContextDocumentDisplayDetail[]> => {
+    if (!userId || !docIds || docIds.length === 0) return [];
     const details: ContextDocumentDisplayDetail[] = [];
-    const contextDocsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'contextDocuments');
+    const contextDocsCollectionRef = collection(db, 'users', userId, 'contextDocuments');
     for (const docId of docIds) {
         const docRef = doc(contextDocsCollectionRef, docId);
         const docSnap = await getDoc(docRef);
@@ -262,7 +263,7 @@ const fetchContextDocumentDetailsForRun = async (userId: string, projectId: stri
             const data = docSnap.data();
             details.push({ id: docSnap.id, name: data.name, fileName: data.fileName });
         } else {
-            console.warn(`Context document with ID ${docId} not found in project ${projectId}.`);
+            console.warn(`Context document with ID ${docId} not found for user ${userId}.`);
         }
     }
     return details;
@@ -274,7 +275,6 @@ export default function RunDetailsPage() {
   const runId = reactParams.runId as string;
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
-  const { selectedProjectId, isLoadingProjects } = useProject();
   const queryClient = useQueryClient();
   const router = useRouter();
 
@@ -306,14 +306,14 @@ export default function RunDetailsPage() {
 
   const addLog = (message: string, type: 'info' | 'error' = 'info') => {
     const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
-    console[type === 'error' : 'log'](logEntry);
+    console[type === 'error' ? 'log' : 'log'](logEntry);
     setSimulationLog(prev => [...prev, logEntry].slice(-100));
   };
 
   const { data: runDetails, isLoading: isLoadingRunDetails, error: fetchRunError, refetch: refetchRunDetails } = useQuery<EvalRun | null, Error>({
-    queryKey: ['evalRunDetails', currentUserId, selectedProjectId, runId],
-    queryFn: () => fetchEvalRunDetails(currentUserId!, selectedProjectId!, runId),
-    enabled: !!currentUserId && !!selectedProjectId && !!runId && !isLoadingUserId && !isLoadingProjects,
+    queryKey: ['evalRunDetails', currentUserId, runId],
+    queryFn: () => fetchEvalRunDetails(currentUserId, runId),
+    enabled: !!currentUserId && !!runId && !isLoadingUserId,
     refetchInterval: (query) => {
       const data = query.state.data as EvalRun | null;
       return (data?.status === 'Running' || data?.status === 'Processing') ? 5000 : false;
@@ -321,28 +321,28 @@ export default function RunDetailsPage() {
   });
 
   const { data: evalParamDetailsForLLM = [], isLoading: isLoadingEvalParamsForLLMHook } = useQuery<EvalParamDetailForPrompt[], Error>({
-    queryKey: ['evalParamDetailsForLLM', currentUserId, selectedProjectId, runDetails?.selectedEvalParamIds?.join(',')],
+    queryKey: ['evalParamDetailsForLLM', currentUserId, runDetails?.selectedEvalParamIds?.join(',')],
     queryFn: async () => {
-      if (!currentUserId || !selectedProjectId || !runDetails?.selectedEvalParamIds || runDetails.selectedEvalParamIds.length === 0) return [];
+      if (!currentUserId || !runDetails?.selectedEvalParamIds || runDetails.selectedEvalParamIds.length === 0) return [];
       addLog("Fetching evaluation parameter details for LLM/UI...");
-      const details = await fetchEvaluationParameterDetailsForPrompt(currentUserId, selectedProjectId, runDetails.selectedEvalParamIds);
+      const details = await fetchEvaluationParameterDetailsForPrompt(currentUserId, runDetails.selectedEvalParamIds);
       addLog(`Fetched ${details.length} evaluation parameter details.`);
       return details;
     },
-    enabled: !!currentUserId && !!selectedProjectId && !!runDetails?.selectedEvalParamIds && runDetails.selectedEvalParamIds.length > 0,
+    enabled: !!currentUserId && !!runDetails?.selectedEvalParamIds && runDetails.selectedEvalParamIds.length > 0,
     staleTime: Infinity,
   });
 
   const { data: summarizationDefDetailsForLLM = [], isLoading: isLoadingSummarizationDefsForLLMHook } = useQuery<SummarizationDefDetailForPrompt[], Error>({
-    queryKey: ['summarizationDefDetailsForLLM', currentUserId, selectedProjectId, runDetails?.selectedSummarizationDefIds?.join(',')],
+    queryKey: ['summarizationDefDetailsForLLM', currentUserId, runDetails?.selectedSummarizationDefIds?.join(',')],
     queryFn: async () => {
-        if (!currentUserId || !selectedProjectId || !runDetails?.selectedSummarizationDefIds || runDetails.selectedSummarizationDefIds.length === 0) return [];
+        if (!currentUserId || !runDetails?.selectedSummarizationDefIds || runDetails.selectedSummarizationDefIds.length === 0) return [];
         addLog("Fetching summarization definition details for LLM/UI...");
-        const details = await fetchSummarizationDefDetailsForPrompt(currentUserId, selectedProjectId, runDetails.selectedSummarizationDefIds);
+        const details = await fetchSummarizationDefDetailsForPrompt(currentUserId, runDetails.selectedSummarizationDefIds);
         addLog(`Fetched ${details.length} summarization definition details.`);
         return details;
     },
-    enabled: !!currentUserId && !!selectedProjectId && !!runDetails?.selectedSummarizationDefIds && runDetails.selectedSummarizationDefIds.length > 0,
+    enabled: !!currentUserId && !!runDetails?.selectedSummarizationDefIds && runDetails.selectedSummarizationDefIds.length > 0,
     staleTime: Infinity,
   });
 
@@ -368,18 +368,18 @@ export default function RunDetailsPage() {
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
-    queryKey: ['selectedContextDocDetails', currentUserId, selectedProjectId, runDetails?.selectedContextDocumentIds?.join(',')],
+    queryKey: ['selectedContextDocDetails', currentUserId, runDetails?.selectedContextDocumentIds?.join(',')],
     queryFn: () => {
-        if (!currentUserId || !selectedProjectId || !runDetails?.selectedContextDocumentIds || runDetails.selectedContextDocumentIds.length === 0) return [];
-        return fetchContextDocumentDetailsForRun(currentUserId, selectedProjectId, runDetails.selectedContextDocumentIds);
+        if (!currentUserId || !runDetails?.selectedContextDocumentIds || runDetails.selectedContextDocumentIds.length === 0) return [];
+        return fetchContextDocumentDetailsForRun(currentUserId, runDetails.selectedContextDocumentIds);
     },
-    enabled: !!currentUserId && !!selectedProjectId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
+    enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
     staleTime: Infinity,
 });
 
   const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue } >({
     mutationFn: async (updatePayload) => {
-      if (!currentUserId || !selectedProjectId) throw new Error("User or Project not identified.");
+      if (!currentUserId) throw new Error("User not identified.");
       const { id, ...dataFromPayload } = updatePayload;
       const updateForFirestore: Record<string, any> = {};
       for (const key in dataFromPayload) {
@@ -395,12 +395,12 @@ export default function RunDetailsPage() {
         updateForFirestore.completedAt = updatePayload.completedAt;
       }
 
-      const runDocRef = doc(db, 'users', currentUserId, 'projects', selectedProjectId, 'evaluationRuns', id);
+      const runDocRef = doc(db, 'users', currentUserId, 'evaluationRuns', id);
       await updateDoc(runDocRef, updateForFirestore);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['evalRunDetails', currentUserId, selectedProjectId, runId] });
-      queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId, selectedProjectId] });
+      queryClient.invalidateQueries({ queryKey: ['evalRunDetails', currentUserId, runId] });
+      queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
     },
     onError: (error) => {
       toast({ title: "Error updating run", description: error.message, variant: "destructive" });
@@ -457,13 +457,13 @@ export default function RunDetailsPage() {
 
 
   const handleFetchAndPreviewData = async () => {
-    if (!runDetails || !currentUserId || !selectedProjectId || !runDetails.datasetId || !runDetails.datasetVersionId) {
+    if (!runDetails || !currentUserId || !runDetails.datasetId || !runDetails.datasetVersionId) {
       toast({ title: "Configuration Missing", description: "Dataset or version ID missing for this run.", variant: "destructive" }); return;
     }
     setIsPreviewDataLoading(true); setPreviewDataError(null); setSimulationLog([]); addLog("Data Preview: Process started.");
     try {
         addLog("Data Preview: Fetching dataset version configuration...");
-        const versionConfig = await fetchDatasetVersionConfig(currentUserId, selectedProjectId, runDetails.datasetId, runDetails.datasetVersionId);
+        const versionConfig = await fetchDatasetVersionConfig(currentUserId, runDetails.datasetId, runDetails.datasetVersionId);
         if (!versionConfig || !versionConfig.storagePath || !versionConfig.columnMapping || Object.keys(versionConfig.columnMapping).length === 0) { throw new Error("Dataset version configuration (storage path or product column mapping) is incomplete or missing."); }
         addLog(`Data Preview: Storage path: ${versionConfig.storagePath}`); addLog(`Data Preview: Product Column mapping: ${JSON.stringify(versionConfig.columnMapping)}`);
         if (versionConfig.groundTruthMapping && Object.keys(versionConfig.groundTruthMapping).length > 0) { addLog(`Data Preview: Ground Truth Mapping: ${JSON.stringify(versionConfig.groundTruthMapping)}`); } else if (runDetails.runType === 'GroundTruth') { addLog(`Data Preview: Warning: Run type is Ground Truth, but no ground truth mapping found.`); }
@@ -541,7 +541,7 @@ export default function RunDetailsPage() {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
     const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
 
-    if (!runDetails || !currentUserId || !selectedProjectId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) {
+    if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) {
         const errorMsg = "Missing critical run configuration or no evaluation/summarization parameters selected.";
         toast({ title: "Cannot start LLM Task", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return;
     }
@@ -549,7 +549,7 @@ export default function RunDetailsPage() {
     updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [] });
     setSimulationLog([]); addLog("LLM task process initialized."); let collectedResults: EvalRunResultItem[] = [];
     try {
-      const promptTemplateText = await fetchPromptVersionText(currentUserId, selectedProjectId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateText) throw new Error("Failed to fetch prompt template text.");
+      const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateText) throw new Error("Failed to fetch prompt template text.");
       addLog(`Fetched prompt template (v${runDetails.promptVersionNumber}).`);
       if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} evaluation parameter details for LLM call.`);
       if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization definition details for LLM call.`);
@@ -641,13 +641,13 @@ export default function RunDetailsPage() {
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results"); const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`; XLSX.writeFile(workbook, fileName); toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
   };
 
-  const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId, selectedProjectId], queryFn: () => fetchProductParametersForSchema(currentUserId!, selectedProjectId!), enabled: !!currentUserId && !!selectedProjectId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
+  const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId], queryFn: () => fetchProductParametersForSchema(currentUserId), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
 
   const handleSuggestImprovementsClick = async () => {
-    if (!runDetails || !currentUserId || !selectedProjectId || !runDetails.promptId || !runDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest Improvements", description: "Missing critical run data, evaluation parameters, or results for Ground Truth comparison.", variant: "destructive" }); return; }
+    if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest Improvements", description: "Missing critical run data, evaluation parameters, or results for Ground Truth comparison.", variant: "destructive" }); return; }
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
-      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, selectedProjectId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt template text.");
+      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt template text.");
       const mismatchDetails: MismatchDetail[] = [];
       runDetails.results.forEach(item => { evalParamDetailsForLLM.forEach(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase()) { mismatchDetails.push({ inputData: item.inputData, evaluationParameterName: paramDetail.name, evaluationParameterDefinition: paramDetail.definition, llmChosenLabel: llmOutput.chosenLabel, groundTruthLabel: gtLabel, llmRationale: llmOutput.rationale, }); } }); });
       if (mismatchDetails.length === 0) { setSuggestionError("No mismatches found. Nothing to improve!"); setIsLoadingSuggestion(false); return; }
@@ -689,7 +689,7 @@ export default function RunDetailsPage() {
   };
 
   const handleSubmitQuestionAnalysis = async () => {
-    if (!questioningItemData || !currentUserId || !selectedProjectId || !runDetails?.promptId || !runDetails?.promptVersionId) {
+    if (!questioningItemData || !currentUserId || !runDetails?.promptId || !runDetails?.promptVersionId) {
       setJudgmentAnalysisError("Missing data to perform analysis.");
       return;
     }
@@ -697,7 +697,7 @@ export default function RunDetailsPage() {
     setJudgmentAnalysisError(null);
     setJudgmentAnalysisResult(null);
     try {
-      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, selectedProjectId, runDetails.promptId, runDetails.promptVersionId);
+      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
       if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt template for analysis.");
 
       const inputForFlow: AnalyzeJudgmentDiscrepancyInput = {
@@ -765,11 +765,10 @@ export default function RunDetailsPage() {
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
 
-  if (isLoadingUserId || isLoadingProjects || (isLoadingRunDetails && currentUserId && selectedProjectId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
+  if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
   if (!currentUserId) return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>;
-  if (!selectedProjectId) return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please select a project to view run details.</CardContent></Card>;
   if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
-  if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found in project "{selectedProjectId}".</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
+  if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
 
   const displayedPreviewData = runDetails.previewedDatasetSample || [];
   const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];

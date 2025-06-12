@@ -25,7 +25,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useProject } from '@/contexts/ProjectContext';
 import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
 
 
@@ -83,29 +82,27 @@ interface EvalRun {
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
   userId?: string;
-  projectId?: string;
 }
 
-type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'errorMessage' | 'status' | 'userId' | 'previewedDatasetSample' | 'projectId'> & {
+type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'errorMessage' | 'status' | 'userId' | 'previewedDatasetSample'> & {
   createdAt: FieldValue;
   updatedAt: FieldValue;
   status: 'Pending';
   userId: string;
-  projectId: string;
 };
 
 const GEMINI_CONTEXT_CACHING_MODELS = ["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"];
 
 // Fetch functions for dropdowns
-const fetchSelectableDatasets = async (userId: string, projectId: string | null): Promise<SelectableDataset[]> => {
-  if (!userId || !projectId) return [];
-  const datasetsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'datasets');
+const fetchSelectableDatasets = async (userId: string | null): Promise<SelectableDataset[]> => {
+  if (!userId) return [];
+  const datasetsCollectionRef = collection(db, 'users', userId, 'datasets');
   const q = query(datasetsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   const datasetsData: SelectableDataset[] = [];
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data();
-    const versionsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'datasets', docSnap.id, 'versions');
+    const versionsCollectionRef = collection(db, 'users', userId, 'datasets', docSnap.id, 'versions');
     const versionsQuery = query(versionsCollectionRef, orderBy('versionNumber', 'desc'));
     const versionsSnapshot = await getDocs(versionsQuery);
 
@@ -126,9 +123,9 @@ const fetchSelectableDatasets = async (userId: string, projectId: string | null)
   return datasetsData;
 };
 
-const fetchSelectableModelConnectors = async (userId: string, projectId: string | null): Promise<SelectableModelConnector[]> => {
-  if (!userId || !projectId) return [];
-  const connectorsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'modelConnectors');
+const fetchSelectableModelConnectors = async (userId: string | null): Promise<SelectableModelConnector[]> => {
+  if (!userId) return [];
+  const connectorsCollectionRef = collection(db, 'users', userId, 'modelConnectors');
   const q = query(connectorsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => {
@@ -137,15 +134,15 @@ const fetchSelectableModelConnectors = async (userId: string, projectId: string 
   });
 };
 
-const fetchSelectablePromptTemplates = async (userId: string, projectId: string | null): Promise<SelectablePromptTemplate[]> => {
-  if (!userId || !projectId) return [];
-  const promptsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'promptTemplates');
+const fetchSelectablePromptTemplates = async (userId: string | null): Promise<SelectablePromptTemplate[]> => {
+  if (!userId) return [];
+  const promptsCollectionRef = collection(db, 'users', userId, 'promptTemplates');
   const q = query(promptsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   const promptsData: SelectablePromptTemplate[] = [];
   for (const docSnap of snapshot.docs) {
     const data = docSnap.data();
-    const versionsSnapshot = await getDocs(query(collection(db, 'users', userId, 'projects', projectId, 'promptTemplates', docSnap.id, 'versions'), orderBy('versionNumber', 'desc')));
+    const versionsSnapshot = await getDocs(query(collection(db, 'users', userId, 'promptTemplates', docSnap.id, 'versions'), orderBy('versionNumber', 'desc')));
     const versions = versionsSnapshot.docs
       .map(vDoc => ({
         id: vDoc.id,
@@ -157,25 +154,25 @@ const fetchSelectablePromptTemplates = async (userId: string, projectId: string 
   return promptsData;
 };
 
-const fetchSelectableEvalParameters = async (userId: string, projectId: string | null): Promise<SelectableEvalParameter[]> => {
-  if (!userId || !projectId) return [];
-  const evalParamsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'evaluationParameters');
+const fetchSelectableEvalParameters = async (userId: string | null): Promise<SelectableEvalParameter[]> => {
+  if (!userId) return [];
+  const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
   const q = query(evalParamsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, name: docSnap.data().name as string }));
 };
 
-const fetchSelectableContextDocuments = async (userId: string, projectId: string | null): Promise<SelectableContextDocument[]> => {
-  if (!userId || !projectId) return [];
-  const contextDocsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'contextDocuments');
+const fetchSelectableContextDocuments = async (userId: string | null): Promise<SelectableContextDocument[]> => {
+  if (!userId) return [];
+  const contextDocsCollectionRef = collection(db, 'users', userId, 'contextDocuments');
   const q = query(contextDocsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, name: docSnap.data().name as string, fileName: docSnap.data().fileName as string }));
 };
 
-const fetchSelectableSummarizationDefs = async (userId: string, projectId: string | null): Promise<SelectableSummarizationDef[]> => {
-  if (!userId || !projectId) return [];
-  const defsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'summarizationDefinitions');
+const fetchSelectableSummarizationDefs = async (userId: string | null): Promise<SelectableSummarizationDef[]> => {
+  if (!userId) return [];
+  const defsCollectionRef = collection(db, 'users', userId, 'summarizationDefinitions');
   const q = query(defsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, name: docSnap.data().name as string }));
@@ -183,9 +180,9 @@ const fetchSelectableSummarizationDefs = async (userId: string, projectId: strin
 
 
 // Fetch Evaluation Runs
-const fetchEvalRuns = async (userId: string, projectId: string | null): Promise<EvalRun[]> => {
-  if (!userId || !projectId) return [];
-  const evalRunsCollectionRef = collection(db, 'users', userId, 'projects', projectId, 'evaluationRuns');
+const fetchEvalRuns = async (userId: string | null): Promise<EvalRun[]> => {
+  if (!userId) return [];
+  const evalRunsCollectionRef = collection(db, 'users', userId, 'evaluationRuns');
   const q = query(evalRunsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as EvalRun));
@@ -195,7 +192,6 @@ const fetchEvalRuns = async (userId: string, projectId: string | null): Promise<
 export default function EvalRunsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
-  const { selectedProjectId, isLoadingProjects } = useProject();
   const queryClient = useQueryClient();
   const router = useRouter();
 
@@ -206,40 +202,40 @@ export default function EvalRunsPage() {
   }, []);
 
   const { data: evalRuns = [], isLoading: isLoadingEvalRuns, error: fetchEvalRunsError } = useQuery<EvalRun[], Error>({
-    queryKey: ['evalRuns', currentUserId, selectedProjectId],
-    queryFn: () => fetchEvalRuns(currentUserId!, selectedProjectId),
-    enabled: !!currentUserId && !!selectedProjectId && !isLoadingUserId && !isLoadingProjects,
+    queryKey: ['evalRuns', currentUserId],
+    queryFn: () => fetchEvalRuns(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
 
   const { data: datasets = [], isLoading: isLoadingDatasets } = useQuery<SelectableDataset[], Error>({
-    queryKey: ['selectableDatasets', currentUserId, selectedProjectId],
-    queryFn: () => fetchSelectableDatasets(currentUserId!, selectedProjectId),
-    enabled: !!currentUserId && !!selectedProjectId && !isLoadingUserId && !isLoadingProjects,
+    queryKey: ['selectableDatasets', currentUserId],
+    queryFn: () => fetchSelectableDatasets(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: modelConnectors = [], isLoading: isLoadingConnectors } = useQuery<SelectableModelConnector[], Error>({
-    queryKey: ['selectableModelConnectors', currentUserId, selectedProjectId],
-    queryFn: () => fetchSelectableModelConnectors(currentUserId!, selectedProjectId),
-    enabled: !!currentUserId && !!selectedProjectId && !isLoadingUserId && !isLoadingProjects,
+    queryKey: ['selectableModelConnectors', currentUserId],
+    queryFn: () => fetchSelectableModelConnectors(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: promptTemplates = [], isLoading: isLoadingPrompts } = useQuery<SelectablePromptTemplate[], Error>({
-    queryKey: ['selectablePromptTemplates', currentUserId, selectedProjectId],
-    queryFn: () => fetchSelectablePromptTemplates(currentUserId!, selectedProjectId),
-    enabled: !!currentUserId && !!selectedProjectId && !isLoadingUserId && !isLoadingProjects,
+    queryKey: ['selectablePromptTemplates', currentUserId],
+    queryFn: () => fetchSelectablePromptTemplates(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: evaluationParameters = [], isLoading: isLoadingEvalParams } = useQuery<SelectableEvalParameter[], Error>({
-    queryKey: ['selectableEvalParameters', currentUserId, selectedProjectId],
-    queryFn: () => fetchSelectableEvalParameters(currentUserId!, selectedProjectId),
-    enabled: !!currentUserId && !!selectedProjectId && !isLoadingUserId && !isLoadingProjects,
+    queryKey: ['selectableEvalParameters', currentUserId],
+    queryFn: () => fetchSelectableEvalParameters(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: contextDocuments = [], isLoading: isLoadingContextDocs } = useQuery<SelectableContextDocument[], Error>({
-    queryKey: ['selectableContextDocuments', currentUserId, selectedProjectId],
-    queryFn: () => fetchSelectableContextDocuments(currentUserId!, selectedProjectId),
-    enabled: !!currentUserId && !!selectedProjectId && !isLoadingUserId && !isLoadingProjects,
+    queryKey: ['selectableContextDocuments', currentUserId],
+    queryFn: () => fetchSelectableContextDocuments(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: summarizationDefinitions = [], isLoading: isLoadingSummarizationDefs } = useQuery<SelectableSummarizationDef[], Error>({
-    queryKey: ['selectableSummarizationDefs', currentUserId, selectedProjectId],
-    queryFn: () => fetchSelectableSummarizationDefs(currentUserId!, selectedProjectId),
-    enabled: !!currentUserId && !!selectedProjectId && !isLoadingUserId && !isLoadingProjects,
+    queryKey: ['selectableSummarizationDefs', currentUserId],
+    queryFn: () => fetchSelectableSummarizationDefs(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
 
 
@@ -287,7 +283,7 @@ export default function EvalRunsPage() {
 
   const addEvalRunMutation = useMutation<string, Error, NewEvalRunPayload>({
     mutationFn: async (newRunRawData) => {
-      if (!currentUserId || !selectedProjectId) throw new Error("User or Project not identified.");
+      if (!currentUserId) throw new Error("User not identified.");
       
       const newRunDataForFirestore: Record<string, any> = {};
       for (const key in newRunRawData) {
@@ -303,13 +299,12 @@ export default function EvalRunsPage() {
       newRunDataForFirestore.updatedAt = serverTimestamp();
       newRunDataForFirestore.status = 'Pending';
       newRunDataForFirestore.userId = currentUserId;
-      newRunDataForFirestore.projectId = selectedProjectId;
       
-      const docRef = await addDoc(collection(db, 'users', currentUserId, 'projects', selectedProjectId, 'evaluationRuns'), newRunDataForFirestore);
+      const docRef = await addDoc(collection(db, 'users', currentUserId, 'evaluationRuns'), newRunDataForFirestore);
       return docRef.id;
     },
     onSuccess: (newRunId) => {
-      queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId, selectedProjectId] });
+      queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
       toast({
         title: "Success",
         description: "New evaluation run created and set to Pending.",
@@ -325,22 +320,22 @@ export default function EvalRunsPage() {
 
   const deleteEvalRunMutation = useMutation<void, Error, string>({
     mutationFn: async (runId: string) => {
-      if (!currentUserId || !selectedProjectId) { throw new Error("User or Project not identified for delete operation."); }
+      if (!currentUserId) { throw new Error("User not identified for delete operation."); }
       try { 
-        const analysesCollectionRef = collection(db, 'users', currentUserId, 'projects', selectedProjectId, 'evaluationRuns', runId, 'storedAnalyses');
+        const analysesCollectionRef = collection(db, 'users', currentUserId, 'evaluationRuns', runId, 'storedAnalyses');
         const analysesSnapshot = await getDocs(analysesCollectionRef);
         const batch = writeBatch(db);
         analysesSnapshot.forEach(doc => batch.delete(doc.ref));
         await batch.commit();
         
-        await deleteDoc(doc(db, 'users', currentUserId, 'projects', selectedProjectId, 'evaluationRuns', runId)); 
+        await deleteDoc(doc(db, 'users', currentUserId, 'evaluationRuns', runId)); 
       } catch (e: unknown) {
         if (e instanceof Error) { throw new Error(`Failed to delete run from Firestore: ${e.message}`); }
         throw new Error(`An unknown error occurred while deleting run ${runId} from Firestore.`);
       }
     },
     onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId, selectedProjectId] });
+        queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
         toast({title: "Success", description: "Evaluation run deleted."});
     },
     onError: (error) => {
@@ -350,7 +345,7 @@ export default function EvalRunsPage() {
 
   const handleNewRunSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUserId || !selectedProjectId) return;
+    if (!currentUserId) return;
 
     const dataset = datasets?.find(d => d.id === selectedDatasetId);
     const datasetVersion = dataset?.versions.find(v => v.id === selectedDatasetVersionId);
@@ -392,7 +387,7 @@ export default function EvalRunsPage() {
 
 
     const newRunData: NewEvalRunPayload = {
-      name: newRunName.trim(), runType: newRunType, status: 'Pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(), userId: currentUserId, projectId: selectedProjectId,
+      name: newRunName.trim(), runType: newRunType, status: 'Pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(), userId: currentUserId,
       datasetId: selectedDatasetId, datasetName: dataset?.name, datasetVersionId: selectedDatasetVersionId, datasetVersionNumber: datasetVersion?.versionNumber,
       modelConnectorId: selectedConnectorId, modelConnectorName: connector?.name, modelConnectorProvider: connector?.provider, modelIdentifierForGenkit,
       promptId: selectedPromptId, promptName: prompt?.name, promptVersionId: selectedPromptVersionId, promptVersionNumber: promptVersion?.versionNumber,
@@ -412,7 +407,7 @@ export default function EvalRunsPage() {
     setRunOnNRows(0); setNewRunConcurrencyLimit(3); setShowContextDocSelector(false);
   };
 
-  const handleDeleteRun = (runId: string) => { if (!selectedProjectId) return; if (confirm('Are you sure you want to delete this evaluation run and all its associated analyses? This action cannot be undone.')) deleteEvalRunMutation.mutate(runId); };
+  const handleDeleteRun = (runId: string) => { if (!currentUserId) return; if (confirm('Are you sure you want to delete this evaluation run and all its associated analyses? This action cannot be undone.')) deleteEvalRunMutation.mutate(runId); };
   const getStatusBadge = (status: EvalRun['status']) => {
     switch (status) {
       case 'Completed': return <Badge variant="default" className="bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1 h-3 w-3" />Completed</Badge>;
@@ -432,9 +427,8 @@ export default function EvalRunsPage() {
   const foundPromptTemplate = selectedPromptId ? promptTemplates?.find(p => p.id === selectedPromptId) : undefined;
 
 
-  if (isLoadingUserId || isLoadingProjects) return <div className="p-4 md:p-6"><Skeleton className="h-32 w-full"/></div>;
+  if (isLoadingUserId) return <div className="p-4 md:p-6"><Skeleton className="h-32 w-full"/></div>;
   if (!currentUserId) return <Card className="m-4 md:m-0"><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
-  if (!selectedProjectId) return <Card className="m-4 md:m-0"><CardContent className="p-6 text-center text-muted-foreground">Please select a project to manage evaluation runs.</CardContent></Card>;
 
 
   const isNewRunButtonDisabled = addEvalRunMutation.isPending || 
@@ -456,14 +450,13 @@ export default function EvalRunsPage() {
             <DialogTrigger asChild>
               <Button 
                 onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} 
-                disabled={addEvalRunMutation.isPending || !selectedProjectId} 
+                disabled={addEvalRunMutation.isPending || !currentUserId} 
                 className="w-full sm:w-auto"
               >
                 <PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run
               </Button>
             </DialogTrigger>
             <DialogContent 
-              key={selectedProjectId || 'no-project-dialog'} 
               className="sm:max-w-lg flex flex-col max-h-[85vh] p-0"
             >
               <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b">
@@ -537,11 +530,11 @@ export default function EvalRunsPage() {
       </Card>
 
       <Card>
-        <CardHeader> <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2"> <div><CardTitle>Evaluation Run History</CardTitle><CardDescription>Review past and ongoing evaluation runs for the current project.</CardDescription></div> <Button variant="outline" size="sm" disabled className="w-full sm:w-auto"><Filter className="mr-2 h-4 w-4" /> Filter Runs</Button> </div> </CardHeader>
+        <CardHeader> <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2"> <div><CardTitle>Evaluation Run History</CardTitle><CardDescription>Review past and ongoing evaluation runs.</CardDescription></div> <Button variant="outline" size="sm" disabled className="w-full sm:w-auto"><Filter className="mr-2 h-4 w-4" /> Filter Runs</Button> </div> </CardHeader>
         <CardContent>
           {isLoadingEvalRuns && <div className="p-6"><Skeleton className="h-40 w-full"/></div>}
           {fetchEvalRunsError && <p className="text-destructive p-4">Error fetching runs: {fetchEvalRunsError.message}</p>}
-          {!isLoadingEvalRuns && !fetchEvalRunsError && evalRuns.length === 0 && ( <div className="text-center text-muted-foreground py-8"> <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" /> <p>No evaluation runs found for this project.</p> <p className="text-sm">Click "New Evaluation Run" to get started.</p> </div> )}
+          {!isLoadingEvalRuns && !fetchEvalRunsError && evalRuns.length === 0 && ( <div className="text-center text-muted-foreground py-8"> <BarChart3 className="mx-auto h-12 w-12 text-gray-400 mb-4" /> <p>No evaluation runs found.</p> <p className="text-sm">Click "New Evaluation Run" to get started.</p> </div> )}
           {!isLoadingEvalRuns && !fetchEvalRunsError && evalRuns.length > 0 && (
             <Table className="table-fixed">
               <TableHeader><TableRow><TableHead className="w-[120px] sm:w-auto">Name</TableHead><TableHead className="w-[120px]">Status</TableHead><TableHead className="hidden md:table-cell w-[100px]">Type</TableHead><TableHead className="hidden md:table-cell w-auto">Dataset</TableHead><TableHead className="hidden lg:table-cell w-auto">Model</TableHead><TableHead className="hidden lg:table-cell w-auto">Prompt</TableHead><TableHead className="hidden sm:table-cell w-[100px]">Created At</TableHead><TableHead className="text-right w-[80px]">Actions</TableHead></TableRow></TableHeader>
@@ -553,5 +546,3 @@ export default function EvalRunsPage() {
     </div>
   );
 }
-
-    

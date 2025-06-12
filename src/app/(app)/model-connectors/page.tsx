@@ -16,7 +16,6 @@ import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
-import { useProject } from '@/contexts/ProjectContext';
 
 interface ModelConnector {
   id: string; // Firestore document ID
@@ -63,9 +62,9 @@ const ANTHROPIC_MODELS = [
 ];
 
 
-const fetchModelConnectors = async (userId: string | null, projectId: string | null): Promise<ModelConnector[]> => {
-  if (!userId || !projectId) return [];
-  const connectorsCollection = collection(db, 'users', userId, 'projects', projectId, 'modelConnectors');
+const fetchModelConnectors = async (userId: string | null): Promise<ModelConnector[]> => {
+  if (!userId) return [];
+  const connectorsCollection = collection(db, 'users', userId, 'modelConnectors');
   const q = query(connectorsCollection, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ModelConnector));
@@ -74,7 +73,6 @@ const fetchModelConnectors = async (userId: string | null, projectId: string | n
 export default function ModelConnectorsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
-  const { selectedProjectId, isLoadingProjects } = useProject();
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -88,9 +86,9 @@ export default function ModelConnectorsPage() {
   }, []);
 
   const { data: connectors = [], isLoading: isLoadingConnectors, error: fetchConnectorsError } = useQuery<ModelConnector[], Error>({
-    queryKey: ['modelConnectors', currentUserId, selectedProjectId],
-    queryFn: () => fetchModelConnectors(currentUserId, selectedProjectId),
-    enabled: !!currentUserId && !!selectedProjectId && !isLoadingUserId && !isLoadingProjects,
+    queryKey: ['modelConnectors', currentUserId],
+    queryFn: () => fetchModelConnectors(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -138,16 +136,16 @@ export default function ModelConnectorsPage() {
     } catch (e) {
       console.error("Error processing config for model update:", e);
     }
-  }, [provider, selectedModelForDropdown, editingConnector, isDialogOpen]); 
+  }, [provider, selectedModelForDropdown, editingConnector, isDialogOpen, config]);
 
 
   const addConnectorMutation = useMutation<void, Error, ModelConnectorCreationPayload>({
     mutationFn: async (newConnectorData) => {
-      if (!currentUserId || !selectedProjectId) throw new Error("User or Project not identified.");
-      await addDoc(collection(db, 'users', currentUserId, 'projects', selectedProjectId, 'modelConnectors'), newConnectorData);
+      if (!currentUserId) throw new Error("User not identified.");
+      await addDoc(collection(db, 'users', currentUserId, 'modelConnectors'), newConnectorData);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId, selectedProjectId] });
+      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
       toast({ title: "Success", description: "Model connector added." });
       resetForm();
       setIsDialogOpen(false);
@@ -159,13 +157,13 @@ export default function ModelConnectorsPage() {
 
   const updateConnectorMutation = useMutation<void, Error, ModelConnectorUpdatePayload>({
     mutationFn: async (connectorToUpdate) => {
-      if (!currentUserId || !selectedProjectId) throw new Error("User or Project not identified.");
+      if (!currentUserId) throw new Error("User not identified.");
       const { id, ...dataToUpdate } = connectorToUpdate;
-      const docRef = doc(db, 'users', currentUserId, 'projects', selectedProjectId, 'modelConnectors', id);
+      const docRef = doc(db, 'users', currentUserId, 'modelConnectors', id);
       await updateDoc(docRef, dataToUpdate);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId, selectedProjectId] });
+      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
       toast({ title: "Success", description: "Model connector updated." });
       resetForm();
       setIsDialogOpen(false);
@@ -177,11 +175,11 @@ export default function ModelConnectorsPage() {
 
   const deleteConnectorMutation = useMutation<void, Error, string>({
     mutationFn: async (connectorIdToDelete) => {
-      if (!currentUserId || !selectedProjectId) throw new Error("User or Project not identified.");
-      await deleteDoc(doc(db, 'users', currentUserId, 'projects', selectedProjectId, 'modelConnectors', connectorIdToDelete));
+      if (!currentUserId) throw new Error("User not identified.");
+      await deleteDoc(doc(db, 'users', currentUserId, 'modelConnectors', connectorIdToDelete));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId, selectedProjectId] });
+      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
       toast({ title: "Success", description: "Model connector deleted." });
     },
     onError: (error) => {
@@ -192,8 +190,8 @@ export default function ModelConnectorsPage() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUserId || !selectedProjectId) {
-        toast({title: "Error", description: "User or Project not identified.", variant: "destructive"});
+    if (!currentUserId) {
+        toast({title: "Error", description: "User not identified.", variant: "destructive"});
         return;
     }
     if (!connectorName.trim() || !apiKey.trim()) {
@@ -270,8 +268,8 @@ export default function ModelConnectorsPage() {
   };
 
   const handleDelete = (id: string) => {
-     if (!currentUserId || !selectedProjectId) {
-        toast({title: "Error", description: "User or Project not identified.", variant: "destructive"});
+     if (!currentUserId) {
+        toast({title: "Error", description: "User not identified.", variant: "destructive"});
         return;
     }
     if (confirm('Are you sure you want to delete this model connector?')) {
@@ -282,10 +280,6 @@ export default function ModelConnectorsPage() {
   const handleOpenNewDialog = () => {
     if (!currentUserId) {
       toast({title: "Login Required", description: "Please log in to add connectors.", variant: "destructive"});
-      return;
-    }
-    if (!selectedProjectId) {
-      toast({title: "Project Required", description: "Please select a project to add connectors.", variant: "destructive"});
       return;
     }
     resetForm();
@@ -304,7 +298,7 @@ export default function ModelConnectorsPage() {
   const showModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider);
 
 
-  if (isLoadingUserId || isLoadingProjects || (isLoadingConnectors && currentUserId && selectedProjectId)) {
+  if (isLoadingUserId || (isLoadingConnectors && currentUserId)) {
     return (
       <div className="space-y-6 p-4 md:p-0">
         <Card className="shadow-lg"><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-full sm:w-52" /></CardContent></Card>
@@ -331,14 +325,14 @@ export default function ModelConnectorsPage() {
             <PlugZap className="h-7 w-7 text-primary" />
             <div>
               <CardTitle className="text-xl md:text-2xl font-headline">Model Connectors</CardTitle>
-              <CardDescription>Manage your Judge LLM connections for the current project. API keys and configurations are stored in Firestore.</CardDescription>
+              <CardDescription>Manage your Judge LLM connections. API keys and configurations are stored in Firestore.</CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={handleOpenNewDialog} disabled={!currentUserId || !selectedProjectId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
+              <Button onClick={handleOpenNewDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
                 <PlusCircle className="mr-2 h-5 w-5" /> Add New Connector
               </Button>
             </DialogTrigger>
@@ -417,7 +411,7 @@ export default function ModelConnectorsPage() {
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
-                  <Button type="submit" disabled={addConnectorMutation.isPending || updateConnectorMutation.isPending || !currentUserId || !selectedProjectId}>
+                  <Button type="submit" disabled={addConnectorMutation.isPending || updateConnectorMutation.isPending || !currentUserId}>
                      {(addConnectorMutation.isPending || updateConnectorMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {editingConnector ? 'Save Changes' : 'Add Connector'}
                   </Button>
@@ -431,19 +425,17 @@ export default function ModelConnectorsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Saved Connectors</CardTitle>
-          <CardDescription>Your configured Judge LLM connections for the current project.
-            {!currentUserId ? " Please log in." : !selectedProjectId ? " Please select a project." : ""}
+          <CardDescription>Your configured Judge LLM connections.
+            {!currentUserId ? " Please log in." : ""}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!currentUserId && !isLoadingUserId ? (
              <div className="text-center text-muted-foreground py-8"><p>Please log in to manage model connectors.</p></div>
-          ): !selectedProjectId && !isLoadingProjects ? (
-            <div className="text-center text-muted-foreground py-8"><p>Please select a project to view its model connectors.</p></div>
-          ) : connectors.length === 0 && !isLoadingConnectors ? (
+          ): connectors.length === 0 && !isLoadingConnectors ? (
              <div className="text-center text-muted-foreground py-8">
               <PlugZap className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <p>No model connectors configured for this project yet.</p>
+              <p>No model connectors configured yet.</p>
               <p className="text-sm">Click "Add New Connector" to get started.</p>
             </div>
           ) : (
@@ -473,10 +465,10 @@ export default function ModelConnectorsPage() {
                     <TableCell className="text-sm text-muted-foreground hidden md:table-cell truncate" title={conn.config}>{conn.config || '{}'}</TableCell>
                     <TableCell className="text-right">
                         <div className="flex justify-end items-center gap-0">
-                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || !selectedProjectId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
                             <Edit2 className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90" disabled={!currentUserId || !selectedProjectId || deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id}>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90" disabled={!currentUserId || (deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>

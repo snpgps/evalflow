@@ -8,7 +8,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ProjectProvider } from '@/contexts/ProjectContext'; // Import ProjectProvider
 
 const queryClient = new QueryClient();
 
@@ -80,9 +79,7 @@ export default function AppLayout({
 }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <ProjectProvider> {/* Wrap AppContent with ProjectProvider */}
-        <AppContent>{children}</AppContent>
-      </ProjectProvider>
+      <AppContent>{children}</AppContent>
     </QueryClientProvider>
   );
 }
