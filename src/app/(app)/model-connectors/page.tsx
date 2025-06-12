@@ -16,11 +16,12 @@ import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
+import { useProject } from '@/contexts/ProjectContext';
 
 interface ModelConnector {
   id: string; // Firestore document ID
   name: string;
-  provider: 'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Other';
+  provider: 'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Anthropic' | 'Other';
   apiKey: string;
   config: string; // JSON string for other configurations, will include "model" if selected
   createdAt?: Timestamp;
@@ -35,7 +36,7 @@ const VERTEX_AI_MODELS = [
   "gemini-1.0-pro",
   "gemini-1.0-pro-001",
   "gemini-1.0-pro-vision",
-  "gemini-2.0-flash", // Specific model used for image gen in Genkit docs
+  "gemini-2.0-flash", 
   "text-bison",
   "chat-bison",
 ];
@@ -45,18 +46,26 @@ const OPENAI_MODELS = [
   "gpt-4.1-nano",
   "gpt-4o",
   "gpt-4o-mini",
-  "gpt-4.5", // (Orion)
+  "gpt-4.5", 
   "gpt-3.5-turbo",
 ];
-const AZURE_OPENAI_MODELS = [ // These are common underlying model types; deployment name is key.
+const AZURE_OPENAI_MODELS = [ 
   "gpt-4 (via Azure)",
-  "gpt-35-turbo (via Azure)", // Common shorthand for gpt-3.5-turbo on Azure
+  "gpt-35-turbo (via Azure)", 
+];
+const ANTHROPIC_MODELS = [
+  "claude-3-opus-20240229",
+  "claude-3-sonnet-20240229",
+  "claude-3-haiku-20240307",
+  "claude-2.1",
+  "claude-2.0",
+  "claude-instant-1.2",
 ];
 
 
-const fetchModelConnectors = async (userId: string | null): Promise<ModelConnector[]> => {
-  if (!userId) return [];
-  const connectorsCollection = collection(db, 'users', userId, 'modelConnectors');
+const fetchModelConnectors = async (userId: string | null, projectId: string | null): Promise<ModelConnector[]> => {
+  if (!userId || !projectId) return [];
+  const connectorsCollection = collection(db, 'users', userId, 'projects', projectId, 'modelConnectors');
   const q = query(connectorsCollection, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ModelConnector));
@@ -65,6 +74,7 @@ const fetchModelConnectors = async (userId: string | null): Promise<ModelConnect
 export default function ModelConnectorsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
+  const { selectedProjectId, isLoadingProjects } = useProject();
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -78,9 +88,9 @@ export default function ModelConnectorsPage() {
   }, []);
 
   const { data: connectors = [], isLoading: isLoadingConnectors, error: fetchConnectorsError } = useQuery<ModelConnector[], Error>({
-    queryKey: ['modelConnectors', currentUserId],
-    queryFn: () => fetchModelConnectors(currentUserId),
-    enabled: !!currentUserId && !isLoadingUserId,
+    queryKey: ['modelConnectors', currentUserId, selectedProjectId],
+    queryFn: () => fetchModelConnectors(currentUserId, selectedProjectId),
+    enabled: !!currentUserId && !!selectedProjectId && !isLoadingUserId && !isLoadingProjects,
   });
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -88,66 +98,56 @@ export default function ModelConnectorsPage() {
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
 
   const [connectorName, setConnectorName] = useState('');
-  const [provider, setProvider] = useState<'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Other'>('OpenAI');
+  const [provider, setProvider] = useState<'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Anthropic' | 'Other'>('OpenAI');
   const [apiKey, setApiKey] = useState('');
-  const [config, setConfig] = useState('{}'); // Bound to textarea, stores full JSON string
+  const [config, setConfig] = useState('{}'); 
   const [selectedModelForDropdown, setSelectedModelForDropdown] = useState('');
 
 
-  // Effect to update the 'config' string when provider or selectedModelForDropdown changes
   useEffect(() => {
-    // Don't run if the dialog isn't open and we are not editing, or if provider isn't set
     if (!isDialogOpen && !editingConnector) return;
-    if (!provider && !editingConnector) return; // Avoid running on initial mount before provider is set for a new connector
+    if (!provider && !editingConnector) return; 
 
     const effectiveProvider = editingConnector?.provider || provider;
 
     try {
       let currentConfigJson: any = {};
-      // Try to parse existing config, but gracefully handle if it's not valid JSON yet (e.g. user is typing)
       if (config.trim() !== "") {
         try {
           currentConfigJson = JSON.parse(config);
         } catch (e) {
-          // If current config is invalid, and we have a model to set, start with that.
-          // Otherwise, we'll preserve the invalid user input for now.
           if (selectedModelForDropdown) currentConfigJson = {};
-          else return; // Don't overwrite invalid JSON if no model change is driving an update
+          else return; 
         }
       }
 
-      const relevantProvidersForModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI"];
+      const relevantProvidersForModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"];
 
       if (relevantProvidersForModelDropdown.includes(effectiveProvider) && selectedModelForDropdown) {
         currentConfigJson.model = selectedModelForDropdown;
       } else {
-        // If provider doesn't use dropdown OR no model is selected in dropdown, remove 'model' key
         delete currentConfigJson.model;
       }
       
       const newConfigString = Object.keys(currentConfigJson).length === 0 ? '{}' : JSON.stringify(currentConfigJson, null, 2);
 
-      // Only setConfig if the string content would actually change, to avoid loops if formatting is the only difference
       if (newConfigString !== config.trim()) {
          setConfig(newConfigString);
       }
 
     } catch (e) {
-      // This catch is for JSON.parse if it somehow still fails (should be handled above)
       console.error("Error processing config for model update:", e);
-      // Potentially set to a clean state if really broken
-      // setConfig(JSON.stringify({ model: selectedModelForDropdown }, null, 2));
     }
-  }, [provider, selectedModelForDropdown, editingConnector]); // Do NOT add `config` to dependency array - it creates a loop.
+  }, [provider, selectedModelForDropdown, editingConnector, isDialogOpen]); 
 
 
   const addConnectorMutation = useMutation<void, Error, ModelConnectorCreationPayload>({
     mutationFn: async (newConnectorData) => {
-      if (!currentUserId) throw new Error("User not identified.");
-      await addDoc(collection(db, 'users', currentUserId, 'modelConnectors'), newConnectorData);
+      if (!currentUserId || !selectedProjectId) throw new Error("User or Project not identified.");
+      await addDoc(collection(db, 'users', currentUserId, 'projects', selectedProjectId, 'modelConnectors'), newConnectorData);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
+      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId, selectedProjectId] });
       toast({ title: "Success", description: "Model connector added." });
       resetForm();
       setIsDialogOpen(false);
@@ -159,13 +159,13 @@ export default function ModelConnectorsPage() {
 
   const updateConnectorMutation = useMutation<void, Error, ModelConnectorUpdatePayload>({
     mutationFn: async (connectorToUpdate) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId || !selectedProjectId) throw new Error("User or Project not identified.");
       const { id, ...dataToUpdate } = connectorToUpdate;
-      const docRef = doc(db, 'users', currentUserId, 'modelConnectors', id);
+      const docRef = doc(db, 'users', currentUserId, 'projects', selectedProjectId, 'modelConnectors', id);
       await updateDoc(docRef, dataToUpdate);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
+      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId, selectedProjectId] });
       toast({ title: "Success", description: "Model connector updated." });
       resetForm();
       setIsDialogOpen(false);
@@ -177,11 +177,11 @@ export default function ModelConnectorsPage() {
 
   const deleteConnectorMutation = useMutation<void, Error, string>({
     mutationFn: async (connectorIdToDelete) => {
-      if (!currentUserId) throw new Error("User not identified.");
-      await deleteDoc(doc(db, 'users', currentUserId, 'modelConnectors', connectorIdToDelete));
+      if (!currentUserId || !selectedProjectId) throw new Error("User or Project not identified.");
+      await deleteDoc(doc(db, 'users', currentUserId, 'projects', selectedProjectId, 'modelConnectors', connectorIdToDelete));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
+      queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId, selectedProjectId] });
       toast({ title: "Success", description: "Model connector deleted." });
     },
     onError: (error) => {
@@ -192,8 +192,8 @@ export default function ModelConnectorsPage() {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!currentUserId) {
-        toast({title: "Error", description: "User not identified.", variant: "destructive"});
+    if (!currentUserId || !selectedProjectId) {
+        toast({title: "Error", description: "User or Project not identified.", variant: "destructive"});
         return;
     }
     if (!connectorName.trim() || !apiKey.trim()) {
@@ -203,8 +203,7 @@ export default function ModelConnectorsPage() {
 
     let finalConfig = '{}';
     try {
-      // Ensure what's in the textarea is valid JSON, or default it.
-      JSON.parse(config); // This will throw if invalid
+      JSON.parse(config); 
       finalConfig = config.trim() === "" ? '{}' : config.trim();
     } catch (err) {
       toast({title: "Configuration Error", description: "Additional Configuration contains invalid JSON. Please correct it or leave it as {} an empty object.", variant: "destructive"});
@@ -236,23 +235,26 @@ export default function ModelConnectorsPage() {
   };
 
   const openEditDialog = (connector: ModelConnector) => {
-    setEditingConnector(connector); // Important to set this first
+    setEditingConnector(connector); 
     setConnectorName(connector.name);
     setProvider(connector.provider);
     setApiKey(connector.apiKey);
     const loadedConfig = connector.config || '{}';
-    setConfig(loadedConfig); // Set the textarea content
+    setConfig(loadedConfig); 
 
-    // Manually pre-select model dropdown based on loaded config and provider
     try {
       if (loadedConfig.trim() !== "") {
         const parsedConfig = JSON.parse(loadedConfig);
         if (parsedConfig.model && typeof parsedConfig.model === 'string') {
-          const currentModels = connector.provider === "Vertex AI" ? VERTEX_AI_MODELS : connector.provider === "OpenAI" ? OPENAI_MODELS : connector.provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS : [];
+          const currentModels = 
+            connector.provider === "Vertex AI" ? VERTEX_AI_MODELS : 
+            connector.provider === "OpenAI" ? OPENAI_MODELS : 
+            connector.provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS : 
+            connector.provider === "Anthropic" ? ANTHROPIC_MODELS : [];
           if (currentModels.includes(parsedConfig.model)) {
             setSelectedModelForDropdown(parsedConfig.model);
           } else {
-            setSelectedModelForDropdown(''); // Model in config not valid for current provider
+            setSelectedModelForDropdown(''); 
           }
         } else {
           setSelectedModelForDropdown('');
@@ -268,8 +270,8 @@ export default function ModelConnectorsPage() {
   };
 
   const handleDelete = (id: string) => {
-     if (!currentUserId) {
-        toast({title: "Error", description: "User not identified.", variant: "destructive"});
+     if (!currentUserId || !selectedProjectId) {
+        toast({title: "Error", description: "User or Project not identified.", variant: "destructive"});
         return;
     }
     if (confirm('Are you sure you want to delete this model connector?')) {
@@ -282,6 +284,10 @@ export default function ModelConnectorsPage() {
       toast({title: "Login Required", description: "Please log in to add connectors.", variant: "destructive"});
       return;
     }
+    if (!selectedProjectId) {
+      toast({title: "Project Required", description: "Please select a project to add connectors.", variant: "destructive"});
+      return;
+    }
     resetForm();
     setIsDialogOpen(true);
   };
@@ -290,14 +296,15 @@ export default function ModelConnectorsPage() {
     setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const currentModelsForProvider = provider === "Vertex AI" ? VERTEX_AI_MODELS :
-                                  provider === "OpenAI" ? OPENAI_MODELS :
-                                  provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS :
-                                  [];
-  const showModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI"].includes(provider);
+  const currentModelsForProvider = 
+    provider === "Vertex AI" ? VERTEX_AI_MODELS :
+    provider === "OpenAI" ? OPENAI_MODELS :
+    provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS :
+    provider === "Anthropic" ? ANTHROPIC_MODELS : [];
+  const showModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider);
 
 
-  if (isLoadingUserId || (isLoadingConnectors && currentUserId)) {
+  if (isLoadingUserId || isLoadingProjects || (isLoadingConnectors && currentUserId && selectedProjectId)) {
     return (
       <div className="space-y-6 p-4 md:p-0">
         <Card className="shadow-lg"><CardHeader><Skeleton className="h-8 w-3/4" /></CardHeader><CardContent><Skeleton className="h-10 w-full sm:w-52" /></CardContent></Card>
@@ -324,14 +331,14 @@ export default function ModelConnectorsPage() {
             <PlugZap className="h-7 w-7 text-primary" />
             <div>
               <CardTitle className="text-xl md:text-2xl font-headline">Model Connectors</CardTitle>
-              <CardDescription>Manage your Judge LLM connections. API keys and configurations are stored in Firestore.</CardDescription>
+              <CardDescription>Manage your Judge LLM connections for the current project. API keys and configurations are stored in Firestore.</CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={handleOpenNewDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
+              <Button onClick={handleOpenNewDialog} disabled={!currentUserId || !selectedProjectId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
                 <PlusCircle className="mr-2 h-5 w-5" /> Add New Connector
               </Button>
             </DialogTrigger>
@@ -350,13 +357,14 @@ export default function ModelConnectorsPage() {
                 </div>
                 <div>
                   <Label htmlFor="conn-provider">LLM Provider</Label>
-                  <Select value={provider} onValueChange={(value: any) => { setProvider(value); setSelectedModelForDropdown(''); /* Reset model on provider change */ }}>
+                  <Select value={provider} onValueChange={(value: any) => { setProvider(value); setSelectedModelForDropdown(''); }}>
                     <SelectTrigger id="conn-provider">
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="OpenAI">OpenAI</SelectItem>
                       <SelectItem value="Vertex AI">Vertex AI (Gemini)</SelectItem>
+                      <SelectItem value="Anthropic">Anthropic (Claude)</SelectItem>
                       <SelectItem value="Azure OpenAI">Azure OpenAI</SelectItem>
                       <SelectItem value="Local LLM">Local LLM</SelectItem>
                       <SelectItem value="Other">Other</SelectItem>
@@ -392,14 +400,10 @@ export default function ModelConnectorsPage() {
                     value={config} 
                     onChange={(e) => {
                       setConfig(e.target.value);
-                      // If user types in config, try to update dropdown
                       try {
                         const parsed = JSON.parse(e.target.value);
                         if (parsed.model && typeof parsed.model === 'string' && currentModelsForProvider.includes(parsed.model)) {
                           setSelectedModelForDropdown(parsed.model);
-                        } else if (!parsed.model && selectedModelForDropdown) {
-                           // If user deletes model from textarea, clear dropdown
-                           //setSelectedModelForDropdown(''); // This might cause issues if provider still expects model
                         }
                       } catch (err) { /* Ignore parse errors while typing */ }
                     }} 
@@ -407,13 +411,13 @@ export default function ModelConnectorsPage() {
                     rows={3} 
                   />
                    <p className="text-xs text-muted-foreground mt-1">
-                     Use this for settings like temperature, token limits, or Azure-specific fields like <code className="bg-muted p-0.5 rounded-sm">{'{ "deployment": "my-deployment" }'}</code>.
+                     Use this for settings like temperature, token limits, or provider-specific fields like Azure's <code className="bg-muted p-0.5 rounded-sm">{'{ "deployment": "my-deployment" }'}</code> or Anthropic's <code className="bg-muted p-0.5 rounded-sm">{'{ "anthropic_version": "bedrock-2023-05-31" }'}</code>.
                      The "model" field will be managed by the dropdown above if applicable.
                    </p>
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
-                  <Button type="submit" disabled={addConnectorMutation.isPending || updateConnectorMutation.isPending || !currentUserId}>
+                  <Button type="submit" disabled={addConnectorMutation.isPending || updateConnectorMutation.isPending || !currentUserId || !selectedProjectId}>
                      {(addConnectorMutation.isPending || updateConnectorMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {editingConnector ? 'Save Changes' : 'Add Connector'}
                   </Button>
@@ -427,15 +431,19 @@ export default function ModelConnectorsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Saved Connectors</CardTitle>
-          <CardDescription>Your configured Judge LLM connections. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription>
+          <CardDescription>Your configured Judge LLM connections for the current project.
+            {!currentUserId ? " Please log in." : !selectedProjectId ? " Please select a project." : ""}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {!currentUserId && !isLoadingUserId ? (
              <div className="text-center text-muted-foreground py-8"><p>Please log in to manage model connectors.</p></div>
+          ): !selectedProjectId && !isLoadingProjects ? (
+            <div className="text-center text-muted-foreground py-8"><p>Please select a project to view its model connectors.</p></div>
           ) : connectors.length === 0 && !isLoadingConnectors ? (
              <div className="text-center text-muted-foreground py-8">
               <PlugZap className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-              <p>No model connectors configured yet.</p>
+              <p>No model connectors configured for this project yet.</p>
               <p className="text-sm">Click "Add New Connector" to get started.</p>
             </div>
           ) : (
@@ -465,10 +473,10 @@ export default function ModelConnectorsPage() {
                     <TableCell className="text-sm text-muted-foreground hidden md:table-cell truncate" title={conn.config}>{conn.config || '{}'}</TableCell>
                     <TableCell className="text-right">
                         <div className="flex justify-end items-center gap-0">
-                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || !selectedProjectId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
                             <Edit2 className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90" disabled={!currentUserId || deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id}>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90" disabled={!currentUserId || !selectedProjectId || deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
