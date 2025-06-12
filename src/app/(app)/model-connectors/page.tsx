@@ -18,6 +18,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
 import { testAnthropicConnection, type TestAnthropicConnectionInput, type TestAnthropicConnectionOutput } from '@/ai/flows/test-anthropic-connection-flow';
+import { testGoogleAIConnection, type TestGoogleAIConnectionInput, type TestGoogleAIConnectionOutput } from '@/ai/flows/test-googleai-connection-flow';
 
 interface ModelConnector {
   id: string; // Firestore document ID
@@ -37,24 +38,19 @@ const VERTEX_AI_MODELS = [
   "gemini-1.0-pro",
   "gemini-1.0-pro-001",
   "gemini-1.0-pro-vision",
-  // "gemini-2.0-flash", // This might be an experimental or non-standard name, verify availability
   "text-bison",
   "chat-bison",
 ];
 const OPENAI_MODELS = [
-  // "gpt-4.1", // Might be internal or preview names
-  // "gpt-4.1-mini",
-  // "gpt-4.1-nano",
   "gpt-4o",
   "gpt-4o-mini",
   "gpt-4-turbo",
   "gpt-4",
-  // "gpt-4.5", // Often an unconfirmed or speculative name
   "gpt-3.5-turbo",
 ];
 const AZURE_OPENAI_MODELS = [
-  "gpt-4 (via Azure)", // Placeholder, actual deployment name needed
-  "gpt-35-turbo (via Azure)", // Placeholder, actual deployment name needed
+  "gpt-4 (via Azure)", 
+  "gpt-35-turbo (via Azure)", 
 ];
 const ANTHROPIC_MODELS = [
   "claude-3-opus-20240229",
@@ -109,8 +105,8 @@ export default function ModelConnectorsPage() {
   // State for Test Connection Dialog
   const [isTestConnectionDialogOpen, setIsTestConnectionDialogOpen] = useState(false);
   const [connectorToTest, setConnectorToTest] = useState<ModelConnector | null>(null);
-  const [testPrompt, setTestPrompt] = useState<string>("Hello Claude, please respond with a short friendly greeting and mention your model name if you know it.");
-  const [testResult, setTestResult] = useState<TestAnthropicConnectionOutput | null>(null);
+  const [testPrompt, setTestPrompt] = useState<string>("Hello, please respond with a short friendly greeting and mention your model name if you know it.");
+  const [testResult, setTestResult] = useState<TestAnthropicConnectionOutput | TestGoogleAIConnectionOutput | null>(null);
   const [isSubmittingTest, setIsSubmittingTest] = useState(false);
 
 
@@ -304,11 +300,9 @@ export default function ModelConnectorsPage() {
     try {
       const parsedConfig = JSON.parse(connector.config);
       if (parsedConfig.model && typeof parsedConfig.model === 'string') {
-        // For Anthropic, the model ID in Genkit usually includes the provider prefix.
         if (connector.provider === 'Anthropic') return `anthropic/${parsedConfig.model}`;
-        if (connector.provider === 'Vertex AI' || connector.provider === 'GoogleAI') return `googleai/${parsedConfig.model}`; // Assuming Vertex AI uses googleai prefix
+        if (connector.provider === 'Vertex AI') return `googleai/${parsedConfig.model}`; 
         if (connector.provider === 'OpenAI') return `openai/${parsedConfig.model}`;
-        // Add other providers here if their Genkit ID structure is known
       }
     } catch (e) {
       // console.warn("Could not parse config for Genkit model ID for connector:", connector.name);
@@ -318,24 +312,36 @@ export default function ModelConnectorsPage() {
 
   const openTestConnectionDialog = (connector: ModelConnector) => {
     setConnectorToTest(connector);
-    setTestPrompt("Hello Claude, please respond with a short friendly greeting and mention your model name if you know it."); // Reset prompt
-    setTestResult(null); // Clear previous results
+    const defaultPrompt = `Hello${connector.provider === 'Anthropic' ? ' Claude' : (connector.provider === 'Vertex AI' ? ' Gemini' : '')}, please respond with a short friendly greeting and mention your model name if you know it.`;
+    setTestPrompt(defaultPrompt);
+    setTestResult(null); 
     setIsTestConnectionDialogOpen(true);
   };
 
-  const handleRunAnthropicTest = async () => {
+  const handleRunTest = async () => {
     if (!connectorToTest) return;
     const genkitModelId = getGenkitModelId(connectorToTest);
-    if (connectorToTest.provider !== 'Anthropic' || !genkitModelId) {
-      setTestResult({ success: false, error: "This test is only for configured Anthropic connectors with a valid model ID.", modelUsed: genkitModelId });
+
+    if (!genkitModelId) {
+      setTestResult({ success: false, error: `Cannot determine Genkit model ID for ${connectorToTest.provider}. Ensure model is selected in config.` });
       return;
     }
 
     setIsSubmittingTest(true);
     setTestResult(null);
     try {
-      const input: TestAnthropicConnectionInput = { modelId: genkitModelId, testPrompt: testPrompt };
-      const result = await testAnthropicConnection(input);
+      let result: TestAnthropicConnectionOutput | TestGoogleAIConnectionOutput;
+      if (connectorToTest.provider === 'Anthropic') {
+        const input: TestAnthropicConnectionInput = { modelId: genkitModelId, testPrompt: testPrompt };
+        result = await testAnthropicConnection(input);
+      } else if (connectorToTest.provider === 'Vertex AI') {
+        const input: TestGoogleAIConnectionInput = { modelId: genkitModelId, testPrompt: testPrompt };
+        result = await testGoogleAIConnection(input);
+      } else {
+        setTestResult({ success: false, error: `Connection testing is not implemented for ${connectorToTest.provider} provider.`, modelUsed: genkitModelId });
+        setIsSubmittingTest(false);
+        return;
+      }
       setTestResult(result);
     } catch (error: any) {
       setTestResult({ success: false, error: error.message || "Flow execution failed.", modelUsed: genkitModelId });
@@ -385,13 +391,22 @@ export default function ModelConnectorsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Alert variant="default" className="mb-4">
-              <FileTextIcon className="h-4 w-4" />
-              <AlertTitle>Environment Variable for Anthropic Tests</AlertTitle>
-              <AlertDescription>
-                For Anthropic connection tests to succeed, ensure the <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">ANTHROPIC_API_KEY</code> environment variable is set correctly in your Next.js server environment. The API key stored here is for record-keeping and other potential uses.
-              </AlertDescription>
+          <div className="space-y-2 mb-4">
+            <Alert variant="default">
+                <FileTextIcon className="h-4 w-4" />
+                <AlertTitle>Environment Variable for Anthropic Tests</AlertTitle>
+                <AlertDescription>
+                  For Anthropic connection tests to succeed, ensure the <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">ANTHROPIC_API_KEY</code> environment variable is correctly set in your Next.js server environment.
+                </AlertDescription>
             </Alert>
+            <Alert variant="default">
+                <FileTextIcon className="h-4 w-4" />
+                <AlertTitle>Credentials for Google AI (Vertex AI) Tests</AlertTitle>
+                <AlertDescription>
+                  For Google AI tests, ensure <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">GOOGLE_API_KEY</code> is set OR Application Default Credentials (ADC) are configured for your server environment.
+                </AlertDescription>
+            </Alert>
+          </div>
           <Dialog open={isFormDialogOpen} onOpenChange={(isOpen) => { setIsFormDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
               <Button onClick={handleOpenNewFormDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
@@ -469,7 +484,7 @@ export default function ModelConnectorsPage() {
                     rows={3}
                   />
                    <p className="text-xs text-muted-foreground mt-1">
-                     Use this for settings like temperature, token limits, or provider-specific fields like Azure's <code className="bg-muted p-0.5 rounded-sm">{'{ "deployment": "my-deployment" }'}</code> or Anthropic's <code className="bg-muted p-0.5 rounded-sm">{'{ "anthropic_version": "bedrock-2023-05-31" }'}</code>.
+                     Use this for settings like temperature, token limits, or provider-specific fields like Azure's <code className="bg-muted p-0.5 rounded-sm">{'{ "deployment": "my-deployment" }'}</code>.
                      The "model" field will be managed by the dropdown above if applicable.
                    </p>
                 </div>
@@ -516,7 +531,11 @@ export default function ModelConnectorsPage() {
               <TableBody>
                 {connectors.map((conn) => {
                   const genkitModelId = getGenkitModelId(conn);
-                  const canTest = conn.provider === 'Anthropic' && !!genkitModelId;
+                  const canTest = (conn.provider === 'Anthropic' || conn.provider === 'Vertex AI') && !!genkitModelId;
+                  let testIconColor = "text-gray-400"; // Default for non-testable or if something is wrong
+                  if (conn.provider === 'Anthropic') testIconColor = "text-orange-500";
+                  else if (conn.provider === 'Vertex AI') testIconColor = "text-green-500";
+                  
                   return (
                     <TableRow key={conn.id} className="hover:bg-muted/50">
                       <TableCell className="font-medium truncate" title={conn.name}>{conn.name}</TableCell>
@@ -538,10 +557,10 @@ export default function ModelConnectorsPage() {
                                 size="icon"
                                 onClick={() => openTestConnectionDialog(conn)}
                                 disabled={isSubmittingTest && connectorToTest?.id === conn.id}
-                                title="Test Anthropic Connection"
+                                title={`Test ${conn.provider} Connection`}
                                 className="h-8 w-8"
                               >
-                                <PlayIcon className="h-4 w-4 text-green-600" />
+                                <PlayIcon className={`h-4 w-4 ${testIconColor}`} />
                               </Button>
                             )}
                             <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending || (isSubmittingTest && connectorToTest?.id === conn.id)} className="h-8 w-8">
@@ -564,8 +583,8 @@ export default function ModelConnectorsPage() {
       <Dialog open={isTestConnectionDialogOpen} onOpenChange={(isOpen) => { if(!isOpen) { setConnectorToTest(null); setTestResult(null); } setIsTestConnectionDialogOpen(isOpen); }}>
         <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-                <DialogTitle>Test Anthropic Connection: {connectorToTest?.name}</DialogTitle>
-                <DialogDescription>Send a test prompt to the selected Anthropic model.</DialogDescription>
+                <DialogTitle>Test {connectorToTest?.provider} Connection: {connectorToTest?.name}</DialogTitle>
+                <DialogDescription>Send a test prompt to the selected model ({getGenkitModelId(connectorToTest!) || "N/A"}).</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
                 <div>
@@ -612,7 +631,7 @@ export default function ModelConnectorsPage() {
             </div>
             <DialogFooter>
                 <Button variant="outline" onClick={() => setIsTestConnectionDialogOpen(false)}>Cancel</Button>
-                <Button onClick={handleRunAnthropicTest} disabled={isSubmittingTest || !testPrompt.trim()}>
+                <Button onClick={handleRunTest} disabled={isSubmittingTest || !testPrompt.trim() || !connectorToTest}>
                     {isSubmittingTest ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Send className="mr-2 h-4 w-4"/>}
                     Send Test Prompt
                 </Button>
@@ -623,4 +642,3 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
-
