@@ -49,8 +49,8 @@ const OPENAI_MODELS = [
   "gpt-3.5-turbo",
 ];
 const AZURE_OPENAI_MODELS = [
-  "gpt-4 (via Azure)", 
-  "gpt-35-turbo (via Azure)", 
+  "gpt-4 (via Azure)",
+  "gpt-35-turbo (via Azure)",
 ];
 const ANTHROPIC_MODELS = [
   "claude-3-opus-20240229",
@@ -295,13 +295,13 @@ export default function ModelConnectorsPage() {
     setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const getGenkitModelId = (connector: ModelConnector): string | undefined => {
-    if (!connector.config) return undefined;
+  const getGenkitModelId = (connector: ModelConnector | null): string | undefined => {
+    if (!connector || !connector.config) return undefined;
     try {
       const parsedConfig = JSON.parse(connector.config);
       if (parsedConfig.model && typeof parsedConfig.model === 'string') {
         if (connector.provider === 'Anthropic') return `anthropic/${parsedConfig.model}`;
-        if (connector.provider === 'Vertex AI') return `googleai/${parsedConfig.model}`; 
+        if (connector.provider === 'Vertex AI') return `googleai/${parsedConfig.model}`;
         if (connector.provider === 'OpenAI') return `openai/${parsedConfig.model}`;
       }
     } catch (e) {
@@ -314,7 +314,7 @@ export default function ModelConnectorsPage() {
     setConnectorToTest(connector);
     const defaultPrompt = `Hello${connector.provider === 'Anthropic' ? ' Claude' : (connector.provider === 'Vertex AI' ? ' Gemini' : '')}, please respond with a short friendly greeting and mention your model name if you know it.`;
     setTestPrompt(defaultPrompt);
-    setTestResult(null); 
+    setTestResult(null);
     setIsTestConnectionDialogOpen(true);
   };
 
@@ -535,7 +535,7 @@ export default function ModelConnectorsPage() {
                   let testIconColor = "text-gray-400"; // Default for non-testable or if something is wrong
                   if (conn.provider === 'Anthropic') testIconColor = "text-orange-500";
                   else if (conn.provider === 'Vertex AI') testIconColor = "text-green-500";
-                  
+
                   return (
                     <TableRow key={conn.id} className="hover:bg-muted/50">
                       <TableCell className="font-medium truncate" title={conn.name}>{conn.name}</TableCell>
@@ -584,12 +584,12 @@ export default function ModelConnectorsPage() {
         <DialogContent className="sm:max-w-lg">
             <DialogHeader>
                 <DialogTitle>Test {connectorToTest?.provider} Connection: {connectorToTest?.name}</DialogTitle>
-                <DialogDescription>Send a test prompt to the selected model ({getGenkitModelId(connectorToTest!) || "N/A"}).</DialogDescription>
+                <DialogDescription>Send a test prompt to the selected model ({getGenkitModelId(connectorToTest) || "N/A"}).</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
                 <div>
                     <Label htmlFor="test-prompt-textarea">Test Prompt</Label>
-                    <Textarea 
+                    <Textarea
                         id="test-prompt-textarea"
                         value={testPrompt}
                         onChange={(e) => setTestPrompt(e.target.value)}
