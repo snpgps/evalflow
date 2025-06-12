@@ -39,17 +39,20 @@ const internalTestAnthropicConnectionFlow = ai.defineFlow(
     outputSchema: TestAnthropicConnectionOutputSchema,
   },
   async (input) => {
-    // Check if the model is Anthropic and if the plugin is conceptually disabled
+    // Check if the model ID suggests an Anthropic model.
+    // This is a temporary measure because the @genkit-ai/anthropic package installation is failing.
     if (input.modelId.startsWith('anthropic/')) {
-      const anthropicPluginErrorMessage = "Anthropic plugin is currently not active due to package installation issues. Please resolve the '@genkit-ai/anthropic' package problem to enable Anthropic model tests.";
-      console.warn(`Test for Anthropic model ${input.modelId} skipped: ${anthropicPluginErrorMessage}`);
+      console.warn(`Anthropic model test (${input.modelId}) skipped: Anthropic plugin is not active due to package installation issues.`);
       return {
         success: false,
-        error: anthropicPluginErrorMessage,
+        error: `Connection test for '${input.modelId}' failed. The Anthropic Genkit plugin (@genkit-ai/anthropic) is currently not active due to package installation issues. Please verify the package name and availability. If the package name is correct, there might be a temporary registry issue or the package is no longer published under that name.`,
         modelUsed: input.modelId,
       };
     }
 
+    // For other models (e.g., Google AI), proceed with the test.
+    // This part will likely not be hit if the UI only calls this for Anthropic models,
+    // but it's here for structural completeness.
     try {
       console.log(`Attempting to test connection with model: ${input.modelId}`);
       const { text, usage, finishReason, model } = await ai.generate({
@@ -75,4 +78,3 @@ const internalTestAnthropicConnectionFlow = ai.defineFlow(
     }
   }
 );
-
