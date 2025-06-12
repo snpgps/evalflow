@@ -8,6 +8,7 @@ import '@/ai/flows/judge-llm-evaluation-flow.ts';
 import '@/ai/flows/suggest-recursive-prompt-improvements.ts';
 import '@/ai/flows/analyze-eval-problem-categories.ts';
 import '@/ai/flows/analyze-judgment-discrepancy.ts'; 
-import '@/ai/flows/analyze-summarization-problems.ts'; // Added new flow
+import '@/ai/flows/analyze-summarization-problems.ts';
+import '@/ai/flows/test-anthropic-connection-flow.ts'; // Added new flow
 
     
