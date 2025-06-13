@@ -54,10 +54,10 @@ const AZURE_OPENAI_MODELS = [
   "gpt-35-turbo (via Azure)",
 ];
 const ANTHROPIC_MODELS = [
+  "claude-3-5-sonnet-20240620",
   "claude-3-opus-20240229",
   "claude-3-sonnet-20240229",
   "claude-3-haiku-20240307",
-  "claude-3-5-sonnet-20240620",
   "claude-2.1",
   "claude-2.0",
   "claude-instant-1.2",
@@ -439,7 +439,6 @@ export default function ModelConnectorsPage() {
                 <DialogTitle>{editingConnector ? 'Edit' : 'Add New'} Model Connector</DialogTitle>
                 <DialogDescription>
                   Configure a connection to a Judge LLM provider.
-                  <br/><span className="text-xs text-amber-600">API keys are sensitive. Ensure your Firestore rules are secure.</span>
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 py-4">
