@@ -5,43 +5,42 @@ import { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Play, Settings, FileSearch, BarChartHorizontalBig, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, MessageSquareText, Download, TestTube2, CheckCheck, Info, Wand2, Copy, FileText as FileTextIcon, MessageSquareQuote, Filter as FilterIcon, AlignLeft } from "lucide-react";
-import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar as RechartsBar, ResponsiveContainer } from 'recharts';
-import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
-import { Badge } from '@/components/ui/badge';
+import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch } from "lucide-react";
 import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 import { db, storage } from '@/lib/firebase';
 import { doc, getDoc, getDocs, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp, type FieldValue, query, orderBy } from 'firebase/firestore';
 import { ref as storageRef, getBlob } from 'firebase/storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
-import { judgeLlmEvaluation, type JudgeLlmEvaluationInput, type JudgeLlmEvaluationOutput } from '@/ai/flows/judge-llm-evaluation-flow';
+import { judgeLlmEvaluation, type JudgeLlmEvaluationInput } from '@/ai/flows/judge-llm-evaluation-flow';
 import { suggestRecursivePromptImprovements, type SuggestRecursivePromptImprovementsInput, type SuggestRecursivePromptImprovementsOutput, type MismatchDetail } from '@/ai/flows/suggest-recursive-prompt-improvements';
 import { analyzeJudgmentDiscrepancy, type AnalyzeJudgmentDiscrepancyInput, type AnalyzeJudgmentDiscrepancyOutput } from '@/ai/flows/analyze-judgment-discrepancy';
 import * as XLSX from 'xlsx';
-import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
+
+// Import new child components
+import { RunHeaderCard, type RunHeaderCardProps } from '@/components/run-details/RunHeaderCard';
+import { RunProgressAndLogs, type RunProgressAndLogsProps } from '@/components/run-details/RunProgressAndLogs';
+import { RunSummaryCards, type RunSummaryCardsProps } from '@/components/run-details/RunSummaryCards';
+import { DatasetSampleTable, type DatasetSampleTableProps } from '@/components/run-details/DatasetSampleTable';
+import { RunConfigTab, type RunConfigTabProps } from '@/components/run-details/RunConfigTab';
+import { ResultsTableTab, type ResultsTableTabProps } from '@/components/run-details/ResultsTableTab';
+import { MetricsBreakdownTab, type MetricsBreakdownTabProps } from '@/components/run-details/MetricsBreakdownTab';
+import { ImprovementSuggestionDialog, type ImprovementSuggestionDialogProps } from '@/components/run-details/ImprovementSuggestionDialog';
+import { QuestionJudgmentDialog, type QuestionJudgmentDialogProps } from '@/components/run-details/QuestionJudgmentDialog';
+import { Badge } from '@/components/ui/badge';
 
 
-// Interfaces
-interface EvalRunResultItem {
+// Interfaces - Exported for use in child components
+export interface EvalRunResultItem {
   inputData: Record<string, any>;
   judgeLlmOutput: Record<string, { chosenLabel?: string; generatedSummary?: string; rationale?: string; error?: string }>;
   groundTruth?: Record<string, string>;
 }
 
-interface EvalRun {
+export interface EvalRun {
   id: string;
   name: string;
   runType: 'Product' | 'GroundTruth';
@@ -77,26 +76,26 @@ interface EvalRun {
   userId?: string;
 }
 
-interface DatasetVersionConfig {
+export interface DatasetVersionConfig {
     storagePath?: string;
     columnMapping?: Record<string, string>;
     groundTruthMapping?: Record<string, string>;
     selectedSheetName?: string | null;
 }
 
-interface EvalParamLabelForAnalysis {
+export interface EvalParamLabelForAnalysis {
     name: string;
     definition: string;
     example?: string;
 }
-interface EvalParamDetailForPrompt {
+export interface EvalParamDetailForPrompt {
   id: string;
   name: string;
   definition: string;
   labels: EvalParamLabelForAnalysis[];
   requiresRationale?: boolean;
 }
-interface SummarizationDefDetailForPrompt {
+export interface SummarizationDefDetailForPrompt {
     id: string;
     name: string;
     definition: string;
@@ -104,7 +103,7 @@ interface SummarizationDefDetailForPrompt {
 }
 
 
-interface ParameterChartData {
+export interface ParameterChartData {
   parameterId: string;
   parameterName: string;
   data: Array<{ labelName: string; count: number }>;
@@ -112,7 +111,7 @@ interface ParameterChartData {
   totalCompared?: number;
 }
 
-interface ProductParameterForSchema {
+export interface ProductParameterForSchema {
   id: string;
   name: string;
   type: string;
@@ -120,13 +119,13 @@ interface ProductParameterForSchema {
   options?: string[];
 }
 
-interface ContextDocumentDisplayDetail {
+export interface ContextDocumentDisplayDetail {
     id: string;
     name: string;
     fileName: string;
 }
 
-interface QuestioningItemContext {
+export interface QuestioningItemContext {
     rowIndex: number;
     inputData: Record<string, any>;
     paramId: string;
@@ -135,89 +134,6 @@ interface QuestioningItemContext {
     paramLabels: EvalParamLabelForAnalysis[];
     judgeLlmOutput: { chosenLabel: string; rationale?: string; error?: string };
     groundTruthLabel?: string;
-}
-
-// Interface for Child Components' Props
-interface RunHeaderCardProps {
-  runDetails: EvalRun;
-  isPreviewDataLoading: boolean;
-  canFetchData: boolean;
-  isRunTerminal: boolean;
-  canStartLLMTask: boolean;
-  isLoadingEvalParamsForLLMHook: boolean;
-  isLoadingSummarizationDefsForLLMHook: boolean;
-  canSuggestImprovements: boolean;
-  canDownloadResults: boolean;
-  onFetchAndPreviewData: () => void;
-  onSimulateRunExecution: () => void;
-  onSuggestImprovementsClick: () => void;
-  onDownloadResults: () => void;
-  isLoadingSuggestion: boolean;
-  formatTimestamp: (timestamp?: Timestamp, includeTime?: boolean) => string;
-}
-
-interface RunProgressAndLogsProps {
-  runDetails: EvalRun;
-  isPreviewDataLoading: boolean;
-  isLoadingEvalParamsForLLMHook: boolean;
-  isLoadingSummarizationDefsForLLMHook: boolean;
-  simulationLog: string[];
-  previewDataError: string | null;
-}
-
-interface RunSummaryCardsProps {
-  runDetails: EvalRun;
-  getStatusBadge: (status?: EvalRun['status']) => JSX.Element;
-}
-
-interface DatasetSampleTableProps {
-  displayedPreviewData: Array<Record<string, any>>;
-  previewTableHeaders: string[];
-  runDetails: EvalRun;
-}
-
-interface RunConfigTabProps {
-  runDetails: EvalRun;
-  evalParamDetailsForLLM: EvalParamDetailForPrompt[];
-  summarizationDefDetailsForLLM: SummarizationDefDetailForPrompt[];
-  selectedContextDocDetails: ContextDocumentDisplayDetail[];
-  isLoadingSelectedContextDocs: boolean;
-}
-
-interface ResultsTableTabProps {
-  runDetails: EvalRun;
-  filteredResultsToDisplay: EvalRunResultItem[];
-  evalParamDetailsForLLM: EvalParamDetailForPrompt[];
-  summarizationDefDetailsForLLM: SummarizationDefDetailForPrompt[];
-  filterStates: Record<string, 'all' | 'match' | 'mismatch'>;
-  onFilterChange: (paramId: string, value: 'all' | 'match' | 'mismatch') => void;
-  onOpenQuestionDialog: (item: EvalRunResultItem, paramId: string, rowIndex: number) => void;
-}
-
-interface MetricsBreakdownTabProps {
-  runDetails: EvalRun;
-  metricsBreakdownData: ParameterChartData[];
-}
-
-interface ImprovementSuggestionDialogProps {
-  isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
-  isLoading: boolean;
-  error: string | null;
-  result: SuggestRecursivePromptImprovementsOutput | null;
-}
-
-interface QuestionJudgmentDialogProps {
-  isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
-  itemData: QuestioningItemContext | null;
-  userQuestion: string;
-  onUserQuestionChange: (value: string) => void;
-  analysisResult: AnalyzeJudgmentDiscrepancyOutput | null;
-  isAnalyzing: boolean;
-  analysisError: string | null;
-  onSubmitAnalysis: () => void;
-  runDetails: EvalRun | null;
 }
 
 const MAX_ROWS_FOR_PROCESSING: number = 200;
@@ -352,293 +268,6 @@ const fetchContextDocumentDetailsForRun = async (userId: string | null, docIds: 
     return details;
 };
 
-// Child Components
-
-const RunHeaderCard: React.FC<RunHeaderCardProps> = ({
-  runDetails, isPreviewDataLoading, canFetchData, isRunTerminal, canStartLLMTask,
-  isLoadingEvalParamsForLLMHook, isLoadingSummarizationDefsForLLMHook,
-  canSuggestImprovements, canDownloadResults, onFetchAndPreviewData, onSimulateRunExecution,
-  onSuggestImprovementsClick, onDownloadResults, isLoadingSuggestion, formatTimestamp
-}) => {
-  return (
-    <Card className="shadow-lg">
-      <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex-grow">
-          <div className="flex items-center gap-3">
-            <FileSearch className="h-8 w-8 text-primary" />
-            <CardTitle className="text-2xl md:text-3xl font-headline">{runDetails.name}</CardTitle>
-          </div>
-          <CardDescription className="mt-1 ml-0 md:ml-11 text-xs md:text-sm">
-            Run ID: {runDetails.id} | Type: {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'} | Created: {formatTimestamp(runDetails.createdAt, true)}{runDetails.status === 'Completed' && runDetails.completedAt && ` | Completed: ${formatTimestamp(runDetails.completedAt, true)}`}
-          </CardDescription>
-        </div>
-        <div className="flex flex-col items-start md:items-end gap-2 w-full md:w-auto">
-          <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto self-start md:self-center">
-            <Button variant="outline" onClick={onFetchAndPreviewData} disabled={isPreviewDataLoading || (runDetails.status === 'Running' || runDetails.status === 'Processing') || !canFetchData || isRunTerminal} className="w-full sm:w-auto">
-              {isPreviewDataLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <DatabaseZap className="mr-2 h-4 w-4" />}
-              {runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0 ? 'Refetch Sample' : 'Fetch & Preview Sample'}
-            </Button>
-            <Button variant="default" onClick={onSimulateRunExecution} disabled={(runDetails.status === 'Running' || runDetails.status === 'Processing') || !canStartLLMTask || isRunTerminal } className="w-full sm:w-auto">
-              {(runDetails.status === 'Running' || runDetails.status === 'Processing') || isLoadingEvalParamsForLLMHook || isLoadingSummarizationDefsForLLMHook ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-              {(runDetails.status === 'Running' || runDetails.status === 'Processing') ? 'Processing...' : ((isLoadingEvalParamsForLLMHook || isLoadingSummarizationDefsForLLMHook) ? 'Loading Config...' : (runDetails.status === 'Failed' ? 'Retry LLM Tasks' : 'Start LLM Tasks'))}
-            </Button>
-            {canSuggestImprovements && (
-              <Button variant="outline" onClick={onSuggestImprovementsClick} disabled={isLoadingSuggestion} className="w-full sm:w-auto">
-                <Wand2 className="mr-2 h-4 w-4" /> Suggest Improvements
-              </Button>
-            )}
-            <Button variant="outline" onClick={onDownloadResults} disabled={!canDownloadResults} className="w-full sm:w-auto">
-              <Download className="mr-2 h-4 w-4" /> Download Results
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-    </Card>
-  );
-};
-
-const RunProgressAndLogs: React.FC<RunProgressAndLogsProps> = ({
-  runDetails, isPreviewDataLoading, isLoadingEvalParamsForLLMHook, isLoadingSummarizationDefsForLLMHook, simulationLog, previewDataError
-}) => {
-  const showProgress = isPreviewDataLoading || (runDetails.status === 'Running' || runDetails.status === 'Processing') || isLoadingEvalParamsForLLMHook || isLoadingSummarizationDefsForLLMHook;
-  const progressLabel = (runDetails.status === 'Running' || runDetails.status === 'Processing') ? 'LLM Progress' : (isPreviewDataLoading ? 'Data Fetch Progress' : 'Loading Config...');
-  const progressValue = (runDetails.status === 'Running' || runDetails.status === 'Processing') ? runDetails.progress || 0 : (isPreviewDataLoading || isLoadingEvalParamsForLLMHook || isLoadingSummarizationDefsForLLMHook ? 50 : 0);
-
-  return (
-    <CardContent>
-      {showProgress && (
-        <>
-          <Label>{progressLabel}: {progressValue}%</Label>
-          <Progress value={progressValue} className="w-full h-2 mt-1 mb-2" />
-        </>
-      )}
-      {simulationLog.length > 0 && (
-        <Card className="max-h-40 overflow-y-auto p-2 bg-muted/50 text-xs">
-          <p className="font-semibold mb-1">Log:</p>
-          {simulationLog.map((log, i) => <p key={i} className="whitespace-pre-wrap font-mono">{log}</p>)}
-        </Card>
-      )}
-      {previewDataError && !isPreviewDataLoading && (
-        <Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Data Preview Error</AlertTitle><AlertDescription className="whitespace-pre-wrap break-words">{previewDataError}</AlertDescription></Alert>
-      )}
-      {runDetails.errorMessage && runDetails.status === 'Failed' && !isPreviewDataLoading && (
-        <Alert variant="destructive"><AlertTriangle className="h-4 w-4"/><AlertTitle>Run Failed</AlertTitle><AlertDescription className="whitespace-pre-wrap break-words">{runDetails.errorMessage}</AlertDescription></Alert>
-      )}
-    </CardContent>
-  );
-};
-
-const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ runDetails, getStatusBadge }) => {
-  return (
-    <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2">
-      <Card><CardHeader className="pb-2"><CardDescription>Status</CardDescription><CardTitle className="text-2xl md:text-3xl">{getStatusBadge(runDetails.status)}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.progress !== undefined && (runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress}% complete` : `Rows to process: ${runDetails.previewedDatasetSample?.length || 'N/A (Fetch sample first)'}`}</div></CardContent></Card>
-      <Card><CardHeader className="pb-2"><CardDescription>Duration</CardDescription><CardTitle className="text-3xl md:text-3xl">{runDetails.summaryMetrics?.duration || (runDetails.status === 'Completed' && runDetails.createdAt && runDetails.completedAt ? `${((runDetails.completedAt.toMillis() - runDetails.createdAt.toMillis()) / 1000).toFixed(1)}s` : 'N/A')}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">&nbsp;</div></CardContent></Card>
-    </div>
-  );
-};
-
-const DatasetSampleTable: React.FC<DatasetSampleTableProps> = ({ displayedPreviewData, previewTableHeaders, runDetails }) => {
-  if (displayedPreviewData.length === 0) return null;
-  return (
-    <Card>
-      <CardHeader><CardTitle>Dataset Sample Preview (Input Data Only)</CardTitle><CardDescription>Showing {displayedPreviewData.length} rows that will be processed. (Configured N: {runDetails.runOnNRows === 0 ? 'All' : runDetails.runOnNRows}, System processing limit: {MAX_ROWS_FOR_PROCESSING} rows). Ground truth data (if any) is used internally.</CardDescription></CardHeader>
-      <CardContent><div className="max-h-96 overflow-auto"><Table><TableHeader><TableRow>{previewTableHeaders.map(header => <TableHead key={header}>{header}</TableHead>)}</TableRow></TableHeader><TableBody>{displayedPreviewData.map((row, rowIndex) => (<TableRow key={`preview-row-${rowIndex}`}>{previewTableHeaders.map(header => <TableCell key={`preview-cell-${rowIndex}-${header}`} className="text-xs max-w-[150px] sm:max-w-[200px] truncate" title={String(row[header])}>{String(row[header])}</TableCell>)}</TableRow>))}</TableBody></Table></div></CardContent>
-    </Card>
-  );
-};
-
-const RunConfigTab: React.FC<RunConfigTabProps> = ({ runDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM, selectedContextDocDetails, isLoadingSelectedContextDocs }) => {
-  return (
-    <Card>
-      <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader>
-      <CardContent className="space-y-3 text-sm">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-          <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p>
-          <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p>
-          <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId} {runDetails.modelConnectorProvider && <Badge variant="outline" className="ml-1 text-xs">Provider: {runDetails.modelConnectorProvider}</Badge>} { (runDetails.modelConnectorProvider !== 'Anthropic' && runDetails.modelIdentifierForGenkit) ? <Badge variant="outline" className="ml-1 text-xs">Using (Genkit): {runDetails.modelIdentifierForGenkit}</Badge> : (runDetails.modelConnectorProvider === 'Anthropic' && runDetails.modelConnectorConfigString) ? <Badge variant="outline" className="ml-1 text-xs">Using (Direct): {JSON.parse(runDetails.modelConnectorConfigString).model || 'N/A'}</Badge> : null } </p>
-          <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p>
-          <p><strong>Test on Rows Config:</strong> {runDetails.runOnNRows === 0 ? 'All (capped)' : `First ${runDetails.runOnNRows} (capped)`}</p>
-          <p><strong>LLM Concurrency Limit:</strong> {runDetails.concurrencyLimit || 'Default (3)'}</p>
-          <div><strong>Evaluation Parameters:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for labeling.")} </div>
-          <div><strong>Summarization Definitions:</strong> {summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {summarizationDefDetailsForLLM.map(sd => <li key={sd.id}>{sd.name} (ID: {sd.id})</li>)} </ul> ) : (runDetails.selectedSummarizationDefNames && runDetails.selectedSummarizationDefNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedSummarizationDefNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for summarization.")} </div>
-          {runDetails.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0 && (
-            <div><strong>Context Documents:</strong>
-                {isLoadingSelectedContextDocs ? <Skeleton className="h-5 w-24 mt-1" /> :
-                    selectedContextDocDetails.length > 0 ? (
-                        <ul className="list-disc list-inside ml-4 mt-1">
-                            {selectedContextDocDetails.map(doc => <li key={doc.id} title={doc.fileName}>{doc.name}</li>)}
-                        </ul>
-                    ) : <span className="text-muted-foreground"> Details not found.</span>
-                }
-                <p className="text-xs text-muted-foreground mt-1">Note: Full context caching integration via Genkit is model-dependent and might require specific flow adjustments not yet implemented.</p>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
-
-const ResultsTableTab: React.FC<ResultsTableTabProps> = ({
-  runDetails, filteredResultsToDisplay, evalParamDetailsForLLM, summarizationDefDetailsForLLM,
-  filterStates, onFilterChange, onOpenQuestionDialog
-}) => {
-  return (
-    <Card>
-      <CardHeader> <CardTitle>Detailed LLM Task Results</CardTitle> <CardDescription>Row-by-row results from the Genkit LLM flow on the processed data.</CardDescription> </CardHeader>
-      <CardContent>
-        {filteredResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results for the current filter. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization.' : (runDetails.status === 'Pending' ? 'Fetch data sample.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : (Object.values(filterStates).some(f => f !== 'all') ? 'Try adjusting filters.' : 'Run may have failed or has no results.')))}</p> ) : (
-          <div className="max-h-[600px] overflow-auto">
-            <Table><TableHeader><TableRow><TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>
-            {evalParamDetailsForLLM?.map(paramDetail => (
-              <TableHead key={paramDetail.id} className="min-w-[200px] sm:min-w-[250px] align-top">
-                <div className="flex flex-col">
-                  <span>{paramDetail.name}</span>
-                  {runDetails.runType === 'GroundTruth' && (
-                    <Select
-                      value={filterStates[paramDetail.id] || 'all'}
-                      onValueChange={(value) => onFilterChange(paramDetail.id, value as 'all' | 'match' | 'mismatch')}
-                    >
-                      <SelectTrigger className="h-7 text-xs mt-1 w-full max-w-[180px] bg-background focus:ring-primary focus:border-primary">
-                        <FilterIcon className="h-3 w-3 mr-1 opacity-70" />
-                        <SelectValue>
-                          { filterStates[paramDetail.id] === 'match' ? 'GT Matches Only' : filterStates[paramDetail.id] === 'mismatch' ? 'GT Mismatches Only' : 'Filter: All' }
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent> <SelectItem value="all">Show All</SelectItem> <SelectItem value="match">Ground Truth Matches</SelectItem> <SelectItem value="mismatch">Ground Truth Mismatches</SelectItem> </SelectContent>
-                    </Select>
-                  )}
-                </div>
-              </TableHead>
-            ))}
-            {summarizationDefDetailsForLLM?.map(summDef => ( <TableHead key={summDef.id} className="min-w-[200px] sm:min-w-[300px] align-top">{summDef.name} (Summary)</TableHead> ))}
-            </TableRow></TableHeader>
-              <TableBody>{filteredResultsToDisplay.map((item, index) => (<TableRow key={`result-${index}`}><TableCell className="text-xs align-top"><pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre></TableCell>
-                {evalParamDetailsForLLM?.map(paramDetail => {
-                  const paramId = paramDetail.id; const outputForCell = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = outputForCell?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && !outputForCell?.error && String(llmLabel).trim().toLowerCase() === String(gtLabel).trim().toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
-                  return (
-                    <TableCell key={paramId} className="text-xs align-top">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div><strong>LLM Label:</strong> {outputForCell?.chosenLabel || (outputForCell?.error ? 'ERROR' : 'N/A')}</div>
-                          {outputForCell?.error && <div className="text-destructive text-[10px]">Error: {outputForCell.error}</div>}
-                          {showGroundTruth && !outputForCell?.error && ( <div className={`mt-1 pt-1 border-t border-dashed ${isMatch ? 'border-green-300' : 'border-red-300'}`}> <div className="flex items-center"> <strong>GT:</strong>&nbsp;{gtLabel} {isMatch ? <CheckCircle className="h-3.5 w-3.5 ml-1 text-green-500"/> : <XCircle className="h-3.5 w-3.5 ml-1 text-red-500"/>} </div> </div> )}
-                          {outputForCell?.rationale && ( <details className="mt-1"> <summary className="cursor-pointer text-blue-600 hover:underline text-[10px] flex items-center"> <MessageSquareText className="h-3 w-3 mr-1"/> LLM Rationale </summary> <p className="text-[10px] bg-blue-50 p-1 rounded border border-blue-200 mt-0.5 whitespace-pre-wrap max-w-xs">{outputForCell.rationale}</p> </details> )}
-                        </div>
-                        {outputForCell && !outputForCell.error && outputForCell.chosenLabel && ( <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 ml-1" title="Question this Judgement" onClick={() => onOpenQuestionDialog(item, paramId, index)}> <MessageSquareQuote className="h-4 w-4 text-muted-foreground hover:text-primary"/> </Button> )}
-                      </div>
-                    </TableCell>
-                  );
-                })}
-                {summarizationDefDetailsForLLM?.map(summDef => { const paramId = summDef.id; const outputForCell = item.judgeLlmOutput[paramId]; return ( <TableCell key={paramId} className="text-xs align-top"> <div>{outputForCell?.generatedSummary || (outputForCell?.error ? <span className="text-destructive">ERROR: {outputForCell.error}</span> : 'N/A')}</div> </TableCell> ); })}
-                </TableRow>))}</TableBody>
-            </Table>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-};
-
-const MetricsBreakdownTab: React.FC<MetricsBreakdownTabProps> = ({ runDetails, metricsBreakdownData }) => {
-  return (
-    <>
-      {metricsBreakdownData.length === 0 && (!runDetails?.results || runDetails.results.length === 0) && (
-        <Card> <CardHeader> <CardTitle className="flex items-center"> <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/>Metrics Breakdown (Labels) </CardTitle> </CardHeader> <CardContent> <p className="text-muted-foreground">No results available to generate label breakdown.</p> </CardContent> </Card>
-      )}
-      {metricsBreakdownData.map(paramChart => (
-        <Card key={paramChart.parameterId} className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center"> <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/> {paramChart.parameterName} </CardTitle>
-            {runDetails.runType === 'GroundTruth' && paramChart.accuracy !== undefined && ( <CardDescription className="flex items-center mt-1"> <CheckCheck className="h-4 w-4 mr-1.5 text-green-600" /> Accuracy: {paramChart.accuracy.toFixed(1)}% {paramChart.totalCompared !== undefined && ` (${(paramChart.accuracy/100 * paramChart.totalCompared).toFixed(0)}/${paramChart.totalCompared} correct)`} </CardDescription> )}
-            {runDetails.runType === 'Product' && ( <CardDescription className="flex items-center mt-1"> <Info className="h-4 w-4 mr-1.5 text-blue-600" /> Label distribution. </CardDescription> )}
-          </CardHeader>
-          <CardContent>
-            {paramChart.data.length === 0 ? ( <p className="text-muted-foreground">No data recorded for this parameter.</p> ) : (
-              <ChartContainer config={{ count: { label: "Count" } }} className="w-full" style={{ height: `${Math.max(150, paramChart.data.length * 40 + 60)}px` }}>
-                <RechartsBarChartElement data={paramChart.data} layout="vertical" margin={{ right: 30, left: 70, top: 5, bottom: 20 }}> <CartesianGrid strokeDasharray="3 3" /> <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} /> <YAxis dataKey="labelName" type="category" width={120} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={0} /> <Tooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} /> <RechartsBar dataKey="count" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} barSize={20} /> </RechartsBarChartElement>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      ))}
-      {runDetails?.results && runDetails.results.length > 0 && metricsBreakdownData.length === 0 && ( <Card> <CardHeader> <CardTitle className="flex items-center"> <BarChartHorizontalBig className="mr-2 h-5 w-5 text-primary"/>Metrics Breakdown (Labels) </CardTitle> </CardHeader> <CardContent> <p className="text-muted-foreground">Results are present, but no label counts could be generated for evaluation parameters.</p> </CardContent> </Card> )}
-    </>
-  );
-};
-
-const ImprovementSuggestionDialog: React.FC<ImprovementSuggestionDialogProps> = ({ isOpen, onOpenChange, isLoading, error, result }) => {
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
-        <DialogHeader> <DialogTitle className="flex items-center"><Wand2 className="mr-2 h-5 w-5 text-primary"/>Prompt Improvement Suggestions</DialogTitle> <DialogDescription> Based on mismatches in this Ground Truth run, here are suggestions to improve your prompt. </DialogDescription> </DialogHeader>
-        <ScrollArea className="flex-grow pr-2 -mr-2">
-          {isLoading && ( <div className="flex flex-col items-center justify-center py-10"> <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" /> <p className="text-muted-foreground">Generating suggestions...</p> </div> )}
-          {error && !isLoading && ( <Alert variant="destructive" className="my-4"> <AlertTriangle className="h-4 w-4" /> <AlertTitle>Error Generating Suggestions</AlertTitle> <AlertDescription>{error}</AlertDescription> </Alert> )}
-          {result && !isLoading && ( <div className="space-y-6 py-4"> <div> <Label htmlFor="suggested-prompt" className="text-base font-semibold">Suggested Prompt Template</Label> <div className="relative mt-1"> <Textarea id="suggested-prompt" value={result.suggestedPromptTemplate} readOnly rows={10} className="bg-muted/30 font-mono text-xs"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={() => { navigator.clipboard.writeText(result.suggestedPromptTemplate); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <div> <Label htmlFor="suggestion-reasoning" className="text-base font-semibold">Reasoning</Label> <div className="relative mt-1"> <Textarea id="suggestion-reasoning" value={result.reasoning} readOnly rows={8} className="bg-muted/30 text-sm"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={() => { navigator.clipboard.writeText(result.reasoning); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <Alert> <Info className="h-4 w-4"/> <AlertTitle>Next Steps</AlertTitle> <AlertDescription> Review the suggested prompt. If you like it, copy it and create a new version of your prompt template on the "Prompts" page. Then, create a new evaluation run using this updated prompt version. </AlertDescription> </Alert> </div> )}
-        </ScrollArea>
-        <DialogFooter className="pt-4 border-t"> <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button> </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-};
-
-const QuestionJudgmentDialog: React.FC<QuestionJudgmentDialogProps> = ({
-  isOpen, onOpenChange, itemData, userQuestion, onUserQuestionChange,
-  analysisResult, isAnalyzing, analysisError, onSubmitAnalysis, runDetails
-}) => {
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col p-0">
-        <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
-          <DialogTitle className="flex items-center"><MessageSquareQuote className="mr-2 h-5 w-5 text-primary"/>Question Bot&apos;s Judgement</DialogTitle>
-          <DialogDescription>Analyze a specific judgment made by the LLM. Provide your reasoning for a deeper AI analysis.</DialogDescription>
-        </DialogHeader>
-        <div className="flex-grow min-h-0 overflow-y-auto">
-          <ScrollArea className="h-full w-full">
-            {itemData && (
-              <div className="space-y-4 p-6 text-sm">
-                <Card className="p-3 bg-muted/40">
-                  <CardHeader className="p-0 pb-2"><CardTitle className="text-sm">Item Details (Row {itemData.rowIndex + 1})</CardTitle></CardHeader>
-                  <CardContent className="p-0 space-y-1 text-xs">
-                    <div><strong>Input Data:</strong> <pre className="whitespace-pre-wrap bg-background p-1 rounded-sm text-[10px]">{JSON.stringify(itemData.inputData, null, 2)}</pre></div>
-                    <div><strong>Evaluation Parameter:</strong> {itemData.paramName}</div>
-                    <div><strong>Judge LLM Label:</strong> {itemData.judgeLlmOutput.chosenLabel}</div>
-                    {itemData.judgeLlmOutput.rationale && <div><strong>Judge LLM Rationale:</strong> <span className="italic">{itemData.judgeLlmOutput.rationale}</span></div>}
-                    {runDetails?.runType === 'GroundTruth' && <div><strong>Ground Truth Label:</strong> {itemData.groundTruthLabel || 'N/A'}</div>}
-                  </CardContent>
-                </Card>
-                <div>
-                  <Label htmlFor="userQuestionText">Your Question/Reasoning for Discrepancy:</Label>
-                  <Textarea id="userQuestionText" value={userQuestion} onChange={(e) => onUserQuestionChange(e.target.value)} placeholder="e.g., 'I believe the LLM missed the nuance...'" rows={4} className="mt-1" />
-                </div>
-                {isAnalyzing && ( <div className="flex items-center space-x-2 pt-2"> <Loader2 className="h-5 w-5 animate-spin text-primary" /> <p className="text-muted-foreground">AI is analyzing...</p> </div> )}
-                {analysisError && !isAnalyzing && ( <Alert variant="destructive"> <AlertTriangle className="h-4 w-4" /> <AlertTitle>Analysis Error</AlertTitle> <AlertDescription>{analysisError}</AlertDescription> </Alert> )}
-                {analysisResult && !isAnalyzing && (
-                  <Card className="mt-4 p-4 border-primary/30">
-                    <CardHeader className="p-0 pb-2"><CardTitle className="text-base text-primary">AI Analysis of Judgement</CardTitle></CardHeader>
-                    <CardContent className="p-0 space-y-2 text-xs">
-                      <p><strong>Analysis:</strong> {analysisResult.analysis}</p>
-                      <div className="flex items-center gap-2"> <strong>Agrees with User Concern:</strong> <Badge variant={analysisResult.agreesWithUserConcern ? "default" : "secondary"} className={analysisResult.agreesWithUserConcern ? "bg-green-100 text-green-700 border-green-300" : ""}> {analysisResult.agreesWithUserConcern ? 'Yes' : 'No'} </Badge> </div>
-                      {analysisResult.potentialFailureReasons && <p><strong>Potential Failure Reasons:</strong> {analysisResult.potentialFailureReasons}</p>}
-                    </CardContent>
-                  </Card>
-                )}
-              </div>
-            )}
-          </ScrollArea>
-        </div>
-        <DialogFooter className="p-6 pt-4 border-t mt-auto flex-shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={onSubmitAnalysis} disabled={isAnalyzing || !userQuestion.trim() || !itemData}>
-            {isAnalyzing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzing...</> : "Submit for Analysis"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-};
-
 // Main Page Component
 export default function RunDetailsPage() {
   const reactParams = useParams();
@@ -741,7 +370,7 @@ export default function RunDetailsPage() {
         setFilterStates({});
       }
     }
-  }, [evalParamDetailsForLLM, runDetails?.runType]);
+  }, [evalParamDetailsForLLM, runDetails?.runType, filterStates]);
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
     queryKey: ['selectedContextDocDetails', currentUserId, runDetails?.selectedContextDocumentIds?.join(',')],
@@ -935,7 +564,7 @@ export default function RunDetailsPage() {
   if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
   if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
 
-  const pageContent = (
+  const pageJSX = (
     <div className="space-y-6 p-4 md:p-6">
       <RunHeaderCard
         runDetails={runDetails}
@@ -1019,5 +648,5 @@ export default function RunDetailsPage() {
       />
     </div>
   );
-  return pageContent;
+  return pageJSX;
 }
