@@ -236,6 +236,7 @@ const fetchSummarizationDefDetailsForPrompt = async (userId: string | null, defI
     return details;
 };
 
+
 const fetchProductParametersForSchema = async (userId: string | null): Promise<ProductParameterForSchema[]> => {
   if (!userId) return [];
   const paramsCollectionRef = collection(db, 'users', userId, 'productParameters');
@@ -780,19 +781,31 @@ export default function RunDetailsPage() {
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
 
-  if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
+  if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); };
   if (!currentUserId) return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>;
-  if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
-  if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
+  if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); };
+  if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); };
 
   const displayedPreviewData = runDetails.previewedDatasetSample || [];
   const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
   const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => { if (!timestamp) return 'N/A'; return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString(); };
+  
   const isRunTerminal = runDetails.status === 'Completed';
   const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed';
-  const canStartLLMTask = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook && ( (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0) );
-  const canDownloadResults = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
-  const canSuggestImprovements = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
+  
+  const isRunReadyForProcessing = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
+  const dependenciesLoadedForRunStart = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
+  const hasParamsOrDefsForRunStart = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
+  const canStartLLMTask = isRunReadyForProcessing && dependenciesLoadedForRunStart && hasParamsOrDefsForRunStart;
+
+  const hasResultsForDownload = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
+  const canDownloadResults = hasResultsForDownload;
+  
+  const isRunCompletedGroundTruth = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth';
+  const hasResultsForSuggestions = !!runDetails.results && runDetails.results.length > 0;
+  const hasEvalParamsForSuggestions = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
+  const canSuggestImprovements = isRunCompletedGroundTruth && hasResultsForSuggestions && hasMismatches && hasEvalParamsForSuggestions;
+
   const getStatusBadge = (status: EvalRun['status']) => {
     switch (status) {
       case 'Completed': return <Badge variant="default" className="text-base bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1.5 h-4 w-4" />Completed</Badge>;
