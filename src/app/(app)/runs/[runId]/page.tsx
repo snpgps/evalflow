@@ -153,6 +153,7 @@ interface RunHeaderCardProps {
   onSuggestImprovementsClick: () => void;
   onDownloadResults: () => void;
   isLoadingSuggestion: boolean;
+  formatTimestamp: (timestamp?: Timestamp, includeTime?: boolean) => string;
 }
 
 interface RunProgressAndLogsProps {
@@ -166,6 +167,7 @@ interface RunProgressAndLogsProps {
 
 interface RunSummaryCardsProps {
   runDetails: EvalRun;
+  getStatusBadge: (status?: EvalRun['status']) => JSX.Element;
 }
 
 interface DatasetSampleTableProps {
@@ -217,7 +219,6 @@ interface QuestionJudgmentDialogProps {
   onSubmitAnalysis: () => void;
   runDetails: EvalRun | null;
 }
-
 
 const MAX_ROWS_FOR_PROCESSING: number = 200;
 
@@ -357,7 +358,7 @@ const RunHeaderCard: React.FC<RunHeaderCardProps> = ({
   runDetails, isPreviewDataLoading, canFetchData, isRunTerminal, canStartLLMTask,
   isLoadingEvalParamsForLLMHook, isLoadingSummarizationDefsForLLMHook,
   canSuggestImprovements, canDownloadResults, onFetchAndPreviewData, onSimulateRunExecution,
-  onSuggestImprovementsClick, onDownloadResults, isLoadingSuggestion
+  onSuggestImprovementsClick, onDownloadResults, isLoadingSuggestion, formatTimestamp
 }) => {
   return (
     <Card className="shadow-lg">
@@ -427,7 +428,7 @@ const RunProgressAndLogs: React.FC<RunProgressAndLogsProps> = ({
   );
 };
 
-const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ runDetails }) => {
+const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ runDetails, getStatusBadge }) => {
   return (
     <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2">
       <Card><CardHeader className="pb-2"><CardDescription>Status</CardDescription><CardTitle className="text-2xl md:text-3xl">{getStatusBadge(runDetails.status)}</CardTitle></CardHeader><CardContent><div className="text-xs text-muted-foreground">{runDetails.progress !== undefined && (runDetails.status === 'Running' || runDetails.status === 'Processing') ? `${runDetails.progress}% complete` : `Rows to process: ${runDetails.previewedDatasetSample?.length || 'N/A (Fetch sample first)'}`}</div></CardContent></Card>
@@ -917,6 +918,7 @@ export default function RunDetailsPage() {
         onSuggestImprovementsClick={handleSuggestImprovementsClick}
         onDownloadResults={handleDownloadResults}
         isLoadingSuggestion={isLoadingSuggestion}
+        formatTimestamp={formatTimestamp}
       />
 
       <RunProgressAndLogs
@@ -928,7 +930,7 @@ export default function RunDetailsPage() {
         previewDataError={previewDataError}
       />
 
-      <RunSummaryCards runDetails={runDetails} />
+      <RunSummaryCards runDetails={runDetails} getStatusBadge={getStatusBadge} />
       <DatasetSampleTable displayedPreviewData={displayedPreviewData} previewTableHeaders={previewTableHeaders} runDetails={runDetails} />
 
       <Tabs defaultValue="results_table">
