@@ -56,8 +56,8 @@ interface EvalRun {
   modelConnectorId: string;
   modelConnectorName?: string;
   modelConnectorProvider?: string;
-  modelConnectorConfigString?: string; // Stores the JSON config string from the connector
-  modelIdentifierForGenkit?: string; // For passing to Genkit flows (non-Anthropic)
+  modelConnectorConfigString?: string;
+  modelIdentifierForGenkit?: string;
   promptId: string;
   promptName?: string;
   promptVersionId?: string;
@@ -96,7 +96,6 @@ interface EvalParamDetailForPrompt {
   labels: EvalParamLabelForAnalysis[];
   requiresRationale?: boolean;
 }
-// Interface for Summarization Definitions to be used in prompts/LLM calls
 interface SummarizationDefDetailForPrompt {
     id: string;
     name: string;
@@ -139,9 +138,9 @@ interface QuestioningItemContext {
 }
 
 
-const MAX_ROWS_FOR_PROCESSING = 200;
+const MAX_ROWS_FOR_PROCESSING: number = 200;
 
-function sanitizeDataForFirestore(data: any): any {
+const sanitizeDataForFirestore = (data: any): any => {
   if (Array.isArray(data)) {
     return data.map(item => sanitizeDataForFirestore(item));
   } else if (data !== null && typeof data === 'object') {
@@ -159,7 +158,7 @@ function sanitizeDataForFirestore(data: any): any {
     return sanitizedObject;
   }
   return data;
-}
+};
 
 
 const fetchEvalRunDetails = async (userId: string | null, runId: string): Promise<EvalRun | null> => {
@@ -278,29 +277,28 @@ export default function RunDetailsPage() {
   const reactParams = useParams();
   const runId = reactParams.runId as string;
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [isLoadingUserId, setIsLoadingUserId] = useState(true);
+  const [isLoadingUserId, setIsLoadingUserId] = useState<boolean>(true);
   const queryClient = useQueryClient();
   const router = useRouter();
 
   const [simulationLog, setSimulationLog] = useState<string[]>([]);
-  const [isPreviewDataLoading, setIsPreviewDataLoading] = useState(false);
+  const [isPreviewDataLoading, setIsPreviewDataLoading] = useState<boolean>(false);
   const [previewDataError, setPreviewDataError] = useState<string | null>(null);
   const [metricsBreakdownData, setMetricsBreakdownData] = useState<ParameterChartData[]>([]);
 
-  const [isSuggestionDialogOpen, setIsSuggestionDialogOpen] = useState(false);
-  const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
+  const [isSuggestionDialogOpen, setIsSuggestionDialogOpen] = useState<boolean>(false);
+  const [isLoadingSuggestion, setIsLoadingSuggestion] = useState<boolean>(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [suggestionResult, setSuggestionResult] = useState<SuggestRecursivePromptImprovementsOutput | null>(null);
 
-  const [isQuestionDialogVisible, setIsQuestionDialogVisible] = useState(false);
+  const [isQuestionDialogVisible, setIsQuestionDialogVisible] = useState<boolean>(false);
   const [questioningItemData, setQuestioningItemData] = useState<QuestioningItemContext | null>(null);
-  const [userQuestionText, setUserQuestionText] = useState('');
+  const [userQuestionText, setUserQuestionText] = useState<string>('');
   const [judgmentAnalysisResult, setJudgmentAnalysisResult] = useState<AnalyzeJudgmentDiscrepancyOutput | null>(null);
-  const [isAnalyzingJudgment, setIsAnalyzingJudgment] = useState(false);
+  const [isAnalyzingJudgment, setIsAnalyzingJudgment] = useState<boolean>(false);
   const [judgmentAnalysisError, setJudgmentAnalysisError] = useState<string | null>(null);
 
   const [filterStates, setFilterStates] = useState<Record<string, 'all' | 'match' | 'mismatch'>>({});
-
 
   useEffect(() => {
     const storedUserId = localStorage.getItem('currentUserId');
@@ -308,7 +306,7 @@ export default function RunDetailsPage() {
     setIsLoadingUserId(false);
   }, []);
 
-  const addLog = (message: string, type: 'info' | 'error' = 'info') => {
+  const addLog = (message: string, type: 'info' | 'error' = 'info'): void => {
     const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
     if (type === 'error') {
       console.error(logEntry);
@@ -361,7 +359,7 @@ export default function RunDetailsPage() {
     if (hasEvalParams && runDetails?.runType === 'GroundTruth') {
       const newInitialFilters: Record<string, 'all' | 'match' | 'mismatch'> = {};
       evalParamDetailsForLLM.forEach(param => {
-        newInitialFilters[param.id] = 'all'; // Default to 'all'
+        newInitialFilters[param.id] = 'all';
       });
 
       if (JSON.stringify(filterStates) !== JSON.stringify(newInitialFilters)) {
@@ -383,7 +381,7 @@ export default function RunDetailsPage() {
     },
     enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
     staleTime: Infinity,
-});
+  });
 
   const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue } >({
     mutationFn: async (updatePayload) => {
@@ -464,7 +462,7 @@ export default function RunDetailsPage() {
   }, [runDetails, evalParamDetailsForLLM, metricsBreakdownData]);
 
 
-  const handleFetchAndPreviewData = async () => {
+  const handleFetchAndPreviewData = async (): Promise<void> => {
     if (!runDetails || !currentUserId || !runDetails.datasetId || !runDetails.datasetVersionId) {
       toast({ title: "Configuration Missing", description: "Dataset or version ID missing for this run.", variant: "destructive" }); return;
     }
@@ -545,7 +543,7 @@ export default function RunDetailsPage() {
     } finally { setIsPreviewDataLoading(false); }
   };
 
-  const simulateRunExecution = async () => {
+  const simulateRunExecution = async (): Promise<void> => {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
     const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
 
@@ -599,9 +597,9 @@ export default function RunDetailsPage() {
             evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [],
             summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [],
             parameterIdsRequiringRationale: parameterIdsRequiringRationale,
-            modelName: runDetails.modelIdentifierForGenkit || undefined, // For Genkit calls
-            modelConnectorProvider: runDetails.modelConnectorProvider, // For flow to decide client
-            modelConnectorConfigString: runDetails.modelConnectorConfigString, // For flow to get model if direct
+            modelName: runDetails.modelIdentifierForGenkit || undefined,
+            modelConnectorProvider: runDetails.modelConnectorProvider,
+            modelConnectorConfigString: runDetails.modelConnectorConfigString,
           };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex };
           if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
@@ -627,7 +625,7 @@ export default function RunDetailsPage() {
     updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM task failed: ${error.message}`, results: sanitizeDataForFirestore(collectedResults) }); }
   };
 
-  const handleDownloadResults = () => {
+  const handleDownloadResults = (): void => {
     if (!runDetails || !runDetails.results || runDetails.results.length === 0 ) { toast({ title: "No Results", description: "No results to download.", variant: "destructive" }); return; }
     const dataForExcel: any[] = []; const inputDataKeys = new Set<string>(); runDetails.results.forEach(item => { Object.keys(item.inputData).forEach(key => inputDataKeys.add(key)); }); const sortedInputDataKeys = Array.from(inputDataKeys).sort();
 
@@ -661,7 +659,7 @@ export default function RunDetailsPage() {
 
   const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId], queryFn: () => fetchProductParametersForSchema(currentUserId), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
 
-  const handleSuggestImprovementsClick = async () => {
+  const handleSuggestImprovementsClick = async (): Promise<void> => {
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest Improvements", description: "Missing critical run data, evaluation parameters, or results for Ground Truth comparison.", variant: "destructive" }); return; }
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
@@ -676,7 +674,7 @@ export default function RunDetailsPage() {
     } catch (error: any) { console.error("Error suggesting improvements:", error); setSuggestionError(error.message || "Failed to get suggestions."); } finally { setIsLoadingSuggestion(false); }
   };
 
-  const handleOpenQuestionDialog = (item: EvalRunResultItem, paramId: string, rowIndex: number) => {
+  const handleOpenQuestionDialog = (item: EvalRunResultItem, paramId: string, rowIndex: number): void => {
     const paramDetail = evalParamDetailsForLLM.find(p => p.id === paramId);
     const outputData = item.judgeLlmOutput[paramId];
 
@@ -706,7 +704,7 @@ export default function RunDetailsPage() {
     setIsQuestionDialogVisible(true);
   };
 
-  const handleSubmitQuestionAnalysis = async () => {
+  const handleSubmitQuestionAnalysis = async (): Promise<void> => {
     if (!questioningItemData || !currentUserId || !runDetails?.promptId || !runDetails?.promptVersionId) {
       setJudgmentAnalysisError("Missing data to perform analysis.");
       return;
@@ -739,7 +737,7 @@ export default function RunDetailsPage() {
     }
   };
 
-  const hasMismatches = useMemo(() => {
+  const hasMismatches = useMemo((): boolean => {
     if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false;
     return runDetails.results.some(item =>
       evalParamDetailsForLLM.some(paramDetail => {
@@ -750,11 +748,11 @@ export default function RunDetailsPage() {
     );
   }, [runDetails, evalParamDetailsForLLM]);
 
-  const handleFilterChange = (paramId: string, value: 'all' | 'match' | 'mismatch') => {
+  const handleFilterChange = (paramId: string, value: 'all' | 'match' | 'mismatch'): void => {
     setFilterStates(prev => ({ ...prev, [paramId]: value }));
   };
 
-  const filteredResultsToDisplay = useMemo(() => {
+  const filteredResultsToDisplay = useMemo((): EvalRunResultItem[] => {
     if (!runDetails?.results) return [];
     if (runDetails.runType !== 'GroundTruth' || Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) {
       return runDetails.results;
@@ -782,33 +780,15 @@ export default function RunDetailsPage() {
     });
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
-  const displayedPreviewData = runDetails?.previewedDatasetSample || [];
-  const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
+  const displayedPreviewData: Array<Record<string, any>> = runDetails?.previewedDatasetSample || [];
+  const previewTableHeaders: string[] = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
 
-  const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => {
+  const formatTimestamp = (timestamp?: Timestamp, includeTime: boolean = false): string => {
     if (!timestamp) return 'N/A';
     return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString();
   };
 
-  const isRunTerminal = runDetails?.status === 'Completed';
-  const canFetchData = runDetails?.status === 'Pending' || runDetails?.status === 'Failed' || runDetails?.status === 'DataPreviewed';
-
-  const isRunReadyForProcessing_flag = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
-  const dependenciesLoadedForRunStart_flag = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
-  const hasParamsOrDefsForRunStart_flag = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
-  const canStartLLMTask = isRunReadyForProcessing_flag && dependenciesLoadedForRunStart_flag && hasParamsOrDefsForRunStart_flag;
-
-  const hasResultsForDownload_flag = runDetails?.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
-  const canDownloadResults = hasResultsForDownload_flag;
-
-  // const canSuggest_isCompletedGT = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth';
-  // const canSuggest_hasResults = !!runDetails?.results && runDetails.results.length > 0;
-  // const canSuggest_hasMismatches_flag = hasMismatches;
-  // const canSuggest_hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-  // const canSuggestImprovements = canSuggest_isCompletedGT && canSuggest_hasResults && canSuggest_hasMismatches_flag && canSuggest_hasEvalParams;
-  const canSuggestImprovements = false; // This was the simplified version
-
-  function getStatusBadge(status?: EvalRun['status']) {
+  function getStatusBadge(status?: EvalRun['status']): JSX.Element {
     if (!status) return <Badge variant="outline" className="text-base">Unknown</Badge>;
     switch (status) {
       case 'Completed': return <Badge variant="default" className="text-base bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1.5 h-4 w-4" />Completed</Badge>;
@@ -820,6 +800,20 @@ export default function RunDetailsPage() {
       default: return <Badge variant="outline" className="text-base">{status}</Badge>;
     }
   }
+
+  const isRunTerminal: boolean = runDetails?.status === 'Completed';
+  const canFetchData: boolean = runDetails?.status === 'Pending' || runDetails?.status === 'Failed' || runDetails?.status === 'DataPreviewed';
+
+  const isRunReadyForProcessing_flag: boolean = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
+  const dependenciesLoadedForRunStart_flag: boolean = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
+  const hasParamsOrDefsForRunStart_flag: boolean = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
+  const canStartLLMTask: boolean = isRunReadyForProcessing_flag && dependenciesLoadedForRunStart_flag && hasParamsOrDefsForRunStart_flag;
+
+  const hasResultsForDownload_flag: boolean = runDetails?.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
+  const canDownloadResults: boolean = hasResultsForDownload_flag;
+
+  const canSuggestImprovements: boolean = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails?.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
+
 
   if (isLoadingUserId) {
     return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> );
@@ -842,7 +836,7 @@ export default function RunDetailsPage() {
   }
   
   console.log('RunDetailsPage: JavaScript logic finished, about to return JSX.');
-  return (
+  const pageContent =
     <div className="space-y-6 p-4 md:p-6">
       <Card className="shadow-lg">
         <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -1118,7 +1112,6 @@ export default function RunDetailsPage() {
         </DialogContent>
       </Dialog>
 
-    </div>
-  );
+    </div>;
+  return pageContent;
 }
-
