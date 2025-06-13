@@ -782,12 +782,44 @@ export default function RunDetailsPage() {
     });
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
+  const displayedPreviewData = runDetails?.previewedDatasetSample || [];
+  const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
 
-  const isLoadingAllDropdownData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams || isLoadingContextDocs || isLoadingSummarizationDefs;
-  const selectedDatasetForVersions = datasets?.find(d => d.id === selectedDatasetId);
-  const selectedDatasetVersionForWarnings = selectedDatasetForVersions?.versions.find(v => v.id === selectedDatasetVersionId);
-  const foundPromptTemplate = selectedPromptId ? promptTemplates?.find(p => p.id === selectedPromptId) : undefined;
+  const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => {
+    if (!timestamp) return 'N/A';
+    return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString();
+  };
 
+  const isRunTerminal = runDetails?.status === 'Completed';
+  const canFetchData = runDetails?.status === 'Pending' || runDetails?.status === 'Failed' || runDetails?.status === 'DataPreviewed';
+
+  const isRunReadyForProcessing_flag = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
+  const dependenciesLoadedForRunStart_flag = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
+  const hasParamsOrDefsForRunStart_flag = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
+  const canStartLLMTask = isRunReadyForProcessing_flag && dependenciesLoadedForRunStart_flag && hasParamsOrDefsForRunStart_flag;
+
+  const hasResultsForDownload_flag = runDetails?.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
+  const canDownloadResults = hasResultsForDownload_flag;
+
+  // const canSuggest_isCompletedGT = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth';
+  // const canSuggest_hasResults = !!runDetails?.results && runDetails.results.length > 0;
+  // const canSuggest_hasMismatches_flag = hasMismatches;
+  // const canSuggest_hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
+  // const canSuggestImprovements = canSuggest_isCompletedGT && canSuggest_hasResults && canSuggest_hasMismatches_flag && canSuggest_hasEvalParams;
+  const canSuggestImprovements = false; // This was the simplified version
+
+  function getStatusBadge(status?: EvalRun['status']) {
+    if (!status) return <Badge variant="outline" className="text-base">Unknown</Badge>;
+    switch (status) {
+      case 'Completed': return <Badge variant="default" className="text-base bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1.5 h-4 w-4" />Completed</Badge>;
+      case 'Running': return <Badge variant="default" className="text-base bg-blue-500 hover:bg-blue-600"><Clock className="mr-1.5 h-4 w-4 animate-spin" />Running</Badge>;
+      case 'Processing': return <Badge variant="default" className="text-base bg-purple-500 hover:bg-purple-600"><Zap className="mr-1.5 h-4 w-4 animate-pulse" />Processing</Badge>;
+      case 'Pending': return <Badge variant="secondary" className="text-base"><Clock className="mr-1.5 h-4 w-4" />Pending</Badge>;
+      case 'DataPreviewed': return <Badge variant="outline" className="text-base border-blue-500 text-blue-600"><DatabaseZap className="mr-1.5 h-4 w-4" />Data Previewed</Badge>;
+      case 'Failed': return <Badge variant="destructive" className="text-base"><XCircle className="mr-1.5 h-4 w-4" />Failed</Badge>;
+      default: return <Badge variant="outline" className="text-base">{status}</Badge>;
+    }
+  }
 
   if (isLoadingUserId) {
     return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> );
@@ -808,41 +840,8 @@ export default function RunDetailsPage() {
   if (!runDetails) {
     return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> );
   }
-
-  const displayedPreviewData = runDetails.previewedDatasetSample || [];
-  const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
-
-  const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => { if (!timestamp) return 'N/A'; return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString(); };
-
-  const isRunTerminal = runDetails.status === 'Completed';
-  const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed';
-
-  const isRunReadyForProcessing_flag = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
-  const dependenciesLoadedForRunStart_flag = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
-  const hasParamsOrDefsForRunStart_flag = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
-  const canStartLLMTask = isRunReadyForProcessing_flag && dependenciesLoadedForRunStart_flag && hasParamsOrDefsForRunStart_flag;
-
-  const hasResultsForDownload_flag = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
-  const canDownloadResults = hasResultsForDownload_flag;
-
-  const canSuggest_isCompletedGT = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth';
-  const canSuggest_hasResults = !!runDetails.results && runDetails.results.length > 0;
-  const canSuggest_hasMismatches_flag = hasMismatches;
-  const canSuggest_hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-  const canSuggestImprovements = canSuggest_isCompletedGT && canSuggest_hasResults && canSuggest_hasMismatches_flag && canSuggest_hasEvalParams;
-
-  function getStatusBadge(status: EvalRun['status']) {
-    switch (status) {
-      case 'Completed': return <Badge variant="default" className="text-base bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1.5 h-4 w-4" />Completed</Badge>;
-      case 'Running': return <Badge variant="default" className="text-base bg-blue-500 hover:bg-blue-600"><Clock className="mr-1.5 h-4 w-4 animate-spin" />Running</Badge>;
-      case 'Processing': return <Badge variant="default" className="text-base bg-purple-500 hover:bg-purple-600"><Zap className="mr-1.5 h-4 w-4 animate-pulse" />Processing</Badge>;
-      case 'Pending': return <Badge variant="secondary" className="text-base"><Clock className="mr-1.5 h-4 w-4" />Pending</Badge>;
-      case 'DataPreviewed': return <Badge variant="outline" className="text-base border-blue-500 text-blue-600"><DatabaseZap className="mr-1.5 h-4 w-4" />Data Previewed</Badge>;
-      case 'Failed': return <Badge variant="destructive" className="text-base"><XCircle className="mr-1.5 h-4 w-4" />Failed</Badge>;
-      default: return <Badge variant="outline" className="text-base">{status}</Badge>;
-    }
-  }
-
+  
+  console.log('RunDetailsPage: JavaScript logic finished, about to return JSX.');
   return (
     <div className="space-y-6 p-4 md:p-6">
       <Card className="shadow-lg">
@@ -1036,7 +1035,7 @@ export default function RunDetailsPage() {
           <ScrollArea className="flex-grow pr-2 -mr-2">
             {isLoadingSuggestion && ( <div className="flex flex-col items-center justify-center py-10"> <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" /> <p className="text-muted-foreground">Generating suggestions...</p> </div> )}
             {suggestionError && !isLoadingSuggestion && ( <Alert variant="destructive" className="my-4"> <AlertTriangle className="h-4 w-4" /> <AlertTitle>Error Generating Suggestions</AlertTitle> <AlertDescription>{suggestionError}</AlertDescription> </Alert> )}
-            {suggestionResult && !isLoadingSuggestion && ( <div className="space-y-6 py-4"> <div> <Label htmlFor="suggested-prompt" className="text-base font-semibold">Suggested Prompt Template</Label> <div className="relative mt-1"> <Textarea id="suggested-prompt" value={suggestionResult.suggestedPromptTemplate} readOnly rows={10} className="bg-muted/30 font-mono text-xs"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={() => { navigator.clipboard.writeText(suggestionResult.suggestedPromptTemplate); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <div> <Label htmlFor="suggestion-reasoning" className="text-base font-semibold">Reasoning</Label> <div className="relative mt-1"> <Textarea id="suggestion-reasoning" value={suggestionResult.reasoning} readOnly rows={8} className="bg-muted/30 text-sm"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={() => { navigator.clipboard.writeText(suggestionResult.reasoning); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <Alert> <Info className="h-4 w-4"/> <AlertTitle>Next Steps</AlertTitle> <AlertDescription> Review the suggested prompt. If you like it, copy it and create a new version of your prompt template on the "Prompts" page. Then, create a new evaluation run using this updated prompt version. </AlertDescription> </Alert> </div> )}
+            {suggestionResult && !isLoadingSuggestion && ( <div className="space-y-6 py-4"> <div> <Label htmlFor="suggested-prompt" className="text-base font-semibold">Suggested Prompt Template</Label> <div className="relative mt-1"> <Textarea id="suggested-prompt" value={suggestionResult.suggestedPromptTemplate} readOnly rows={10} className="bg-muted/30 font-mono text-xs"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={() => { navigator.clipboard.writeText(suggestionResult.suggestedPromptTemplate); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <div> <Label htmlFor="suggestion-reasoning" className="text-base font-semibold">Reasoning</Label> <div className="relative mt-1"> <Textarea id="suggestion-reasoning" value={suggestionResult.reasoning} readOnly rows={8} className="bg-muted/30 text-sm"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={()={() => { navigator.clipboard.writeText(suggestionResult.reasoning); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <Alert> <Info className="h-4 w-4"/> <AlertTitle>Next Steps</AlertTitle> <AlertDescription> Review the suggested prompt. If you like it, copy it and create a new version of your prompt template on the "Prompts" page. Then, create a new evaluation run using this updated prompt version. </AlertDescription> </Alert> </div> )}
           </ScrollArea>
           <DialogFooter className="pt-4 border-t"> <Button variant="outline" onClick={() => setIsSuggestionDialogOpen(false)}>Close</Button> </DialogFooter>
         </DialogContent>
@@ -1122,3 +1121,4 @@ export default function RunDetailsPage() {
     </div>
   );
 }
+
