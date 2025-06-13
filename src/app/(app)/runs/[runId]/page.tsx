@@ -137,6 +137,87 @@ interface QuestioningItemContext {
     groundTruthLabel?: string;
 }
 
+// Interface for Child Components' Props
+interface RunHeaderCardProps {
+  runDetails: EvalRun;
+  isPreviewDataLoading: boolean;
+  canFetchData: boolean;
+  isRunTerminal: boolean;
+  canStartLLMTask: boolean;
+  isLoadingEvalParamsForLLMHook: boolean;
+  isLoadingSummarizationDefsForLLMHook: boolean;
+  canSuggestImprovements: boolean;
+  canDownloadResults: boolean;
+  onFetchAndPreviewData: () => void;
+  onSimulateRunExecution: () => void;
+  onSuggestImprovementsClick: () => void;
+  onDownloadResults: () => void;
+  isLoadingSuggestion: boolean;
+}
+
+interface RunProgressAndLogsProps {
+  runDetails: EvalRun;
+  isPreviewDataLoading: boolean;
+  isLoadingEvalParamsForLLMHook: boolean;
+  isLoadingSummarizationDefsForLLMHook: boolean;
+  simulationLog: string[];
+  previewDataError: string | null;
+}
+
+interface RunSummaryCardsProps {
+  runDetails: EvalRun;
+}
+
+interface DatasetSampleTableProps {
+  displayedPreviewData: Array<Record<string, any>>;
+  previewTableHeaders: string[];
+  runDetails: EvalRun;
+}
+
+interface RunConfigTabProps {
+  runDetails: EvalRun;
+  evalParamDetailsForLLM: EvalParamDetailForPrompt[];
+  summarizationDefDetailsForLLM: SummarizationDefDetailForPrompt[];
+  selectedContextDocDetails: ContextDocumentDisplayDetail[];
+  isLoadingSelectedContextDocs: boolean;
+}
+
+interface ResultsTableTabProps {
+  runDetails: EvalRun;
+  filteredResultsToDisplay: EvalRunResultItem[];
+  evalParamDetailsForLLM: EvalParamDetailForPrompt[];
+  summarizationDefDetailsForLLM: SummarizationDefDetailForPrompt[];
+  filterStates: Record<string, 'all' | 'match' | 'mismatch'>;
+  onFilterChange: (paramId: string, value: 'all' | 'match' | 'mismatch') => void;
+  onOpenQuestionDialog: (item: EvalRunResultItem, paramId: string, rowIndex: number) => void;
+}
+
+interface MetricsBreakdownTabProps {
+  runDetails: EvalRun;
+  metricsBreakdownData: ParameterChartData[];
+}
+
+interface ImprovementSuggestionDialogProps {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  isLoading: boolean;
+  error: string | null;
+  result: SuggestRecursivePromptImprovementsOutput | null;
+}
+
+interface QuestionJudgmentDialogProps {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  itemData: QuestioningItemContext | null;
+  userQuestion: string;
+  onUserQuestionChange: (value: string) => void;
+  analysisResult: AnalyzeJudgmentDiscrepancyOutput | null;
+  isAnalyzing: boolean;
+  analysisError: string | null;
+  onSubmitAnalysis: () => void;
+  runDetails: EvalRun | null;
+}
+
 
 const MAX_ROWS_FOR_PROCESSING: number = 200;
 
@@ -159,7 +240,6 @@ const sanitizeDataForFirestore = (data: any): any => {
   }
   return data;
 };
-
 
 const fetchEvalRunDetails = async (userId: string | null, runId: string): Promise<EvalRun | null> => {
   if (!userId) return null;
@@ -237,7 +317,6 @@ const fetchSummarizationDefDetailsForPrompt = async (userId: string | null, defI
     return details;
 };
 
-
 const fetchProductParametersForSchema = async (userId: string | null): Promise<ProductParameterForSchema[]> => {
   if (!userId) return [];
   const paramsCollectionRef = collection(db, 'users', userId, 'productParameters');
@@ -272,42 +351,7 @@ const fetchContextDocumentDetailsForRun = async (userId: string | null, docIds: 
     return details;
 };
 
-// Helper Functions
-const formatTimestamp = (timestamp?: Timestamp, includeTime: boolean = false): string => {
-  if (!timestamp) return 'N/A';
-  return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString();
-};
-
-const getStatusBadge = (status?: EvalRun['status']): JSX.Element => {
-  if (!status) return <Badge variant="outline" className="text-base">Unknown</Badge>;
-  switch (status) {
-    case 'Completed': return <Badge variant="default" className="text-base bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1.5 h-4 w-4" />Completed</Badge>;
-    case 'Running': return <Badge variant="default" className="text-base bg-blue-500 hover:bg-blue-600"><Clock className="mr-1.5 h-4 w-4 animate-spin" />Running</Badge>;
-    case 'Processing': return <Badge variant="default" className="text-base bg-purple-500 hover:bg-purple-600"><Zap className="mr-1.5 h-4 w-4 animate-pulse" />Processing</Badge>;
-    case 'Pending': return <Badge variant="secondary" className="text-base"><Clock className="mr-1.5 h-4 w-4" />Pending</Badge>;
-    case 'DataPreviewed': return <Badge variant="outline" className="text-base border-blue-500 text-blue-600"><DatabaseZap className="mr-1.5 h-4 w-4" />Data Previewed</Badge>;
-    case 'Failed': return <Badge variant="destructive" className="text-base"><XCircle className="mr-1.5 h-4 w-4" />Failed</Badge>;
-    default: return <Badge variant="outline" className="text-base">{status}</Badge>;
-  }
-};
-
 // Child Components
-interface RunHeaderCardProps {
-  runDetails: EvalRun;
-  isPreviewDataLoading: boolean;
-  canFetchData: boolean;
-  isRunTerminal: boolean;
-  canStartLLMTask: boolean;
-  isLoadingEvalParamsForLLMHook: boolean;
-  isLoadingSummarizationDefsForLLMHook: boolean;
-  canSuggestImprovements: boolean;
-  canDownloadResults: boolean;
-  onFetchAndPreviewData: () => void;
-  onSimulateRunExecution: () => void;
-  onSuggestImprovementsClick: () => void;
-  onDownloadResults: () => void;
-  isLoadingSuggestion: boolean;
-}
 
 const RunHeaderCard: React.FC<RunHeaderCardProps> = ({
   runDetails, isPreviewDataLoading, canFetchData, isRunTerminal, canStartLLMTask,
@@ -352,15 +396,6 @@ const RunHeaderCard: React.FC<RunHeaderCardProps> = ({
   );
 };
 
-interface RunProgressAndLogsProps {
-  runDetails: EvalRun;
-  isPreviewDataLoading: boolean;
-  isLoadingEvalParamsForLLMHook: boolean;
-  isLoadingSummarizationDefsForLLMHook: boolean;
-  simulationLog: string[];
-  previewDataError: string | null;
-}
-
 const RunProgressAndLogs: React.FC<RunProgressAndLogsProps> = ({
   runDetails, isPreviewDataLoading, isLoadingEvalParamsForLLMHook, isLoadingSummarizationDefsForLLMHook, simulationLog, previewDataError
 }) => {
@@ -392,9 +427,6 @@ const RunProgressAndLogs: React.FC<RunProgressAndLogsProps> = ({
   );
 };
 
-interface RunSummaryCardsProps {
-  runDetails: EvalRun;
-}
 const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ runDetails }) => {
   return (
     <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2">
@@ -404,11 +436,6 @@ const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ runDetails }) => {
   );
 };
 
-interface DatasetSampleTableProps {
-  displayedPreviewData: Array<Record<string, any>>;
-  previewTableHeaders: string[];
-  runDetails: EvalRun;
-}
 const DatasetSampleTable: React.FC<DatasetSampleTableProps> = ({ displayedPreviewData, previewTableHeaders, runDetails }) => {
   if (displayedPreviewData.length === 0) return null;
   return (
@@ -419,13 +446,6 @@ const DatasetSampleTable: React.FC<DatasetSampleTableProps> = ({ displayedPrevie
   );
 };
 
-interface RunConfigTabProps {
-  runDetails: EvalRun;
-  evalParamDetailsForLLM: EvalParamDetailForPrompt[];
-  summarizationDefDetailsForLLM: SummarizationDefDetailForPrompt[];
-  selectedContextDocDetails: ContextDocumentDisplayDetail[];
-  isLoadingSelectedContextDocs: boolean;
-}
 const RunConfigTab: React.FC<RunConfigTabProps> = ({ runDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM, selectedContextDocDetails, isLoadingSelectedContextDocs }) => {
   return (
     <Card>
@@ -458,15 +478,6 @@ const RunConfigTab: React.FC<RunConfigTabProps> = ({ runDetails, evalParamDetail
   );
 };
 
-interface ResultsTableTabProps {
-  runDetails: EvalRun;
-  filteredResultsToDisplay: EvalRunResultItem[];
-  evalParamDetailsForLLM: EvalParamDetailForPrompt[];
-  summarizationDefDetailsForLLM: SummarizationDefDetailForPrompt[];
-  filterStates: Record<string, 'all' | 'match' | 'mismatch'>;
-  onFilterChange: (paramId: string, value: 'all' | 'match' | 'mismatch') => void;
-  onOpenQuestionDialog: (item: EvalRunResultItem, paramId: string, rowIndex: number) => void;
-}
 const ResultsTableTab: React.FC<ResultsTableTabProps> = ({
   runDetails, filteredResultsToDisplay, evalParamDetailsForLLM, summarizationDefDetailsForLLM,
   filterStates, onFilterChange, onOpenQuestionDialog
@@ -528,10 +539,6 @@ const ResultsTableTab: React.FC<ResultsTableTabProps> = ({
   );
 };
 
-interface MetricsBreakdownTabProps {
-  runDetails: EvalRun;
-  metricsBreakdownData: ParameterChartData[];
-}
 const MetricsBreakdownTab: React.FC<MetricsBreakdownTabProps> = ({ runDetails, metricsBreakdownData }) => {
   return (
     <>
@@ -559,14 +566,6 @@ const MetricsBreakdownTab: React.FC<MetricsBreakdownTabProps> = ({ runDetails, m
   );
 };
 
-
-interface ImprovementSuggestionDialogProps {
-  isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
-  isLoading: boolean;
-  error: string | null;
-  result: SuggestRecursivePromptImprovementsOutput | null;
-}
 const ImprovementSuggestionDialog: React.FC<ImprovementSuggestionDialogProps> = ({ isOpen, onOpenChange, isLoading, error, result }) => {
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -575,7 +574,7 @@ const ImprovementSuggestionDialog: React.FC<ImprovementSuggestionDialogProps> = 
         <ScrollArea className="flex-grow pr-2 -mr-2">
           {isLoading && ( <div className="flex flex-col items-center justify-center py-10"> <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" /> <p className="text-muted-foreground">Generating suggestions...</p> </div> )}
           {error && !isLoading && ( <Alert variant="destructive" className="my-4"> <AlertTriangle className="h-4 w-4" /> <AlertTitle>Error Generating Suggestions</AlertTitle> <AlertDescription>{error}</AlertDescription> </Alert> )}
-          {result && !isLoading && ( <div className="space-y-6 py-4"> <div> <Label htmlFor="suggested-prompt" className="text-base font-semibold">Suggested Prompt Template</Label> <div className="relative mt-1"> <Textarea id="suggested-prompt" value={result.suggestedPromptTemplate} readOnly rows={10} className="bg-muted/30 font-mono text-xs"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={() => { navigator.clipboard.writeText(result.suggestedPromptTemplate); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <div> <Label htmlFor="suggestion-reasoning" className="text-base font-semibold">Reasoning</Label> <div className="relative mt-1"> <Textarea id="suggestion-reasoning" value={result.reasoning} readOnly rows={8} className="bg-muted/30 text-sm"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={()={() => { navigator.clipboard.writeText(result.reasoning); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <Alert> <Info className="h-4 w-4"/> <AlertTitle>Next Steps</AlertTitle> <AlertDescription> Review the suggested prompt. If you like it, copy it and create a new version of your prompt template on the "Prompts" page. Then, create a new evaluation run using this updated prompt version. </AlertDescription> </Alert> </div> )}
+          {result && !isLoading && ( <div className="space-y-6 py-4"> <div> <Label htmlFor="suggested-prompt" className="text-base font-semibold">Suggested Prompt Template</Label> <div className="relative mt-1"> <Textarea id="suggested-prompt" value={result.suggestedPromptTemplate} readOnly rows={10} className="bg-muted/30 font-mono text-xs"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={() => { navigator.clipboard.writeText(result.suggestedPromptTemplate); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <div> <Label htmlFor="suggestion-reasoning" className="text-base font-semibold">Reasoning</Label> <div className="relative mt-1"> <Textarea id="suggestion-reasoning" value={result.reasoning} readOnly rows={8} className="bg-muted/30 text-sm"/> <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={() => { navigator.clipboard.writeText(result.reasoning); toast({ title: "Copied!"}); }}> <Copy className="h-4 w-4" /> </Button> </div> </div> <Alert> <Info className="h-4 w-4"/> <AlertTitle>Next Steps</AlertTitle> <AlertDescription> Review the suggested prompt. If you like it, copy it and create a new version of your prompt template on the "Prompts" page. Then, create a new evaluation run using this updated prompt version. </AlertDescription> </Alert> </div> )}
         </ScrollArea>
         <DialogFooter className="pt-4 border-t"> <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button> </DialogFooter>
       </DialogContent>
@@ -583,18 +582,6 @@ const ImprovementSuggestionDialog: React.FC<ImprovementSuggestionDialogProps> = 
   );
 };
 
-interface QuestionJudgmentDialogProps {
-  isOpen: boolean;
-  onOpenChange: (open: boolean) => void;
-  itemData: QuestioningItemContext | null;
-  userQuestion: string;
-  onUserQuestionChange: (value: string) => void;
-  analysisResult: AnalyzeJudgmentDiscrepancyOutput | null;
-  isAnalyzing: boolean;
-  analysisError: string | null;
-  onSubmitAnalysis: () => void;
-  runDetails: EvalRun | null;
-}
 const QuestionJudgmentDialog: React.FC<QuestionJudgmentDialogProps> = ({
   isOpen, onOpenChange, itemData, userQuestion, onUserQuestionChange,
   analysisResult, isAnalyzing, analysisError, onSubmitAnalysis, runDetails
@@ -603,7 +590,7 @@ const QuestionJudgmentDialog: React.FC<QuestionJudgmentDialogProps> = ({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col p-0">
         <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
-          <DialogTitle className="flex items-center"><MessageSquareQuote className="mr-2 h-5 w-5 text-primary"/>Question Bot's Judgement</DialogTitle>
+          <DialogTitle className="flex items-center"><MessageSquareQuote className="mr-2 h-5 w-5 text-primary"/>Question Bot&apos;s Judgement</DialogTitle>
           <DialogDescription>Analyze a specific judgment made by the LLM. Provide your reasoning for a deeper AI analysis.</DialogDescription>
         </DialogHeader>
         <div className="flex-grow min-h-0 overflow-y-auto">
@@ -651,7 +638,6 @@ const QuestionJudgmentDialog: React.FC<QuestionJudgmentDialogProps> = ({
   );
 };
 
-
 // Main Page Component
 export default function RunDetailsPage() {
   const reactParams = useParams();
@@ -679,6 +665,24 @@ export default function RunDetailsPage() {
   const [judgmentAnalysisError, setJudgmentAnalysisError] = useState<string | null>(null);
 
   const [filterStates, setFilterStates] = useState<Record<string, 'all' | 'match' | 'mismatch'>>({});
+
+  const formatTimestamp = (timestamp?: Timestamp, includeTime: boolean = false): string => {
+    if (!timestamp) return 'N/A';
+    return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString();
+  };
+
+  const getStatusBadge = (status?: EvalRun['status']): JSX.Element => {
+    if (!status) return <Badge variant="outline" className="text-base">Unknown</Badge>;
+    switch (status) {
+      case 'Completed': return <Badge variant="default" className="text-base bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1.5 h-4 w-4" />Completed</Badge>;
+      case 'Running': return <Badge variant="default" className="text-base bg-blue-500 hover:bg-blue-600"><Clock className="mr-1.5 h-4 w-4 animate-spin" />Running</Badge>;
+      case 'Processing': return <Badge variant="default" className="text-base bg-purple-500 hover:bg-purple-600"><Zap className="mr-1.5 h-4 w-4 animate-pulse" />Processing</Badge>;
+      case 'Pending': return <Badge variant="secondary" className="text-base"><Clock className="mr-1.5 h-4 w-4" />Pending</Badge>;
+      case 'DataPreviewed': return <Badge variant="outline" className="text-base border-blue-500 text-blue-600"><DatabaseZap className="mr-1.5 h-4 w-4" />Data Previewed</Badge>;
+      case 'Failed': return <Badge variant="destructive" className="text-base"><XCircle className="mr-1.5 h-4 w-4" />Failed</Badge>;
+      default: return <Badge variant="outline" className="text-base">{status}</Badge>;
+    }
+  };
 
   useEffect(() => {
     const storedUserId = localStorage.getItem('currentUserId');
@@ -889,6 +893,7 @@ export default function RunDetailsPage() {
   const canDownloadResults: boolean = hasResultsForDownload_flag;
   const canSuggestImprovements: boolean = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails?.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
 
+
   if (isLoadingUserId) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
   if (!currentUserId) { return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>; }
   if (isLoadingRunDetails && !!currentUserId) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
@@ -978,6 +983,5 @@ export default function RunDetailsPage() {
       />
     </div>
   );
-  
   return pageContent;
 }
