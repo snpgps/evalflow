@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { PlusCircle, Edit2, Trash2, PlugZap, Eye, EyeOff, AlertTriangle, Loader2, PlayIcon, FileText as FileTextIcon, Send } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, PlugZap, Eye, EyeOff, AlertTriangle, Loader2, PlayIcon, Send } from "lucide-react";
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { db } from '@/lib/firebase';
@@ -428,22 +428,6 @@ export default function ModelConnectorsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2 mb-4">
-            <Alert variant="default">
-                <FileTextIcon className="h-4 w-4" />
-                <AlertTitle>Environment Variables for API Keys</AlertTitle>
-                <AlertDescription>
-                  Ensure <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">ANTHROPIC_API_KEY</code> (for Anthropic direct client tests/runs) and/or <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">GOOGLE_API_KEY</code> (for Google AI via Genkit) are set in your server environment (e.g., <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">.env.local</code>). Application Default Credentials (ADC) can also be used for Google AI. Restart your server after changes for these to take effect.
-                </AlertDescription>
-            </Alert>
-             <Alert variant="default">
-                <FileTextIcon className="h-4 w-4" />
-                <AlertTitle>Anthropic Test Connection Note</AlertTitle>
-                <AlertDescription>
-                   The &quot;Test Connection&quot; button for Anthropic connectors uses the direct Anthropic client with the <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">ANTHROPIC_API_KEY</code> from your server&apos;s environment. It does not use the API key stored in this connector entry for the test itself (the stored key is for evaluation runs).
-                </AlertDescription>
-            </Alert>
-          </div>
           <Dialog open={isFormDialogOpen} onOpenChange={(isOpen) => { setIsFormDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
               <Button onClick={handleOpenNewFormDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
