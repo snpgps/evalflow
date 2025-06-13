@@ -31,6 +31,8 @@ import { judgeLlmEvaluation, type JudgeLlmEvaluationInput, type JudgeLlmEvaluati
 import { suggestRecursivePromptImprovements, type SuggestRecursivePromptImprovementsInput, type SuggestRecursivePromptImprovementsOutput, type MismatchDetail } from '@/ai/flows/suggest-recursive-prompt-improvements';
 import { analyzeJudgmentDiscrepancy, type AnalyzeJudgmentDiscrepancyInput, type AnalyzeJudgmentDiscrepancyOutput } from '@/ai/flows/analyze-judgment-discrepancy';
 import * as XLSX from 'xlsx';
+import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
+
 
 // Interfaces
 interface EvalRunResultItem {
@@ -781,32 +783,48 @@ export default function RunDetailsPage() {
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
 
-  if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); };
-  if (!currentUserId) return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>;
-  if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); };
-  if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); };
+  const isLoadingDialogData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams || isLoadingContextDocs || isLoadingSummarizationDefs;
+  const selectedDatasetForVersions = datasets?.find(d => d.id === selectedDatasetId);
+  const selectedDatasetVersionForWarnings = selectedDatasetForVersions?.versions.find(v => v.id === selectedDatasetVersionId);
+  const foundPromptTemplate = selectedPromptId ? promptTemplates?.find(p => p.id === selectedPromptId) : undefined;
+
+
+  if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) {
+    return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> );
+  }
+  if (!currentUserId) {
+    return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>;
+  }
+  if (fetchRunError) {
+    return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> );
+  }
+  if (!runDetails) {
+    return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> );
+  }
 
   const displayedPreviewData = runDetails.previewedDatasetSample || [];
   const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
-  const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => { if (!timestamp) return 'N/A'; return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString(); };
   
+  const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => { if (!timestamp) return 'N/A'; return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString(); };
+
   const isRunTerminal = runDetails.status === 'Completed';
   const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed';
   
-  const isRunReadyForProcessing = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
-  const dependenciesLoadedForRunStart = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
-  const hasParamsOrDefsForRunStart = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
-  const canStartLLMTask = isRunReadyForProcessing && dependenciesLoadedForRunStart && hasParamsOrDefsForRunStart;
+  const isRunReadyForProcessing_flag = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
+  const dependenciesLoadedForRunStart_flag = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
+  const hasParamsOrDefsForRunStart_flag = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
+  const canStartLLMTask = isRunReadyForProcessing_flag && dependenciesLoadedForRunStart_flag && hasParamsOrDefsForRunStart_flag;
 
-  const hasResultsForDownload = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
-  const canDownloadResults = hasResultsForDownload;
+  const hasResultsForDownload_flag = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
+  const canDownloadResults = hasResultsForDownload_flag;
   
-  const isRunCompletedGroundTruth = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth';
-  const hasResultsForSuggestions = !!runDetails.results && runDetails.results.length > 0;
-  const hasEvalParamsForSuggestions = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-  const canSuggestImprovements = isRunCompletedGroundTruth && hasResultsForSuggestions && hasMismatches && hasEvalParamsForSuggestions;
+  const canSuggest_isCompletedGT = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth';
+  const canSuggest_hasResults = !!runDetails.results && runDetails.results.length > 0;
+  const canSuggest_hasMismatches = hasMismatches;
+  const canSuggest_hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
+  const canSuggestImprovements = canSuggest_isCompletedGT && canSuggest_hasResults && canSuggest_hasMismatches && canSuggest_hasEvalParams;
 
-  const getStatusBadge = (status: EvalRun['status']) => {
+  function getStatusBadge(status: EvalRun['status']) {
     switch (status) {
       case 'Completed': return <Badge variant="default" className="text-base bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1.5 h-4 w-4" />Completed</Badge>;
       case 'Running': return <Badge variant="default" className="text-base bg-blue-500 hover:bg-blue-600"><Clock className="mr-1.5 h-4 w-4 animate-spin" />Running</Badge>;
@@ -816,8 +834,8 @@ export default function RunDetailsPage() {
       case 'Failed': return <Badge variant="destructive" className="text-base"><XCircle className="mr-1.5 h-4 w-4" />Failed</Badge>;
       default: return <Badge variant="outline" className="text-base">{status}</Badge>;
     }
-  };
-
+  }
+  
   return (
     <div className="space-y-6 p-4 md:p-6">
       <Card className="shadow-lg">
