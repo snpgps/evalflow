@@ -113,7 +113,7 @@ After your analysis, provide a JSON array as your response. Each object in the a
 
 - If the "parameterId" refers to an **Evaluation Parameter**:
   - The object MUST include a "chosenLabel" key. The value must be the name of the single most appropriate label you have chosen for that parameter.
-  - {{#if parameterIdsRequiringRationale.length}}
+  {{#if parameterIdsRequiringRationale.length}}
     For the following evaluation parameter IDs, you MUST also include a "rationale" field, explaining your reasoning for the chosen label:
     {{#each parameterIdsRequiringRationale}}
     - {{this}}
@@ -202,21 +202,67 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
         }
 
         console.log(`Using direct Anthropic client with model: ${anthropicModelName}`);
-        const messages: MessageParam[] = [{ role: 'user', content: input.fullPromptText }];
+        
+        const contentToAnalyze = input.fullPromptText; // This is the user's prompt with data + criteria text
+
+        let rationaleInstruction = `The "rationale" field is optional for all evaluation parameters.`;
+        if (input.parameterIdsRequiringRationale && input.parameterIdsRequiringRationale.length > 0) {
+          rationaleInstruction = `For the following evaluation parameter IDs, you MUST also include a "rationale" field, explaining your reasoning for the chosen label: ${input.parameterIdsRequiringRationale.join(', ')}.\nFor other evaluation parameter IDs, the "rationale" field is optional.`;
+        }
+        
+        const evalParamIdsList = input.evaluationParameterIds && input.evaluationParameterIds.length > 0 
+                                  ? input.evaluationParameterIds.map(id => `- ${id}`).join('\n  ') 
+                                  : '(No evaluation parameters specified for labeling in this run)';
+        const summarizationParamIdsList = input.summarizationParameterIds && input.summarizationParameterIds.length > 0
+                                  ? input.summarizationParameterIds.map(id => `- ${id}`).join('\n  ')
+                                  : '(No summarization tasks specified for this run)';
+
+        const anthropicUserPrompt = `You are an expert evaluator. Analyze the following text based on the criteria described within it.
+The text to evaluate is:
+\`\`\`text
+${contentToAnalyze}
+\`\`\`
+
+After your analysis, provide a JSON array as your response. Each object in the array must have a "parameterId" key.
+
+- If the "parameterId" refers to an **Evaluation Parameter**:
+  - The object MUST include a "chosenLabel" key. The value must be the name of the single most appropriate label you have chosen for that parameter.
+  - ${rationaleInstruction}
+
+- If the "parameterId" refers to a **Summarization Definition/Task**:
+  - The object MUST include a "generatedSummary" key. The value must be the textual summary you generated based on the definition for that task.
+  - Do NOT include "chosenLabel" or "rationale" for summarization tasks.
+
+The Evaluation Parameter IDs you MUST provide judgments for are (if any):
+  ${evalParamIdsList}
+
+The Summarization Definition IDs you MUST provide summaries for are (if any):
+  ${summarizationParamIdsList}
+
+Your entire response must be ONLY the JSON array, with no other surrounding text or explanations.
+Example of the expected JSON array format:
+[
+  { "parameterId": "eval_param1_id", "chosenLabel": "Correct" },
+  { "parameterId": "eval_param2_id_needs_rationale", "chosenLabel": "Partially_Incorrect", "rationale": "The user mentioned X, but missed Y." },
+  { "parameterId": "summary_task_abc_id", "generatedSummary": "The user is asking about their recent order's delivery status and seems frustrated with the standard delivery time." },
+  { "parameterId": "eval_param3_id", "chosenLabel": "Effective", "rationale": "This part was very clear." }
+]
+Ensure your response starts with '[' and ends with ']'. Do not include any other text before or after the JSON array.
+`;
+
+        const messages: MessageParam[] = [{ role: 'user', content: anthropicUserPrompt }];
         
         const response = await anthropicClient.messages.create({
           model: anthropicModelName,
           messages: messages,
-          max_tokens: 4096, // Anthropic requires max_tokens
-          temperature: 0.3, // Consistent with Genkit prompt
+          max_tokens: 4096,
+          temperature: 0.3, 
         });
         
-        // Assuming the response.content[0].text is the JSON array string
         const responseText = response.content[0].text;
-        console.log('Anthropic raw response text:', responseText);
+        console.log('Anthropic raw response text:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
         try {
           output = LlmOutputArraySchema.parse(JSON.parse(responseText));
-          // usage = { inputTokens: response.usage?.input_tokens, outputTokens: response.usage?.output_tokens }; // Simplified usage
         } catch (parseError: any) {
            console.error("Failed to parse Anthropic JSON response:", parseError, "Raw response:", responseText);
            errorReason = `Failed to parse Anthropic JSON response: ${parseError.message}. Raw: ${responseText.substring(0,100)}`;
@@ -224,7 +270,6 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
         }
 
       } else {
-        // Default to Genkit ai.generate (e.g., for Google AI)
         console.log(`Using Genkit ai.generate with model: ${input.modelName || 'Genkit Default'}`);
         const result = await judgePrompt(input, { model: input.modelName || undefined });
         output = result.output; 
@@ -256,8 +301,8 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
       return errorResults;
     }
     
-    // console.log('internalJudgeLlmEvaluationFlow LLM usage:', usage);
-    // console.log('internalJudgeLlmEvaluationFlow LLM output (array):', JSON.stringify(output, null, 2));
     return output;
   }
 );
+
+    
