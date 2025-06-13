@@ -561,11 +561,11 @@ export default function RunDetailsPage() {
       addLog(`Fetched prompt template (v${runDetails.promptVersionNumber}).`);
       if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} evaluation parameter details for LLM call.`);
       if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization definition details for LLM call.`);
-      
+
       if (runDetails.modelConnectorProvider === 'Anthropic') {
         addLog(`Using direct Anthropic client via modelConnectorConfigString: ${runDetails.modelConnectorConfigString || 'N/A'}`);
       } else if(runDetails.modelIdentifierForGenkit) {
-         addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); 
+         addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`);
       } else {
          addLog(`Warning: No specific Genkit model identifier found for run. Using Genkit default.`);
       }
@@ -587,7 +587,7 @@ export default function RunDetailsPage() {
             evalParamDetailsForLLM.forEach(ep => { structuredCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaText += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaText += `  - "${label.name}": ${label.definition || 'No definition.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaText += " (No specific categorization labels)\n"; } structuredCriteriaText += "\n"; });
             structuredCriteriaText += "--- END EVALUATION CRITERIA ---\n";
           }
-          if (hasSummarizationDefs) { 
+          if (hasSummarizationDefs) {
             structuredCriteriaText += "\n\n--- SUMMARIZATION TASKS ---\n";
             summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaText += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) structuredCriteriaText += `Example Output Hint: "${sd.example}"\n`; structuredCriteriaText += "Provide your summary for this task.\n\n"; });
             structuredCriteriaText += "--- END SUMMARIZATION TASKS ---\n";
@@ -694,7 +694,7 @@ export default function RunDetailsPage() {
         paramDefinition: paramDetail.definition,
         paramLabels: paramDetail.labels,
         judgeLlmOutput: {
-            chosenLabel: outputData.chosenLabel, 
+            chosenLabel: outputData.chosenLabel,
             rationale: outputData.rationale,
             error: outputData.error,
         },
@@ -783,33 +783,40 @@ export default function RunDetailsPage() {
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
 
-  const isLoadingDialogData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams || isLoadingContextDocs || isLoadingSummarizationDefs;
+  const isLoadingAllDropdownData = isLoadingDatasets || isLoadingConnectors || isLoadingPrompts || isLoadingEvalParams || isLoadingContextDocs || isLoadingSummarizationDefs;
   const selectedDatasetForVersions = datasets?.find(d => d.id === selectedDatasetId);
   const selectedDatasetVersionForWarnings = selectedDatasetForVersions?.versions.find(v => v.id === selectedDatasetVersionId);
   const foundPromptTemplate = selectedPromptId ? promptTemplates?.find(p => p.id === selectedPromptId) : undefined;
 
 
-  if (isLoadingUserId || (isLoadingRunDetails && currentUserId)) {
+  if (isLoadingUserId) {
     return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> );
   }
+
   if (!currentUserId) {
     return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>;
   }
+
+  if (isLoadingRunDetails && !!currentUserId) {
+    return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> );
+  }
+
   if (fetchRunError) {
     return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> );
   }
+
   if (!runDetails) {
     return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> );
   }
 
   const displayedPreviewData = runDetails.previewedDatasetSample || [];
   const previewTableHeaders = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
-  
+
   const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => { if (!timestamp) return 'N/A'; return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString(); };
 
   const isRunTerminal = runDetails.status === 'Completed';
   const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed';
-  
+
   const isRunReadyForProcessing_flag = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
   const dependenciesLoadedForRunStart_flag = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
   const hasParamsOrDefsForRunStart_flag = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
@@ -817,12 +824,12 @@ export default function RunDetailsPage() {
 
   const hasResultsForDownload_flag = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
   const canDownloadResults = hasResultsForDownload_flag;
-  
+
   const canSuggest_isCompletedGT = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth';
   const canSuggest_hasResults = !!runDetails.results && runDetails.results.length > 0;
-  const canSuggest_hasMismatches = hasMismatches;
+  const canSuggest_hasMismatches_flag = hasMismatches;
   const canSuggest_hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-  const canSuggestImprovements = canSuggest_isCompletedGT && canSuggest_hasResults && canSuggest_hasMismatches && canSuggest_hasEvalParams;
+  const canSuggestImprovements = canSuggest_isCompletedGT && canSuggest_hasResults && canSuggest_hasMismatches_flag && canSuggest_hasEvalParams;
 
   function getStatusBadge(status: EvalRun['status']) {
     switch (status) {
@@ -835,7 +842,7 @@ export default function RunDetailsPage() {
       default: return <Badge variant="outline" className="text-base">{status}</Badge>;
     }
   }
-  
+
   return (
     <div className="space-y-6 p-4 md:p-6">
       <Card className="shadow-lg">
@@ -1041,8 +1048,8 @@ export default function RunDetailsPage() {
             <DialogTitle className="flex items-center"><MessageSquareQuote className="mr-2 h-5 w-5 text-primary"/>Question Bot's Judgement</DialogTitle>
             <DialogDescription>Analyze a specific judgment made by the LLM. Provide your reasoning for a deeper AI analysis.</DialogDescription>
           </DialogHeader>
-          <div className="flex-grow min-h-0 overflow-y-auto"> 
-            <ScrollArea className="h-full w-full"> 
+          <div className="flex-grow min-h-0 overflow-y-auto">
+            <ScrollArea className="h-full w-full">
               {questioningItemData && (
                 <div className="space-y-4 p-6 text-sm">
                   <Card className="p-3 bg-muted/40">
