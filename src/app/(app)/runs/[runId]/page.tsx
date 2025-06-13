@@ -307,7 +307,11 @@ export default function RunDetailsPage() {
 
   const addLog = (message: string, type: 'info' | 'error' = 'info') => {
     const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
-    console[type === 'error' ? 'log' : 'log'](logEntry);
+    if (type === 'error') {
+      console.error(logEntry);
+    } else {
+      console.log(logEntry);
+    }
     setSimulationLog(prev => [...prev, logEntry].slice(-100));
   };
 
