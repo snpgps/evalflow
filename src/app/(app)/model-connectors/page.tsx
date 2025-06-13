@@ -18,8 +18,8 @@ import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
-import { testAnthropicConnection, type TestAnthropicConnectionInput, type TestAnthropicConnectionOutput } from '@/ai/flows/test-anthropic-connection-flow';
-import { testGoogleAIConnection, type TestGoogleAIConnectionInput, type TestGoogleAIConnectionOutput } from '@/ai/flows/test-googleai-connection-flow';
+import { testDirectAnthropicClient, type TestDirectAnthropicClientInput, type TestDirectAnthropicClientOutput } from '@/ai/flows/test-direct-anthropic-client-flow';
+import { testGoogleAIConnection, type TestGoogleAIConnectionInput, type TestGoogleAIConnectionOutput } from '@/ai/flows/test-googleai-connection-flow.ts';
 
 interface ModelConnector {
   id: string; // Firestore document ID
@@ -107,7 +107,7 @@ export default function ModelConnectorsPage() {
   const [isTestConnectionDialogOpen, setIsTestConnectionDialogOpen] = useState(false);
   const [connectorToTest, setConnectorToTest] = useState<ModelConnector | null>(null);
   const [testPrompt, setTestPrompt] = useState<string>("Hello, please respond with a short friendly greeting and mention your model name if you know it.");
-  const [testResult, setTestResult] = useState<TestAnthropicConnectionOutput | TestGoogleAIConnectionOutput | null>(null);
+  const [testResult, setTestResult] = useState<TestDirectAnthropicClientOutput | TestGoogleAIConnectionOutput | null>(null);
   const [isSubmittingTest, setIsSubmittingTest] = useState(false);
 
   // State for Delete Confirmation Dialog
@@ -310,14 +310,13 @@ export default function ModelConnectorsPage() {
 
   const getGenkitModelId = (connector: ModelConnector | null): string | undefined => {
     if (!connector || !connector.config) return undefined;
-    // For Anthropic, we are bypassing Genkit plugins, so Genkit won't know its model ID.
-    if (connector.provider === 'Anthropic') return undefined;
+    if (connector.provider === 'Anthropic') return undefined; // Anthropic uses direct client, no Genkit ID needed for its specific test flow
     try {
       const parsedConfig = JSON.parse(connector.config);
       if (parsedConfig.model && typeof parsedConfig.model === 'string') {
-        // No prefix for Anthropic as it's direct, Genkit handles prefixes for its plugins
         if (connector.provider === 'Vertex AI') return `googleai/${parsedConfig.model}`;
         if (connector.provider === 'OpenAI') return `openai/${parsedConfig.model}`;
+        // Add other Genkit plugin providers here if needed
       }
     } catch (e) {
       // console.warn("Could not parse config for Genkit model ID for connector:", connector.name);
@@ -325,7 +324,7 @@ export default function ModelConnectorsPage() {
     return undefined;
   };
   
-  const getAnthropicModelId = (connector: ModelConnector | null): string | undefined => {
+  const getAnthropicModelNameFromConfig = (connector: ModelConnector | null): string | undefined => {
     if (!connector || connector.provider !== 'Anthropic' || !connector.config) return undefined;
     try {
       const parsedConfig = JSON.parse(connector.config);
@@ -354,20 +353,16 @@ export default function ModelConnectorsPage() {
     setTestResult(null);
 
     try {
-      let result: TestAnthropicConnectionOutput | TestGoogleAIConnectionOutput;
+      let result: TestDirectAnthropicClientOutput | TestGoogleAIConnectionOutput;
       if (connectorToTest.provider === 'Anthropic') {
-        const anthropicModelId = getAnthropicModelId(connectorToTest);
-        if (!anthropicModelId) {
+        const anthropicModelName = getAnthropicModelNameFromConfig(connectorToTest);
+        if (!anthropicModelName) {
            setTestResult({ success: false, error: `Anthropic model not specified in connector config.` });
            setIsSubmittingTest(false);
            return;
         }
-        // Note: testAnthropicConnection now uses the global anthropicClient,
-        // which reads ANTHROPIC_API_KEY from process.env.
-        // The API key stored in the connector is for the actual run, not this Genkit-based test.
-        // This test flow for Anthropic will likely fail as it uses ai.generate which does not have anthropic plugin
-        const input: TestAnthropicConnectionInput = { modelId: `anthropic/${anthropicModelId}`, testPrompt: testPrompt };
-        result = await testAnthropicConnection(input);
+        const input: TestDirectAnthropicClientInput = { modelName: anthropicModelName, testPrompt: testPrompt };
+        result = await testDirectAnthropicClient(input);
 
       } else if (connectorToTest.provider === 'Vertex AI') {
         const genkitModelId = getGenkitModelId(connectorToTest);
@@ -385,7 +380,7 @@ export default function ModelConnectorsPage() {
       }
       setTestResult(result);
     } catch (error: any) {
-      const modelIdAttempted = connectorToTest.provider === 'Anthropic' ? getAnthropicModelId(connectorToTest) : getGenkitModelId(connectorToTest);
+      const modelIdAttempted = connectorToTest.provider === 'Anthropic' ? getAnthropicModelNameFromConfig(connectorToTest) : getGenkitModelId(connectorToTest);
       setTestResult({ success: false, error: error.message || "Flow execution failed.", modelUsed: modelIdAttempted });
     } finally {
       setIsSubmittingTest(false);
@@ -438,14 +433,14 @@ export default function ModelConnectorsPage() {
                 <FileTextIcon className="h-4 w-4" />
                 <AlertTitle>Environment Variables for API Keys</AlertTitle>
                 <AlertDescription>
-                  Ensure <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">ANTHROPIC_API_KEY</code> (for Anthropic direct calls) and/or <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">GOOGLE_API_KEY</code> (for Google AI via Genkit) are set in your server environment (e.g., <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">.env.local</code>). ADC can also be used for Google AI. Restart your server after changes.
+                  Ensure <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">ANTHROPIC_API_KEY</code> (for Anthropic direct client tests/runs) and/or <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">GOOGLE_API_KEY</code> (for Google AI via Genkit) are set in your server environment (e.g., <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">.env.local</code>). Application Default Credentials (ADC) can also be used for Google AI. Restart your server after changes for these to take effect.
                 </AlertDescription>
             </Alert>
              <Alert variant="default">
                 <FileTextIcon className="h-4 w-4" />
                 <AlertTitle>Anthropic Test Connection Note</AlertTitle>
                 <AlertDescription>
-                   The &quot;Test Connection&quot; button for Anthropic connectors currently uses a Genkit flow. Since direct Anthropic integration bypasses Genkit plugins for Anthropic, this test may not accurately reflect the direct client setup used in evaluation runs.
+                   The &quot;Test Connection&quot; button for Anthropic connectors uses the direct Anthropic client with the <code className="font-mono bg-muted px-1 py-0.5 rounded-sm">ANTHROPIC_API_KEY</code> from your server&apos;s environment. It does not use the API key stored in this connector entry for the test itself (the stored key is for evaluation runs).
                 </AlertDescription>
             </Alert>
           </div>
@@ -572,11 +567,8 @@ export default function ModelConnectorsPage() {
               </TableHeader>
               <TableBody>
                 {connectors.map((conn) => {
-                  const genkitModelIdForTest = getGenkitModelId(conn); // Used for Google AI test
-                  const canTestGoogleAI = conn.provider === 'Vertex AI' && !!genkitModelIdForTest;
-                  // Anthropic test button remains, but its current flow (testAnthropicConnection) uses genkit.ai.generate
-                  // which won't work for direct Anthropic integration. This test is effectively "broken" for Anthropic.
-                  const canTestAnthropic = conn.provider === 'Anthropic' && !!getAnthropicModelId(conn);
+                  const canTestGoogleAI = conn.provider === 'Vertex AI' && !!getGenkitModelId(conn);
+                  const canTestAnthropicDirect = conn.provider === 'Anthropic' && !!getAnthropicModelNameFromConfig(conn);
                   
                   let testIconColor = "text-gray-400"; 
                   if (conn.provider === 'Anthropic') testIconColor = "text-orange-500";
@@ -597,7 +589,7 @@ export default function ModelConnectorsPage() {
                       <TableCell className="text-sm text-muted-foreground hidden md:table-cell truncate" title={conn.config}>{conn.config || '{}'}</TableCell>
                       <TableCell className="text-right">
                           <div className="flex justify-end items-center gap-0">
-                            {(canTestGoogleAI || canTestAnthropic) && (
+                            {(canTestGoogleAI || canTestAnthropicDirect) && (
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -630,8 +622,8 @@ export default function ModelConnectorsPage() {
         <DialogContent className="sm:max-w-lg">
             <DialogHeader>
                 <DialogTitle>Test {connectorToTest?.provider} Connection: {connectorToTest?.name}</DialogTitle>
-                <DialogDescription>Send a test prompt to the selected model (Model ID for test: {
-                  connectorToTest?.provider === 'Anthropic' ? getAnthropicModelId(connectorToTest) || "N/A (Check Config)" : getGenkitModelId(connectorToTest) || "N/A (Check Config)"
+                <DialogDescription>Send a test prompt to the selected model (Model for test: {
+                  connectorToTest?.provider === 'Anthropic' ? getAnthropicModelNameFromConfig(connectorToTest) || "N/A (Check Config)" : getGenkitModelId(connectorToTest) || "N/A (Check Config)"
                 }).</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -661,7 +653,7 @@ export default function ModelConnectorsPage() {
                                     <p className="font-semibold">Model: {testResult.modelUsed || 'N/A'}</p>
                                     <p className="font-semibold mt-1">Response:</p>
                                     <p className="mt-0.5">{testResult.responseText}</p>
-                                    {testResult.usage && <p className="text-xs mt-2 opacity-80">Usage: {JSON.stringify(testResult.usage)}</p>}
+                                    {(testResult as TestGoogleAIConnectionOutput).usage && <p className="text-xs mt-2 opacity-80">Usage (Genkit): {JSON.stringify((testResult as TestGoogleAIConnectionOutput).usage)}</p>}
                                 </AlertDescription>
                             </Alert>
                         ) : (
