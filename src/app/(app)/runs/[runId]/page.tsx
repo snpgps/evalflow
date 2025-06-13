@@ -515,7 +515,7 @@ const ResultsTableTab: React.FC<ResultsTableTabProps> = ({
             </TableRow></TableHeader>
               <TableBody>{filteredResultsToDisplay.map((item, index) => (<TableRow key={`result-${index}`}><TableCell className="text-xs align-top"><pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre></TableCell>
                 {evalParamDetailsForLLM?.map(paramDetail => {
-                  const paramId = paramDetail.id; const outputForCell = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = outputForCell?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && !outputForCell?.error && String(llmLabel).toLowerCase() === String(gtLabel).toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
+                  const paramId = paramDetail.id; const outputForCell = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = outputForCell?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && !outputForCell?.error && String(llmLabel).trim().toLowerCase() === String(gtLabel).trim().toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
                   return (
                     <TableCell key={paramId} className="text-xs align-top">
                       <div className="flex justify-between items-start">
@@ -736,10 +736,12 @@ export default function RunDetailsPage() {
       const newInitialFilters: Record<string, 'all' | 'match' | 'mismatch'> = {};
       evalParamDetailsForLLM.forEach(param => { newInitialFilters[param.id] = 'all'; });
       if (JSON.stringify(filterStates) !== JSON.stringify(newInitialFilters)) { setFilterStates(newInitialFilters); }
-    } else {
-      if (Object.keys(filterStates).length > 0) { setFilterStates({}); }
+    } else if (!hasEvalParams || runDetails?.runType !== 'GroundTruth') {
+      if (Object.keys(filterStates).length > 0) {
+        setFilterStates({});
+      }
     }
-  }, [evalParamDetailsForLLM, runDetails?.runType, filterStates]);
+  }, [evalParamDetailsForLLM, runDetails?.runType]);
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
     queryKey: ['selectedContextDocDetails', currentUserId, runDetails?.selectedContextDocumentIds?.join(',')],
@@ -765,7 +767,7 @@ export default function RunDetailsPage() {
       const newComputedMetrics: ParameterChartData[] = evalParamDetailsForLLM.map(paramDetail => {
         const labelCounts: Record<string, number> = {}; if (paramDetail.labels && Array.isArray(paramDetail.labels)) { paramDetail.labels.forEach(label => { if (label && typeof label.name === 'string') labelCounts[label.name] = 0; }); }
         labelCounts['ERROR_PROCESSING_ROW'] = 0; let correctCountForParam = 0; let totalComparedForParam = 0;
-        runDetails.results!.forEach(resultItem => { if (resultItem.judgeLlmOutput && typeof resultItem.judgeLlmOutput === 'object') { const llmOutputForParam = resultItem.judgeLlmOutput[paramDetail.id]; if (llmOutputForParam?.chosenLabel && typeof llmOutputForParam.chosenLabel === 'string') { const chosenLabel = llmOutputForParam.chosenLabel; labelCounts[chosenLabel] = (labelCounts[chosenLabel] || 0) + 1; if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth && !llmOutputForParam.error) { const gtLabel = resultItem.groundTruth[paramDetail.id]; if (gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '') { totalComparedForParam++; if (String(chosenLabel).toLowerCase() === String(gtLabel).toLowerCase()) { correctCountForParam++; } } } } else if (llmOutputForParam?.error) { labelCounts['ERROR_PROCESSING_ROW'] = (labelCounts['ERROR_PROCESSING_ROW'] || 0) + 1; } } });
+        runDetails.results!.forEach(resultItem => { if (resultItem.judgeLlmOutput && typeof resultItem.judgeLlmOutput === 'object') { const llmOutputForParam = resultItem.judgeLlmOutput[paramDetail.id]; if (llmOutputForParam?.chosenLabel && typeof llmOutputForParam.chosenLabel === 'string') { const chosenLabel = llmOutputForParam.chosenLabel; labelCounts[chosenLabel] = (labelCounts[chosenLabel] || 0) + 1; if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth && !llmOutputForParam.error) { const gtLabel = resultItem.groundTruth[paramDetail.id]; if (gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '') { totalComparedForParam++; if (String(chosenLabel).trim().toLowerCase() === String(gtLabel).trim().toLowerCase()) { correctCountForParam++; } } } } else if (llmOutputForParam?.error) { labelCounts['ERROR_PROCESSING_ROW'] = (labelCounts['ERROR_PROCESSING_ROW'] || 0) + 1; } } });
         const chartDataEntries = Object.entries(labelCounts).map(([labelName, count]) => ({ labelName, count })).filter(item => item.count > 0 || (paramDetail.labels && paramDetail.labels.some(l => l.name === item.labelName)) || item.labelName === 'ERROR_PROCESSING_ROW');
         const paramAccuracy = runDetails.runType === 'GroundTruth' && totalComparedForParam > 0 ? (correctCountForParam / totalComparedForParam) * 100 : undefined;
         return { parameterId: paramDetail.id, parameterName: paramDetail.name, data: chartDataEntries.sort((a, b) => b.count - a.count), accuracy: paramAccuracy, totalCompared: runDetails.runType === 'GroundTruth' ? totalComparedForParam : undefined, };
@@ -840,7 +842,7 @@ export default function RunDetailsPage() {
     if (!runDetails || !runDetails.results || runDetails.results.length === 0 ) { toast({ title: "No Results", description: "No results to download.", variant: "destructive" }); return; }
     const dataForExcel: any[] = []; const inputDataKeys = new Set<string>(); runDetails.results.forEach(item => { Object.keys(item.inputData).forEach(key => inputDataKeys.add(key)); }); const sortedInputDataKeys = Array.from(inputDataKeys).sort();
     runDetails.results.forEach(item => { const row: Record<string, any> = {}; sortedInputDataKeys.forEach(key => { row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : ''; });
-      evalParamDetailsForLLM?.forEach(paramDetail => { const output = item.judgeLlmOutput[paramDetail.id]; row[`${paramDetail.name} - LLM Label`] = output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A'); if (runDetails.runType === 'GroundTruth') { const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A'; row[`${paramDetail.name} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A'; const llmLabel = output?.chosenLabel; row[`${paramDetail.name} - Match`] = (llmLabel && gtValue !== 'N/A' && !output?.error && String(llmLabel).toLowerCase() === String(gtValue).toLowerCase()) ? 'Yes' : 'No'; } row[`${paramDetail.name} - LLM Rationale`] = output?.rationale || ''; if(output?.error) row[`${paramDetail.name} - LLM Error`] = output.error; });
+      evalParamDetailsForLLM?.forEach(paramDetail => { const output = item.judgeLlmOutput[paramDetail.id]; row[`${paramDetail.name} - LLM Label`] = output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A'); if (runDetails.runType === 'GroundTruth') { const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A'; row[`${paramDetail.name} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A'; const llmLabel = output?.chosenLabel; row[`${paramDetail.name} - Match`] = (llmLabel && gtValue !== 'N/A' && !output?.error && String(llmLabel).trim().toLowerCase() === String(gtValue).trim().toLowerCase()) ? 'Yes' : 'No'; } row[`${paramDetail.name} - LLM Rationale`] = output?.rationale || ''; if(output?.error) row[`${paramDetail.name} - LLM Error`] = output.error; });
       summarizationDefDetailsForLLM?.forEach(summDefDetail => { const output = item.judgeLlmOutput[summDefDetail.id]; row[`${summDefDetail.name} - LLM Summary`] = output?.generatedSummary || (output?.error ? 'ERROR' : 'N/A'); if(output?.error) row[`${summDefDetail.name} - LLM Error`] = output.error; });
       dataForExcel.push(row); });
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results"); const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`; XLSX.writeFile(workbook, fileName); toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
@@ -853,7 +855,7 @@ export default function RunDetailsPage() {
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
       const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt.");
-      const mismatchDetails: MismatchDetail[] = []; runDetails.results.forEach(item => { evalParamDetailsForLLM.forEach(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase()) { mismatchDetails.push({ inputData: item.inputData, evaluationParameterName: paramDetail.name, evaluationParameterDefinition: paramDetail.definition, llmChosenLabel: llmOutput.chosenLabel, groundTruthLabel: gtLabel, llmRationale: llmOutput.rationale, }); } }); });
+      const mismatchDetails: MismatchDetail[] = []; runDetails.results.forEach(item => { evalParamDetailsForLLM.forEach(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase()) { mismatchDetails.push({ inputData: item.inputData, evaluationParameterName: paramDetail.name, evaluationParameterDefinition: paramDetail.definition, llmChosenLabel: llmOutput.chosenLabel, groundTruthLabel: gtLabel, llmRationale: llmOutput.rationale, }); } }); });
       if (mismatchDetails.length === 0) { setSuggestionError("No mismatches found."); setIsLoadingSuggestion(false); return; }
       const productParamsSchemaString = productParametersForSchema.length > 0 ? "Product Parameters:\n" + productParametersForSchema.map(p => `- ${p.name} (${p.type}): ${p.definition}${p.options ? ` Options: [${p.options.join(', ')}]` : ''}`).join("\n") : "No product params.";
       const evalParamsSchemaString = "Evaluation Parameters Used:\n" + evalParamDetailsForLLM.map(ep => { let schema = `- ID: ${ep.id}, Name: ${ep.name}\n  Definition: ${ep.definition}\n`; if (ep.requiresRationale) schema += `  (Requires Rationale)\n`; if (ep.labels && ep.labels.length > 0) { schema += `  Labels:\n` + ep.labels.map(l => `    - "${l.name}": ${l.definition} ${l.example ? `(e.g., "${l.example}")` : ''}`).join("\n"); } return schema; }).join("\n\n");
@@ -879,9 +881,42 @@ export default function RunDetailsPage() {
     } catch (error: any) { console.error("Error analyzing judgment:", error); setJudgmentAnalysisError(error.message || "Failed to get analysis."); } finally { setIsAnalyzingJudgment(false); }
   };
 
-  const hasMismatches = useMemo((): boolean => { if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; return runDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).toLowerCase() !== String(gtLabel).toLowerCase(); }) ); }, [runDetails, evalParamDetailsForLLM]);
+  const hasMismatches = useMemo((): boolean => { if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; return runDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase(); }) ); }, [runDetails, evalParamDetailsForLLM]);
   const handleFilterChange = (paramId: string, value: 'all' | 'match' | 'mismatch'): void => { setFilterStates(prev => ({ ...prev, [paramId]: value })); };
-  const filteredResultsToDisplay = useMemo((): EvalRunResultItem[] => { if (!runDetails?.results) return []; if (runDetails.runType !== 'GroundTruth' || Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) { return runDetails.results; } return runDetails.results.filter(item => { for (const paramId in filterStates) { if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) continue; const filterValue = filterStates[paramId]; if (filterValue === 'all') continue; const llmOutput = item.judgeLlmOutput?.[paramId]; const gtLabel = item.groundTruth?.[paramId]; if (!llmOutput || gtLabel === undefined || llmOutput.error) { if (filterValue === 'match' || filterValue === 'mismatch') return false; continue; } const isMatch = String(llmOutput.chosenLabel).toLowerCase() === String(gtLabel).toLowerCase(); if (filterValue === 'match' && !isMatch) return false; if (filterValue === 'mismatch' && isMatch) return false; } return true; }); }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
+  const filteredResultsToDisplay = useMemo((): EvalRunResultItem[] => {
+    if (!runDetails?.results) return [];
+    if (runDetails.runType !== 'GroundTruth' || Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) {
+      return runDetails.results;
+    }
+    return runDetails.results.filter(item => {
+      for (const paramId in filterStates) {
+        if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) continue;
+
+        const filterValue = filterStates[paramId];
+        if (filterValue === 'all') continue;
+
+        const llmOutput = item.judgeLlmOutput?.[paramId];
+        const gtDbValue = item.groundTruth?.[paramId];
+
+        if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || gtDbValue === undefined || llmOutput.error) {
+            if (filterValue === 'match' || filterValue === 'mismatch') {
+                return false;
+            }
+            continue;
+        }
+        const isMatch = String(llmOutput.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
+
+        if (filterValue === 'match' && !isMatch) {
+            return false;
+        }
+        if (filterValue === 'mismatch' && isMatch) {
+            return false;
+        }
+      }
+      return true;
+    });
+  }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
+
   const displayedPreviewData: Array<Record<string, any>> = runDetails?.previewedDatasetSample || [];
   const previewTableHeaders: string[] = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
   const isRunTerminal: boolean = runDetails?.status === 'Completed' || false;
@@ -893,7 +928,6 @@ export default function RunDetailsPage() {
   const hasResultsForDownload_flag: boolean = runDetails?.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
   const canDownloadResults: boolean = hasResultsForDownload_flag;
   const canSuggestImprovements: boolean = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails?.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-
 
   if (isLoadingUserId) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
   if (!currentUserId) { return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>; }
