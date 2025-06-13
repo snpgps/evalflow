@@ -3,24 +3,28 @@
 
 import { useState, type FormEvent, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, PlugZap, Eye, EyeOff, AlertTriangle, Loader2 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { PlusCircle, Edit2, Trash2, PlugZap, Eye, EyeOff, AlertTriangle, Loader2, PlayIcon, Send } from "lucide-react";
 import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp, type FieldValue } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
+import { testDirectAnthropicClient, type TestDirectAnthropicClientInput, type TestDirectAnthropicClientOutput } from '@/ai/flows/test-direct-anthropic-client-flow';
+import { testGoogleAIConnection, type TestGoogleAIConnectionInput, type TestGoogleAIConnectionOutput } from '@/ai/flows/test-googleai-connection-flow.ts';
 
 interface ModelConnector {
   id: string; // Firestore document ID
   name: string;
-  provider: 'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Other';
+  provider: 'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Anthropic' | 'Other';
   apiKey: string;
   config: string; // JSON string for other configurations, will include "model" if selected
   createdAt?: Timestamp;
@@ -35,22 +39,28 @@ const VERTEX_AI_MODELS = [
   "gemini-1.0-pro",
   "gemini-1.0-pro-001",
   "gemini-1.0-pro-vision",
-  "gemini-2.0-flash", // Specific model used for image gen in Genkit docs
   "text-bison",
   "chat-bison",
 ];
 const OPENAI_MODELS = [
-  "gpt-4.1",
-  "gpt-4.1-mini",
-  "gpt-4.1-nano",
   "gpt-4o",
   "gpt-4o-mini",
-  "gpt-4.5", // (Orion)
+  "gpt-4-turbo",
+  "gpt-4",
   "gpt-3.5-turbo",
 ];
-const AZURE_OPENAI_MODELS = [ // These are common underlying model types; deployment name is key.
+const AZURE_OPENAI_MODELS = [
   "gpt-4 (via Azure)",
-  "gpt-35-turbo (via Azure)", // Common shorthand for gpt-3.5-turbo on Azure
+  "gpt-35-turbo (via Azure)",
+];
+const ANTHROPIC_MODELS = [
+  "claude-3-5-sonnet-20240620",
+  "claude-3-opus-20240229",
+  "claude-3-sonnet-20240229",
+  "claude-3-haiku-20240307",
+  "claude-2.1",
+  "claude-2.0",
+  "claude-instant-1.2",
 ];
 
 
@@ -83,62 +93,61 @@ export default function ModelConnectorsPage() {
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
   const [editingConnector, setEditingConnector] = useState<ModelConnector | null>(null);
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
 
   const [connectorName, setConnectorName] = useState('');
-  const [provider, setProvider] = useState<'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Other'>('OpenAI');
+  const [provider, setProvider] = useState<'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Anthropic' | 'Other'>('OpenAI');
   const [apiKey, setApiKey] = useState('');
-  const [config, setConfig] = useState('{}'); // Bound to textarea, stores full JSON string
+  const [config, setConfig] = useState('{}');
   const [selectedModelForDropdown, setSelectedModelForDropdown] = useState('');
 
+  // State for Test Connection Dialog
+  const [isTestConnectionDialogOpen, setIsTestConnectionDialogOpen] = useState(false);
+  const [connectorToTest, setConnectorToTest] = useState<ModelConnector | null>(null);
+  const [testPrompt, setTestPrompt] = useState<string>("Hello, please respond with a short friendly greeting and mention your model name if you know it.");
+  const [testResult, setTestResult] = useState<TestDirectAnthropicClientOutput | TestGoogleAIConnectionOutput | null>(null);
+  const [isSubmittingTest, setIsSubmittingTest] = useState(false);
 
-  // Effect to update the 'config' string when provider or selectedModelForDropdown changes
+  // State for Delete Confirmation Dialog
+  const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
+  const [connectorIdPendingDelete, setConnectorIdPendingDelete] = useState<string | null>(null);
+
+
   useEffect(() => {
-    // Don't run if the dialog isn't open and we are not editing, or if provider isn't set
-    if (!isDialogOpen && !editingConnector) return;
-    if (!provider && !editingConnector) return; // Avoid running on initial mount before provider is set for a new connector
+    if (!isFormDialogOpen && !editingConnector) return;
+    if (!provider && !editingConnector) return;
 
     const effectiveProvider = editingConnector?.provider || provider;
 
     try {
       let currentConfigJson: any = {};
-      // Try to parse existing config, but gracefully handle if it's not valid JSON yet (e.g. user is typing)
       if (config.trim() !== "") {
         try {
           currentConfigJson = JSON.parse(config);
         } catch (e) {
-          // If current config is invalid, and we have a model to set, start with that.
-          // Otherwise, we'll preserve the invalid user input for now.
           if (selectedModelForDropdown) currentConfigJson = {};
-          else return; // Don't overwrite invalid JSON if no model change is driving an update
+          else return;
         }
       }
 
-      const relevantProvidersForModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI"];
+      const relevantProvidersForModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"];
 
       if (relevantProvidersForModelDropdown.includes(effectiveProvider) && selectedModelForDropdown) {
         currentConfigJson.model = selectedModelForDropdown;
-      } else {
-        // If provider doesn't use dropdown OR no model is selected in dropdown, remove 'model' key
-        delete currentConfigJson.model;
+      } else if (!selectedModelForDropdown && currentConfigJson.model && relevantProvidersForModelDropdown.includes(effectiveProvider)) {
+         delete currentConfigJson.model;
       }
-      
-      const newConfigString = Object.keys(currentConfigJson).length === 0 ? '{}' : JSON.stringify(currentConfigJson, null, 2);
 
-      // Only setConfig if the string content would actually change, to avoid loops if formatting is the only difference
+      const newConfigString = Object.keys(currentConfigJson).length === 0 ? '{}' : JSON.stringify(currentConfigJson, null, 2);
       if (newConfigString !== config.trim()) {
          setConfig(newConfigString);
       }
-
     } catch (e) {
-      // This catch is for JSON.parse if it somehow still fails (should be handled above)
       console.error("Error processing config for model update:", e);
-      // Potentially set to a clean state if really broken
-      // setConfig(JSON.stringify({ model: selectedModelForDropdown }, null, 2));
     }
-  }, [provider, selectedModelForDropdown, editingConnector]); // Do NOT add `config` to dependency array - it creates a loop.
+  }, [provider, selectedModelForDropdown, editingConnector, isFormDialogOpen, config]);
 
 
   const addConnectorMutation = useMutation<void, Error, ModelConnectorCreationPayload>({
@@ -150,7 +159,7 @@ export default function ModelConnectorsPage() {
       queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
       toast({ title: "Success", description: "Model connector added." });
       resetForm();
-      setIsDialogOpen(false);
+      setIsFormDialogOpen(false);
     },
     onError: (error) => {
       toast({ title: "Error", description: `Failed to add connector: ${error.message}`, variant: "destructive" });
@@ -168,7 +177,7 @@ export default function ModelConnectorsPage() {
       queryClient.invalidateQueries({ queryKey: ['modelConnectors', currentUserId] });
       toast({ title: "Success", description: "Model connector updated." });
       resetForm();
-      setIsDialogOpen(false);
+      setIsFormDialogOpen(false);
     },
     onError: (error) => {
       toast({ title: "Error", description: `Failed to update connector: ${error.message}`, variant: "destructive" });
@@ -203,14 +212,12 @@ export default function ModelConnectorsPage() {
 
     let finalConfig = '{}';
     try {
-      // Ensure what's in the textarea is valid JSON, or default it.
-      JSON.parse(config); // This will throw if invalid
+      JSON.parse(config);
       finalConfig = config.trim() === "" ? '{}' : config.trim();
     } catch (err) {
       toast({title: "Configuration Error", description: "Additional Configuration contains invalid JSON. Please correct it or leave it as {} an empty object.", variant: "destructive"});
       return;
     }
-    
 
     const connectorData = {
       name: connectorName.trim(),
@@ -236,23 +243,26 @@ export default function ModelConnectorsPage() {
   };
 
   const openEditDialog = (connector: ModelConnector) => {
-    setEditingConnector(connector); // Important to set this first
+    setEditingConnector(connector);
     setConnectorName(connector.name);
     setProvider(connector.provider);
     setApiKey(connector.apiKey);
     const loadedConfig = connector.config || '{}';
-    setConfig(loadedConfig); // Set the textarea content
+    setConfig(loadedConfig);
 
-    // Manually pre-select model dropdown based on loaded config and provider
     try {
       if (loadedConfig.trim() !== "") {
         const parsedConfig = JSON.parse(loadedConfig);
         if (parsedConfig.model && typeof parsedConfig.model === 'string') {
-          const currentModels = connector.provider === "Vertex AI" ? VERTEX_AI_MODELS : connector.provider === "OpenAI" ? OPENAI_MODELS : connector.provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS : [];
+          const currentModels =
+            connector.provider === "Vertex AI" ? VERTEX_AI_MODELS :
+            connector.provider === "OpenAI" ? OPENAI_MODELS :
+            connector.provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS :
+            connector.provider === "Anthropic" ? ANTHROPIC_MODELS : [];
           if (currentModels.includes(parsedConfig.model)) {
             setSelectedModelForDropdown(parsedConfig.model);
           } else {
-            setSelectedModelForDropdown(''); // Model in config not valid for current provider
+            setSelectedModelForDropdown('');
           }
         } else {
           setSelectedModelForDropdown('');
@@ -264,37 +274,126 @@ export default function ModelConnectorsPage() {
       setSelectedModelForDropdown('');
       console.warn("Failed to parse connector.config in openEditDialog for model dropdown", e);
     }
-    setIsDialogOpen(true);
+    setIsFormDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-     if (!currentUserId) {
-        toast({title: "Error", description: "User not identified.", variant: "destructive"});
-        return;
+  const handleDeleteInitiate = (id: string) => {
+    if (!currentUserId) {
+      toast({ title: "Error", description: "User not identified.", variant: "destructive" });
+      return;
     }
-    if (confirm('Are you sure you want to delete this model connector?')) {
-        deleteConnectorMutation.mutate(id);
-    }
+    setConnectorIdPendingDelete(id);
+    setIsConfirmDeleteDialogOpen(true);
   };
 
-  const handleOpenNewDialog = () => {
+  const confirmDeleteConnector = () => {
+    if (connectorIdPendingDelete) {
+      deleteConnectorMutation.mutate(connectorIdPendingDelete);
+    }
+    // setIsConfirmDeleteDialogOpen(false); // This will be handled by onOpenChange
+    // setConnectorIdPendingDelete(null); // This will be handled by onOpenChange
+  };
+
+
+  const handleOpenNewFormDialog = () => {
     if (!currentUserId) {
       toast({title: "Login Required", description: "Please log in to add connectors.", variant: "destructive"});
       return;
     }
     resetForm();
-    setIsDialogOpen(true);
+    setIsFormDialogOpen(true);
   };
 
   const toggleApiKeyVisibility = (id: string) => {
     setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const currentModelsForProvider = provider === "Vertex AI" ? VERTEX_AI_MODELS :
-                                  provider === "OpenAI" ? OPENAI_MODELS :
-                                  provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS :
-                                  [];
-  const showModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI"].includes(provider);
+  const getGenkitModelId = (connector: ModelConnector | null): string | undefined => {
+    if (!connector || !connector.config) return undefined;
+    if (connector.provider === 'Anthropic') return undefined; // Anthropic uses direct client, no Genkit ID needed for its specific test flow
+    try {
+      const parsedConfig = JSON.parse(connector.config);
+      if (parsedConfig.model && typeof parsedConfig.model === 'string') {
+        if (connector.provider === 'Vertex AI') return `googleai/${parsedConfig.model}`;
+        if (connector.provider === 'OpenAI') return `openai/${parsedConfig.model}`;
+        // Add other Genkit plugin providers here if needed
+      }
+    } catch (e) {
+      // console.warn("Could not parse config for Genkit model ID for connector:", connector.name);
+    }
+    return undefined;
+  };
+  
+  const getAnthropicModelNameFromConfig = (connector: ModelConnector | null): string | undefined => {
+    if (!connector || connector.provider !== 'Anthropic' || !connector.config) return undefined;
+    try {
+      const parsedConfig = JSON.parse(connector.config);
+      return parsedConfig.model as string | undefined;
+    } catch (e) {
+      // console.warn("Could not parse Anthropic model from config:", connector.name);
+    }
+    return undefined;
+  };
+
+
+  const openTestConnectionDialog = (connector: ModelConnector) => {
+    setConnectorToTest(connector);
+    let defaultPromptText = "Hello, please respond with a short friendly greeting and mention your model name if you know it.";
+    if (connector.provider === 'Anthropic') defaultPromptText = "Hello Claude, please respond with a short friendly greeting and mention your model name if you know it.";
+    else if (connector.provider === 'Vertex AI') defaultPromptText = "Hello Gemini, please respond with a short friendly greeting and mention your model name if you know it.";
+    setTestPrompt(defaultPromptText);
+    setTestResult(null);
+    setIsTestConnectionDialogOpen(true);
+  };
+
+  const handleRunTest = async () => {
+    if (!connectorToTest) return;
+    
+    setIsSubmittingTest(true);
+    setTestResult(null);
+
+    try {
+      let result: TestDirectAnthropicClientOutput | TestGoogleAIConnectionOutput;
+      if (connectorToTest.provider === 'Anthropic') {
+        const anthropicModelName = getAnthropicModelNameFromConfig(connectorToTest);
+        if (!anthropicModelName) {
+           setTestResult({ success: false, error: `Anthropic model not specified in connector config.` });
+           setIsSubmittingTest(false);
+           return;
+        }
+        const input: TestDirectAnthropicClientInput = { modelName: anthropicModelName, testPrompt: testPrompt };
+        result = await testDirectAnthropicClient(input);
+
+      } else if (connectorToTest.provider === 'Vertex AI') {
+        const genkitModelId = getGenkitModelId(connectorToTest);
+        if (!genkitModelId) {
+          setTestResult({ success: false, error: `Cannot determine Genkit model ID for ${connectorToTest.provider}. Ensure model is selected in config.` });
+          setIsSubmittingTest(false);
+          return;
+        }
+        const input: TestGoogleAIConnectionInput = { modelId: genkitModelId, testPrompt: testPrompt };
+        result = await testGoogleAIConnection(input);
+      } else {
+        setTestResult({ success: false, error: `Connection testing is not implemented for ${connectorToTest.provider} provider.` });
+        setIsSubmittingTest(false);
+        return;
+      }
+      setTestResult(result);
+    } catch (error: any) {
+      const modelIdAttempted = connectorToTest.provider === 'Anthropic' ? getAnthropicModelNameFromConfig(connectorToTest) : getGenkitModelId(connectorToTest);
+      setTestResult({ success: false, error: error.message || "Flow execution failed.", modelUsed: modelIdAttempted });
+    } finally {
+      setIsSubmittingTest(false);
+    }
+  };
+
+
+  const currentModelsForProvider =
+    provider === "Vertex AI" ? VERTEX_AI_MODELS :
+    provider === "OpenAI" ? OPENAI_MODELS :
+    provider === "Azure OpenAI" ? AZURE_OPENAI_MODELS :
+    provider === "Anthropic" ? ANTHROPIC_MODELS : [];
+  const showModelDropdown = ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider);
 
 
   if (isLoadingUserId || (isLoadingConnectors && currentUserId)) {
@@ -329,9 +428,9 @@ export default function ModelConnectorsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
+          <Dialog open={isFormDialogOpen} onOpenChange={(isOpen) => { setIsFormDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogTrigger asChild>
-              <Button onClick={handleOpenNewDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
+              <Button onClick={handleOpenNewFormDialog} disabled={!currentUserId || addConnectorMutation.isPending || updateConnectorMutation.isPending} className="w-full sm:w-auto">
                 <PlusCircle className="mr-2 h-5 w-5" /> Add New Connector
               </Button>
             </DialogTrigger>
@@ -340,7 +439,6 @@ export default function ModelConnectorsPage() {
                 <DialogTitle>{editingConnector ? 'Edit' : 'Add New'} Model Connector</DialogTitle>
                 <DialogDescription>
                   Configure a connection to a Judge LLM provider.
-                  <br/><span className="text-xs text-amber-600">API keys are sensitive. Ensure your Firestore rules are secure.</span>
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 py-4">
@@ -350,16 +448,17 @@ export default function ModelConnectorsPage() {
                 </div>
                 <div>
                   <Label htmlFor="conn-provider">LLM Provider</Label>
-                  <Select value={provider} onValueChange={(value: any) => { setProvider(value); setSelectedModelForDropdown(''); /* Reset model on provider change */ }}>
+                  <Select value={provider} onValueChange={(value: any) => { setProvider(value); setSelectedModelForDropdown(''); }}>
                     <SelectTrigger id="conn-provider">
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="OpenAI">OpenAI</SelectItem>
-                      <SelectItem value="Vertex AI">Vertex AI (Gemini)</SelectItem>
-                      <SelectItem value="Azure OpenAI">Azure OpenAI</SelectItem>
-                      <SelectItem value="Local LLM">Local LLM</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
+                      <SelectItem value="OpenAI">OpenAI (Genkit)</SelectItem>
+                      <SelectItem value="Vertex AI">Vertex AI (Gemini via Genkit)</SelectItem>
+                      <SelectItem value="Anthropic">Anthropic (Claude via Direct Client)</SelectItem>
+                      <SelectItem value="Azure OpenAI">Azure OpenAI (Genkit)</SelectItem>
+                      <SelectItem value="Local LLM">Local LLM (Genkit)</SelectItem>
+                      <SelectItem value="Other">Other (Genkit)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -387,32 +486,30 @@ export default function ModelConnectorsPage() {
                 </div>
                 <div>
                   <Label htmlFor="conn-config">Additional Configuration (JSON)</Label>
-                  <Textarea 
-                    id="conn-config" 
-                    value={config} 
+                  <Textarea
+                    id="conn-config"
+                    value={config}
                     onChange={(e) => {
                       setConfig(e.target.value);
-                      // If user types in config, try to update dropdown
                       try {
                         const parsed = JSON.parse(e.target.value);
-                        if (parsed.model && typeof parsed.model === 'string' && currentModelsForProvider.includes(parsed.model)) {
-                          setSelectedModelForDropdown(parsed.model);
-                        } else if (!parsed.model && selectedModelForDropdown) {
-                           // If user deletes model from textarea, clear dropdown
-                           //setSelectedModelForDropdown(''); // This might cause issues if provider still expects model
+                        if (parsed.model && typeof parsed.model === 'string' && currentModelsForProvider.includes(parsed.model) && provider && ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider)) {
+                           setSelectedModelForDropdown(parsed.model);
+                        } else if (provider && ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider) && !parsed.model) {
+                           setSelectedModelForDropdown('');
                         }
                       } catch (err) { /* Ignore parse errors while typing */ }
-                    }} 
-                    placeholder='e.g., { "temperature": 0.7, "maxOutputTokens": 1024 }' 
-                    rows={3} 
+                    }}
+                    placeholder='e.g., { "temperature": 0.7, "maxOutputTokens": 1024 }'
+                    rows={3}
                   />
                    <p className="text-xs text-muted-foreground mt-1">
-                     Use this for settings like temperature, token limits, or Azure-specific fields like <code className="bg-muted p-0.5 rounded-sm">{'{ "deployment": "my-deployment" }'}</code>.
-                     The "model" field will be managed by the dropdown above if applicable.
+                     Use this for settings like temperature, token limits.
+                     The "model" field will be managed by the dropdown above if applicable and provider is not 'Other' or 'Local LLM'.
                    </p>
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => {setIsDialogOpen(false); resetForm();}}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={() => {setIsFormDialogOpen(false); resetForm();}}>Cancel</Button>
                   <Button type="submit" disabled={addConnectorMutation.isPending || updateConnectorMutation.isPending || !currentUserId}>
                      {(addConnectorMutation.isPending || updateConnectorMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {editingConnector ? 'Save Changes' : 'Add Connector'}
@@ -427,12 +524,14 @@ export default function ModelConnectorsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Saved Connectors</CardTitle>
-          <CardDescription>Your configured Judge LLM connections. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription>
+          <CardDescription>Your configured Judge LLM connections.
+            {!currentUserId ? " Please log in." : ""}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {!currentUserId && !isLoadingUserId ? (
              <div className="text-center text-muted-foreground py-8"><p>Please log in to manage model connectors.</p></div>
-          ) : connectors.length === 0 && !isLoadingConnectors ? (
+          ): connectors.length === 0 && !isLoadingConnectors ? (
              <div className="text-center text-muted-foreground py-8">
               <PlugZap className="mx-auto h-12 w-12 text-gray-400 mb-4" />
               <p>No model connectors configured yet.</p>
@@ -446,40 +545,155 @@ export default function ModelConnectorsPage() {
                   <TableHead className="hidden sm:table-cell w-1/5">Provider</TableHead>
                   <TableHead className="w-2/5 sm:w-1/3">API Key</TableHead>
                   <TableHead className="hidden md:table-cell w-1/4">Configuration</TableHead>
-                  <TableHead className="text-right w-[80px] sm:w-[100px]">Actions</TableHead>
+                  <TableHead className="text-right w-[110px] sm:w-[130px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {connectors.map((conn) => (
-                  <TableRow key={conn.id} className="hover:bg-muted/50">
-                    <TableCell className="font-medium truncate" title={conn.name}>{conn.name}</TableCell>
-                    <TableCell className="hidden sm:table-cell truncate" title={conn.provider}>{conn.provider}</TableCell>
-                    <TableCell className="truncate">
-                      <div className="flex items-center">
-                        <span className="truncate">{showApiKey[conn.id] ? conn.apiKey : '••••••••••••••••'}</span>
-                        <Button variant="ghost" size="icon" onClick={() => toggleApiKeyVisibility(conn.id)} className="ml-1 sm:ml-2 h-7 w-7 shrink-0">
-                          {showApiKey[conn.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground hidden md:table-cell truncate" title={conn.config}>{conn.config || '{}'}</TableCell>
-                    <TableCell className="text-right">
-                        <div className="flex justify-end items-center gap-0">
-                          <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending}>
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(conn.id)} className="text-destructive hover:text-destructive/90" disabled={!currentUserId || deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id}>
-                            <Trash2 className="h-4 w-4" />
+                {connectors.map((conn) => {
+                  const canTestGoogleAI = conn.provider === 'Vertex AI' && !!getGenkitModelId(conn);
+                  const canTestAnthropicDirect = conn.provider === 'Anthropic' && !!getAnthropicModelNameFromConfig(conn);
+                  
+                  let testIconColor = "text-gray-400"; 
+                  if (conn.provider === 'Anthropic') testIconColor = "text-orange-500";
+                  else if (conn.provider === 'Vertex AI') testIconColor = "text-green-500";
+
+                  return (
+                    <TableRow key={conn.id} className="hover:bg-muted/50">
+                      <TableCell className="font-medium truncate" title={conn.name}>{conn.name}</TableCell>
+                      <TableCell className="hidden sm:table-cell truncate" title={conn.provider}>{conn.provider}</TableCell>
+                      <TableCell className="truncate">
+                        <div className="flex items-center">
+                          <span className="truncate">{showApiKey[conn.id] ? conn.apiKey : '••••••••••••••••'}</span>
+                          <Button variant="ghost" size="icon" onClick={() => toggleApiKeyVisibility(conn.id)} className="ml-1 sm:ml-2 h-7 w-7 shrink-0">
+                            {showApiKey[conn.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </Button>
                         </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground hidden md:table-cell truncate" title={conn.config}>{conn.config || '{}'}</TableCell>
+                      <TableCell className="text-right">
+                          <div className="flex justify-end items-center gap-0">
+                            {(canTestGoogleAI || canTestAnthropicDirect) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openTestConnectionDialog(conn)}
+                                disabled={isSubmittingTest && connectorToTest?.id === conn.id}
+                                title={`Test ${conn.provider} Connection`}
+                                className="h-8 w-8"
+                              >
+                                <PlayIcon className={`h-4 w-4 ${testIconColor}`} />
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="icon" onClick={() => openEditDialog(conn)} disabled={!currentUserId || updateConnectorMutation.isPending || deleteConnectorMutation.isPending || (isSubmittingTest && connectorToTest?.id === conn.id)} className="h-8 w-8">
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDeleteInitiate(conn.id)} className="text-destructive hover:text-destructive/90 h-8 w-8" disabled={!currentUserId || (deleteConnectorMutation.isPending && deleteConnectorMutation.variables === conn.id) || (isSubmittingTest && connectorToTest?.id === conn.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={isTestConnectionDialogOpen} onOpenChange={(isOpen) => { if(!isOpen) { setConnectorToTest(null); setTestResult(null); } setIsTestConnectionDialogOpen(isOpen); }}>
+        <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+                <DialogTitle>Test {connectorToTest?.provider} Connection: {connectorToTest?.name}</DialogTitle>
+                <DialogDescription>Send a test prompt to the selected model (Model for test: {
+                  connectorToTest?.provider === 'Anthropic' ? getAnthropicModelNameFromConfig(connectorToTest) || "N/A (Check Config)" : getGenkitModelId(connectorToTest) || "N/A (Check Config)"
+                }).</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+                <div>
+                    <Label htmlFor="test-prompt-textarea">Test Prompt</Label>
+                    <Textarea
+                        id="test-prompt-textarea"
+                        value={testPrompt}
+                        onChange={(e) => setTestPrompt(e.target.value)}
+                        placeholder="Enter your test prompt here..."
+                        rows={4}
+                    />
+                </div>
+                {isSubmittingTest && (
+                    <div className="flex items-center space-x-2 text-muted-foreground">
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        <span>Testing connection...</span>
+                    </div>
+                )}
+                {testResult && !isSubmittingTest && (
+                    <div className="mt-4 space-y-2">
+                        <Label>Test Result:</Label>
+                        {testResult.success ? (
+                            <Alert variant="default" className="bg-green-50 border-green-300 text-green-700">
+                                <AlertTitle className="text-green-800">Connection Successful!</AlertTitle>
+                                <AlertDescription className="text-sm text-green-700 whitespace-pre-wrap break-words">
+                                    <p className="font-semibold">Model: {testResult.modelUsed || 'N/A'}</p>
+                                    <p className="font-semibold mt-1">Response:</p>
+                                    <p className="mt-0.5">{testResult.responseText}</p>
+                                    {(testResult as TestGoogleAIConnectionOutput).usage && <p className="text-xs mt-2 opacity-80">Usage (Genkit): {JSON.stringify((testResult as TestGoogleAIConnectionOutput).usage)}</p>}
+                                </AlertDescription>
+                            </Alert>
+                        ) : (
+                            <Alert variant="destructive">
+                                <AlertTriangle className="h-4 w-4" />
+                                <AlertTitle>Connection Failed</AlertTitle>
+                                <AlertDescription className="whitespace-pre-wrap break-words">
+                                    <p className="font-semibold">Model Attempted: {testResult.modelUsed || 'N/A'}</p>
+                                    <p className="mt-0.5">{testResult.error}</p>
+                                </AlertDescription>
+                            </Alert>
+                        )}
+                    </div>
+                )}
+            </div>
+            <DialogFooter>
+                <Button variant="outline" onClick={() => setIsTestConnectionDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleRunTest} disabled={isSubmittingTest || !testPrompt.trim() || !connectorToTest}>
+                    {isSubmittingTest ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Send className="mr-2 h-4 w-4"/>}
+                    Send Test Prompt
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={isConfirmDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsConfirmDeleteDialogOpen(open);
+          if (!open) {
+            setConnectorIdPendingDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the model connector.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConnectorIdPendingDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteConnector}
+              disabled={deleteConnectorMutation.isPending && deleteConnectorMutation.variables === connectorIdPendingDelete}
+              className={deleteConnectorMutation.isPending && deleteConnectorMutation.variables === connectorIdPendingDelete ? "bg-destructive/70" : ""}
+            >
+              {deleteConnectorMutation.isPending && deleteConnectorMutation.variables === connectorIdPendingDelete ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Confirm Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

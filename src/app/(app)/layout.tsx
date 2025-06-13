@@ -26,7 +26,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoadingUserId && !currentUserId) {
-      router.push('/login'); // Updated redirect
+      router.push('/login');
     }
   }, [currentUserId, isLoadingUserId, router]);
 

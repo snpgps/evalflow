@@ -3,15 +3,16 @@
 /**
  * @fileOverview A Genkit flow that uses an LLM to judge an input against evaluation parameters
  * and generate summaries for summarization definitions.
+ * It can use Genkit-configured models or a direct Anthropic client.
  *
- * - judgeLlmEvaluation - A function that takes a full prompt, evaluation parameter details,
- *   summarization parameter IDs, and a list of parameters requiring rationale, then calls an LLM.
+ * - judgeLlmEvaluation - A function that takes prompt text, parameter IDs, and connector info.
  * - JudgeLlmEvaluationInput - The input type.
  * - JudgeLlmEvaluationOutput - The return type (structured evaluation and summaries).
  */
 
-import {ai} from '@/ai/genkit';
+import {ai, anthropicClient} from '@/ai/genkit'; // anthropicClient imported
 import {z} from 'genkit';
+import type {MessageParam} from '@anthropic-ai/sdk/resources/messages';
 
 // Zod schema for the input to the flow and prompt
 const JudgeLlmEvaluationInputSchema = z.object({
@@ -27,6 +28,13 @@ const JudgeLlmEvaluationInputSchema = z.object({
   parameterIdsRequiringRationale: z.array(z.string()).optional().describe(
     "An optional array of evaluation parameter IDs for which a 'rationale' field is mandatory in the output object for that parameter."
   ),
+  // For Genkit models:
+  modelName: z.string().optional().describe(
+    "The Genkit model identifier, e.g., 'googleai/gemini-1.5-pro' or 'anthropic/claude-3-opus-20240229'. If not provided, Genkit's default model will be used."
+  ),
+  // For direct client usage (like Anthropic):
+  modelConnectorProvider: z.string().optional().describe("The provider of the model connector, e.g., 'Anthropic', 'Vertex AI'."),
+  modelConnectorConfigString: z.string().optional().describe("The JSON string configuration for the model connector, potentially containing the model name for direct client usage."),
 });
 export type JudgeLlmEvaluationInput = z.infer<typeof JudgeLlmEvaluationInputSchema>;
 
@@ -105,7 +113,7 @@ After your analysis, provide a JSON array as your response. Each object in the a
 
 - If the "parameterId" refers to an **Evaluation Parameter**:
   - The object MUST include a "chosenLabel" key. The value must be the name of the single most appropriate label you have chosen for that parameter.
-  - {{#if parameterIdsRequiringRationale.length}}
+  {{#if parameterIdsRequiringRationale.length}}
     For the following evaluation parameter IDs, you MUST also include a "rationale" field, explaining your reasoning for the chosen label:
     {{#each parameterIdsRequiringRationale}}
     - {{this}}
@@ -147,8 +155,9 @@ Example of the expected JSON array format:
 ]
 `;
 
+// This is the Genkit prompt object, used when provider is not Anthropic
 const judgePrompt = ai.definePrompt({
-  name: 'judgeLlmEvaluationPrompt',
+  name: 'judgeLlmEvaluationGenkitPrompt', // Renamed for clarity
   input: { schema: JudgeLlmEvaluationInputSchema },
   output: { schema: LlmOutputArraySchema },
   prompt: handlebarsPrompt,
@@ -162,11 +171,9 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
   {
     name: 'internalJudgeLlmEvaluationFlow',
     inputSchema: JudgeLlmEvaluationInputSchema,
-    outputSchema: LlmOutputArraySchema,
+    outputSchema: LlmOutputArraySchema, // The flow itself will return the array
   },
-  async (input) => {
-    // console.log('internalJudgeLlmEvaluationFlow received input for prompt:', JSON.stringify(input.fullPromptText, null, 2)); // Log only prompt text to avoid overly verbose logs of IDs
-    
+  async (input): Promise<z.infer<typeof LlmOutputArraySchema>> => {
     if ((!input.evaluationParameterIds || input.evaluationParameterIds.length === 0) && 
         (!input.summarizationParameterIds || input.summarizationParameterIds.length === 0)) {
       console.warn('internalJudgeLlmEvaluationFlow: No evaluation or summarization parameters provided. Returning empty array.');
@@ -174,29 +181,117 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
     }
 
     let output: z.infer<typeof LlmOutputArraySchema> | undefined | null = null;
-    let usage: any = null;
+    let usage: any = null; // To store usage from Genkit or Anthropic
+    let errorReason = "LLM did not return a parsable output.";
 
     try {
-      const result = await judgePrompt(input);
-      output = result.output; // output is already parsed against LlmOutputArraySchema by Genkit
-      usage = result.usage;
+      if (input.modelConnectorProvider === 'Anthropic' && input.modelConnectorConfigString) {
+        let anthropicModelName: string | undefined;
+        try {
+          const connectorConfig = JSON.parse(input.modelConnectorConfigString);
+          anthropicModelName = connectorConfig.model;
+        } catch (e) {
+          throw new Error("Failed to parse Anthropic modelConnectorConfigString.");
+        }
+
+        if (!anthropicModelName) {
+          throw new Error("Anthropic model name not found in modelConnectorConfigString.");
+        }
+        if (!anthropicClient) {
+          throw new Error("Anthropic client is not initialized. Check ANTHROPIC_API_KEY environment variable and server restart.");
+        }
+
+        console.log(`Using direct Anthropic client with model: ${anthropicModelName}`);
+        
+        const contentToAnalyze = input.fullPromptText; // This is the user's prompt with data + criteria text
+
+        let rationaleInstruction = `The "rationale" field is optional for all evaluation parameters.`;
+        if (input.parameterIdsRequiringRationale && input.parameterIdsRequiringRationale.length > 0) {
+          rationaleInstruction = `For the following evaluation parameter IDs, you MUST also include a "rationale" field, explaining your reasoning for the chosen label: ${input.parameterIdsRequiringRationale.join(', ')}.\nFor other evaluation parameter IDs, the "rationale" field is optional.`;
+        }
+        
+        const evalParamIdsList = input.evaluationParameterIds && input.evaluationParameterIds.length > 0 
+                                  ? input.evaluationParameterIds.map(id => `- ${id}`).join('\n  ') 
+                                  : '(No evaluation parameters specified for labeling in this run)';
+        const summarizationParamIdsList = input.summarizationParameterIds && input.summarizationParameterIds.length > 0
+                                  ? input.summarizationParameterIds.map(id => `- ${id}`).join('\n  ')
+                                  : '(No summarization tasks specified for this run)';
+
+        const anthropicUserPrompt = `You are an expert evaluator. Analyze the following text based on the criteria described within it.
+The text to evaluate is:
+\`\`\`text
+${contentToAnalyze}
+\`\`\`
+
+After your analysis, provide a JSON array as your response. Each object in the array must have a "parameterId" key.
+
+- If the "parameterId" refers to an **Evaluation Parameter**:
+  - The object MUST include a "chosenLabel" key. The value must be the name of the single most appropriate label you have chosen for that parameter.
+  - ${rationaleInstruction}
+
+- If the "parameterId" refers to a **Summarization Definition/Task**:
+  - The object MUST include a "generatedSummary" key. The value must be the textual summary you generated based on the definition for that task.
+  - Do NOT include "chosenLabel" or "rationale" for summarization tasks.
+
+The Evaluation Parameter IDs you MUST provide judgments for are (if any):
+  ${evalParamIdsList}
+
+The Summarization Definition IDs you MUST provide summaries for are (if any):
+  ${summarizationParamIdsList}
+
+Your entire response must be ONLY the JSON array, with no other surrounding text or explanations.
+Example of the expected JSON array format:
+[
+  { "parameterId": "eval_param1_id", "chosenLabel": "Correct" },
+  { "parameterId": "eval_param2_id_needs_rationale", "chosenLabel": "Partially_Incorrect", "rationale": "The user mentioned X, but missed Y." },
+  { "parameterId": "summary_task_abc_id", "generatedSummary": "The user is asking about their recent order's delivery status and seems frustrated with the standard delivery time." },
+  { "parameterId": "eval_param3_id", "chosenLabel": "Effective", "rationale": "This part was very clear." }
+]
+Ensure your response starts with '[' and ends with ']'. Do not include any other text before or after the JSON array.
+`;
+
+        const messages: MessageParam[] = [{ role: 'user', content: anthropicUserPrompt }];
+        
+        const response = await anthropicClient.messages.create({
+          model: anthropicModelName,
+          messages: messages,
+          max_tokens: 4096,
+          temperature: 0.3, 
+        });
+        
+        const responseText = response.content[0].text;
+        console.log('Anthropic raw response text:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
+        try {
+          output = LlmOutputArraySchema.parse(JSON.parse(responseText));
+        } catch (parseError: any) {
+           console.error("Failed to parse Anthropic JSON response:", parseError, "Raw response:", responseText);
+           errorReason = `Failed to parse Anthropic JSON response: ${parseError.message}. Raw: ${responseText.substring(0,100)}`;
+           throw new Error(errorReason);
+        }
+
+      } else {
+        console.log(`Using Genkit ai.generate with model: ${input.modelName || 'Genkit Default'}`);
+        const result = await judgePrompt(input, { model: input.modelName || undefined });
+        output = result.output; 
+        usage = result.usage;
+      }
     } catch (err: any) {
-      console.error(`Error calling judgePrompt within internalJudgeLlmEvaluationFlow. Error:`, err);
-      const errorMessage = `LLM call failed: ${err.message || 'Unknown error during LLM call.'}`;
+      console.error(`Error during LLM call (Provider: ${input.modelConnectorProvider || 'Genkit Default'}, Model: ${input.modelName || 'N/A'}). Error:`, err);
+      errorReason = `LLM call failed: ${err.message || 'Unknown error during LLM call.'}`;
       const errorResults: z.infer<typeof LlmOutputArraySchema> = [];
       input.evaluationParameterIds?.forEach(id => {
-        errorResults.push({ parameterId: id, chosenLabel: "ERROR_LLM_CALL_FAILED", rationale: errorMessage, generatedSummary: undefined });
+        errorResults.push({ parameterId: id, chosenLabel: "ERROR_LLM_CALL_FAILED", rationale: errorReason, generatedSummary: undefined });
       });
       input.summarizationParameterIds?.forEach(id => {
-        errorResults.push({ parameterId: id, generatedSummary: `ERROR: ${errorMessage}`, chosenLabel: undefined, rationale: undefined });
+        errorResults.push({ parameterId: id, generatedSummary: `ERROR: ${errorReason}`, chosenLabel: undefined, rationale: undefined });
       });
       return errorResults; 
     }
 
     if (!output) {
-      console.error('LLM did not return a parsable output matching the LlmOutputArraySchema. Usage/Error Details (if any):', usage);
+      console.error('LLM did not return a parsable output. Provider:', input.modelConnectorProvider || 'Genkit Default', '. Model used:', input.modelName || 'N/A', '. Usage/Error Details (if any):', usage);
       const errorResults: z.infer<typeof LlmOutputArraySchema> = [];
-      const rationaleForError = `LLM did not return a parsable output. Usage/details: ${JSON.stringify(usage || 'N/A')}`;
+      const rationaleForError = `LLM did not return a parsable output. Provider: ${input.modelConnectorProvider || 'Genkit Default'}. Model: ${input.modelName || 'N/A'}. Details: ${JSON.stringify(usage || errorReason || 'N/A')}`;
       input.evaluationParameterIds?.forEach(id => {
         errorResults.push({ parameterId: id, chosenLabel: "ERROR_NO_LLM_OUTPUT", rationale: rationaleForError, generatedSummary: undefined });
       });
@@ -206,8 +301,6 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
       return errorResults;
     }
     
-    // console.log('internalJudgeLlmEvaluationFlow LLM usage:', usage);
-    // console.log('internalJudgeLlmEvaluationFlow LLM output (array):', JSON.stringify(output, null, 2));
     return output;
   }
 );

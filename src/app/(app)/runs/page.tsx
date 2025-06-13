@@ -57,7 +57,9 @@ interface EvalRun {
 
   modelConnectorId: string;
   modelConnectorName?: string;
-  modelConnectorProvider?: string;
+  modelConnectorProvider?: string; // Added
+  modelConnectorConfigString?: string; // Added to store the config JSON string
+  modelIdentifierForGenkit?: string;
 
   promptId: string;
   promptName?: string;
@@ -67,8 +69,8 @@ interface EvalRun {
   selectedEvalParamIds: string[];
   selectedEvalParamNames?: string[];
   selectedContextDocumentIds?: string[];
-  selectedSummarizationDefIds?: string[]; // New field
-  selectedSummarizationDefNames?: string[]; // New field
+  selectedSummarizationDefIds?: string[]; 
+  selectedSummarizationDefNames?: string[]; 
 
 
   runOnNRows: number;
@@ -83,18 +85,18 @@ interface EvalRun {
   userId?: string;
 }
 
-type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'errorMessage' | 'status' | 'userId' | 'previewedDatasetSample' | 'modelConnectorProvider'> & {
+type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'completedAt' | 'results' | 'summaryMetrics' | 'progress' | 'errorMessage' | 'status' | 'userId' | 'previewedDatasetSample'> & {
   createdAt: FieldValue;
   updatedAt: FieldValue;
   status: 'Pending';
   userId: string;
-  modelConnectorProvider?: string;
 };
 
 const GEMINI_CONTEXT_CACHING_MODELS = ["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"];
 
 // Fetch functions for dropdowns
-const fetchSelectableDatasets = async (userId: string): Promise<SelectableDataset[]> => {
+const fetchSelectableDatasets = async (userId: string | null): Promise<SelectableDataset[]> => {
+  if (!userId) return [];
   const datasetsCollectionRef = collection(db, 'users', userId, 'datasets');
   const q = query(datasetsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
@@ -122,7 +124,8 @@ const fetchSelectableDatasets = async (userId: string): Promise<SelectableDatase
   return datasetsData;
 };
 
-const fetchSelectableModelConnectors = async (userId: string): Promise<SelectableModelConnector[]> => {
+const fetchSelectableModelConnectors = async (userId: string | null): Promise<SelectableModelConnector[]> => {
+  if (!userId) return [];
   const connectorsCollectionRef = collection(db, 'users', userId, 'modelConnectors');
   const q = query(connectorsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
@@ -132,7 +135,8 @@ const fetchSelectableModelConnectors = async (userId: string): Promise<Selectabl
   });
 };
 
-const fetchSelectablePromptTemplates = async (userId: string): Promise<SelectablePromptTemplate[]> => {
+const fetchSelectablePromptTemplates = async (userId: string | null): Promise<SelectablePromptTemplate[]> => {
+  if (!userId) return [];
   const promptsCollectionRef = collection(db, 'users', userId, 'promptTemplates');
   const q = query(promptsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
@@ -151,21 +155,24 @@ const fetchSelectablePromptTemplates = async (userId: string): Promise<Selectabl
   return promptsData;
 };
 
-const fetchSelectableEvalParameters = async (userId: string): Promise<SelectableEvalParameter[]> => {
+const fetchSelectableEvalParameters = async (userId: string | null): Promise<SelectableEvalParameter[]> => {
+  if (!userId) return [];
   const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
   const q = query(evalParamsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, name: docSnap.data().name as string }));
 };
 
-const fetchSelectableContextDocuments = async (userId: string): Promise<SelectableContextDocument[]> => {
+const fetchSelectableContextDocuments = async (userId: string | null): Promise<SelectableContextDocument[]> => {
+  if (!userId) return [];
   const contextDocsCollectionRef = collection(db, 'users', userId, 'contextDocuments');
   const q = query(contextDocsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => ({ id: docSnap.id, name: docSnap.data().name as string, fileName: docSnap.data().fileName as string }));
 };
 
-const fetchSelectableSummarizationDefs = async (userId: string): Promise<SelectableSummarizationDef[]> => {
+const fetchSelectableSummarizationDefs = async (userId: string | null): Promise<SelectableSummarizationDef[]> => {
+  if (!userId) return [];
   const defsCollectionRef = collection(db, 'users', userId, 'summarizationDefinitions');
   const q = query(defsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(q);
@@ -174,7 +181,8 @@ const fetchSelectableSummarizationDefs = async (userId: string): Promise<Selecta
 
 
 // Fetch Evaluation Runs
-const fetchEvalRuns = async (userId: string): Promise<EvalRun[]> => {
+const fetchEvalRuns = async (userId: string | null): Promise<EvalRun[]> => {
+  if (!userId) return [];
   const evalRunsCollectionRef = collection(db, 'users', userId, 'evaluationRuns');
   const q = query(evalRunsCollectionRef, orderBy('createdAt', 'desc'));
   const snapshot = await getDocs(q);
@@ -196,39 +204,39 @@ export default function EvalRunsPage() {
 
   const { data: evalRuns = [], isLoading: isLoadingEvalRuns, error: fetchEvalRunsError } = useQuery<EvalRun[], Error>({
     queryKey: ['evalRuns', currentUserId],
-    queryFn: () => fetchEvalRuns(currentUserId!),
+    queryFn: () => fetchEvalRuns(currentUserId),
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
   const { data: datasets = [], isLoading: isLoadingDatasets } = useQuery<SelectableDataset[], Error>({
     queryKey: ['selectableDatasets', currentUserId],
-    queryFn: () => fetchSelectableDatasets(currentUserId!),
-    enabled: !!currentUserId,
+    queryFn: () => fetchSelectableDatasets(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: modelConnectors = [], isLoading: isLoadingConnectors } = useQuery<SelectableModelConnector[], Error>({
     queryKey: ['selectableModelConnectors', currentUserId],
-    queryFn: () => fetchSelectableModelConnectors(currentUserId!),
-    enabled: !!currentUserId,
+    queryFn: () => fetchSelectableModelConnectors(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: promptTemplates = [], isLoading: isLoadingPrompts } = useQuery<SelectablePromptTemplate[], Error>({
     queryKey: ['selectablePromptTemplates', currentUserId],
-    queryFn: () => fetchSelectablePromptTemplates(currentUserId!),
-    enabled: !!currentUserId,
+    queryFn: () => fetchSelectablePromptTemplates(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: evaluationParameters = [], isLoading: isLoadingEvalParams } = useQuery<SelectableEvalParameter[], Error>({
     queryKey: ['selectableEvalParameters', currentUserId],
-    queryFn: () => fetchSelectableEvalParameters(currentUserId!),
-    enabled: !!currentUserId,
+    queryFn: () => fetchSelectableEvalParameters(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: contextDocuments = [], isLoading: isLoadingContextDocs } = useQuery<SelectableContextDocument[], Error>({
     queryKey: ['selectableContextDocuments', currentUserId],
-    queryFn: () => fetchSelectableContextDocuments(currentUserId!),
-    enabled: !!currentUserId,
+    queryFn: () => fetchSelectableContextDocuments(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
   const { data: summarizationDefinitions = [], isLoading: isLoadingSummarizationDefs } = useQuery<SelectableSummarizationDef[], Error>({
     queryKey: ['selectableSummarizationDefs', currentUserId],
-    queryFn: () => fetchSelectableSummarizationDefs(currentUserId!),
-    enabled: !!currentUserId,
+    queryFn: () => fetchSelectableSummarizationDefs(currentUserId),
+    enabled: !!currentUserId && !isLoadingUserId,
   });
 
 
@@ -282,7 +290,7 @@ export default function EvalRunsPage() {
       for (const key in newRunRawData) {
         if (Object.prototype.hasOwnProperty.call(newRunRawData, key)) {
           const value = (newRunRawData as any)[key];
-          if (value !== undefined) {
+          if (value !== undefined) { 
             newRunDataForFirestore[key] = value;
           }
         }
@@ -315,7 +323,6 @@ export default function EvalRunsPage() {
     mutationFn: async (runId: string) => {
       if (!currentUserId) { throw new Error("User not identified for delete operation."); }
       try { 
-        // Also delete storedAnalyses subcollection if it exists
         const analysesCollectionRef = collection(db, 'users', currentUserId, 'evaluationRuns', runId, 'storedAnalyses');
         const analysesSnapshot = await getDocs(analysesCollectionRef);
         const batch = writeBatch(db);
@@ -358,15 +365,36 @@ export default function EvalRunsPage() {
     if (!datasetVersion.columnMapping || Object.keys(datasetVersion.columnMapping).length === 0) { toast({ title: "Dataset Version Not Ready", description: "The selected dataset version must have product parameters mapped. Please configure it on the Datasets page.", variant: "destructive" }); return; }
     if (newRunType === 'GroundTruth' && (!datasetVersion.groundTruthMapping || Object.keys(datasetVersion.groundTruthMapping).length === 0) && selEvalParams.length > 0) { toast({ title: "Configuration Warning", description: "For Ground Truth runs with Evaluation Parameters, the selected dataset version should ideally have Ground Truth columns mapped for accurate label comparison. The run will proceed but accuracy may be 0% for labels.", variant: "default" }); }
 
+    let modelIdentifierForGenkit: string | undefined = undefined;
+    // For direct Anthropic integration, modelIdentifierForGenkit is not used for Genkit,
+    // but we still parse it here for consistency if other Genkit plugins are used.
+    if (connector && connector.config && connector.provider && connector.provider !== 'Anthropic') {
+        try {
+            const parsedConfig = JSON.parse(connector.config);
+            if (parsedConfig.model) {
+                const providerPrefix = connector.provider.toLowerCase().replace(/\s+/g, '');
+                if (providerPrefix === 'vertexai' || providerPrefix === 'googleai') {
+                    modelIdentifierForGenkit = `googleai/${parsedConfig.model}`;
+                } else if (providerPrefix === 'openai' || providerPrefix === 'azureopenai') {
+                    modelIdentifierForGenkit = `openai/${parsedConfig.model}`; 
+                } else {
+                    // console.warn(`Unmapped provider for Genkit model identifier: ${connector.provider}`);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to parse model connector config for Genkit identifier:", e);
+        }
+    }
+
 
     const newRunData: NewEvalRunPayload = {
       name: newRunName.trim(), runType: newRunType, status: 'Pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(), userId: currentUserId,
       datasetId: selectedDatasetId, datasetName: dataset?.name, datasetVersionId: selectedDatasetVersionId, datasetVersionNumber: datasetVersion?.versionNumber,
-      modelConnectorId: selectedConnectorId, modelConnectorName: connector?.name, modelConnectorProvider: connector?.provider,
+      modelConnectorId: selectedConnectorId, modelConnectorName: connector?.name, modelConnectorProvider: connector?.provider, modelConnectorConfigString: connector?.config, modelIdentifierForGenkit,
       promptId: selectedPromptId, promptName: prompt?.name, promptVersionId: selectedPromptVersionId, promptVersionNumber: promptVersion?.versionNumber,
       selectedEvalParamIds: selectedEvalParamIds, selectedEvalParamNames: selEvalParams.map(ep => ep.name),
-      selectedSummarizationDefIds: selectedSummarizationDefIds, // Always include if selected
-      selectedSummarizationDefNames: selSummarizationDefs.map(sd => sd.name), // Always include if selected
+      selectedSummarizationDefIds: selectedSummarizationDefIds, 
+      selectedSummarizationDefNames: selSummarizationDefs.map(sd => sd.name), 
       selectedContextDocumentIds: showContextDocSelector ? selectedContextDocIds : [],
       runOnNRows: Number(runOnNRows) || 0, concurrencyLimit: Number(newRunConcurrencyLimit) || 3,
     };
@@ -380,7 +408,7 @@ export default function EvalRunsPage() {
     setRunOnNRows(0); setNewRunConcurrencyLimit(3); setShowContextDocSelector(false);
   };
 
-  const handleDeleteRun = (runId: string) => { if (confirm('Are you sure you want to delete this evaluation run and all its associated analyses? This action cannot be undone.')) deleteEvalRunMutation.mutate(runId); };
+  const handleDeleteRun = (runId: string) => { if (!currentUserId) return; if (confirm('Are you sure you want to delete this evaluation run and all its associated analyses? This action cannot be undone.')) deleteEvalRunMutation.mutate(runId); };
   const getStatusBadge = (status: EvalRun['status']) => {
     switch (status) {
       case 'Completed': return <Badge variant="default" className="bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1 h-3 w-3" />Completed</Badge>;
@@ -403,11 +431,12 @@ export default function EvalRunsPage() {
   if (isLoadingUserId) return <div className="p-4 md:p-6"><Skeleton className="h-32 w-full"/></div>;
   if (!currentUserId) return <Card className="m-4 md:m-0"><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
 
+
   const isNewRunButtonDisabled = addEvalRunMutation.isPending || 
     !selectedDatasetId || 
     !selectedConnectorId || 
     !selectedPromptId || 
-    (selectedEvalParamIds.length === 0 && selectedSummarizationDefIds.length === 0) || // Must select at least one type of task
+    (selectedEvalParamIds.length === 0 && selectedSummarizationDefIds.length === 0) || 
     !selectedDatasetVersionId || 
     !selectedPromptVersionId || 
     !newRunName.trim();
@@ -419,8 +448,18 @@ export default function EvalRunsPage() {
         <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-3"> <PlayCircle className="h-7 w-7 text-primary" /> <div> <CardTitle className="text-xl md:text-2xl font-headline">Evaluation Runs</CardTitle> <CardDescription>Manage and track your AI model evaluation runs. Choose between Product or Ground Truth comparison.</CardDescription> </div> </div>
            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
-            <DialogTrigger asChild><Button onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} disabled={addEvalRunMutation.isPending} className="w-full sm:w-auto"><PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run</Button></DialogTrigger>
-            <DialogContent className="sm:max-w-lg flex flex-col max-h-[85vh] p-0">
+            <DialogTrigger asChild>
+              <Button 
+                onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} 
+                disabled={addEvalRunMutation.isPending || !currentUserId} 
+                className="w-full sm:w-auto"
+              >
+                <PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run
+              </Button>
+            </DialogTrigger>
+            <DialogContent 
+              className="sm:max-w-lg flex flex-col max-h-[85vh] p-0"
+            >
               <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b">
                 <DialogTitle>Configure New Evaluation Run</DialogTitle>
                 <DialogDescription>Select components and parameters for your new eval run.</DialogDescription>
