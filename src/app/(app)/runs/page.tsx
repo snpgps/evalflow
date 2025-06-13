@@ -57,8 +57,9 @@ interface EvalRun {
 
   modelConnectorId: string;
   modelConnectorName?: string;
-  modelConnectorProvider?: string;
-  modelIdentifierForGenkit?: string; // New field for Genkit model string
+  modelConnectorProvider?: string; // Added
+  modelConnectorConfigString?: string; // Added to store the config JSON string
+  modelIdentifierForGenkit?: string;
 
   promptId: string;
   promptName?: string;
@@ -365,19 +366,19 @@ export default function EvalRunsPage() {
     if (newRunType === 'GroundTruth' && (!datasetVersion.groundTruthMapping || Object.keys(datasetVersion.groundTruthMapping).length === 0) && selEvalParams.length > 0) { toast({ title: "Configuration Warning", description: "For Ground Truth runs with Evaluation Parameters, the selected dataset version should ideally have Ground Truth columns mapped for accurate label comparison. The run will proceed but accuracy may be 0% for labels.", variant: "default" }); }
 
     let modelIdentifierForGenkit: string | undefined = undefined;
-    if (connector && connector.config && connector.provider) {
+    // For direct Anthropic integration, modelIdentifierForGenkit is not used for Genkit,
+    // but we still parse it here for consistency if other Genkit plugins are used.
+    if (connector && connector.config && connector.provider && connector.provider !== 'Anthropic') {
         try {
             const parsedConfig = JSON.parse(connector.config);
             if (parsedConfig.model) {
                 const providerPrefix = connector.provider.toLowerCase().replace(/\s+/g, '');
                 if (providerPrefix === 'vertexai' || providerPrefix === 'googleai') {
                     modelIdentifierForGenkit = `googleai/${parsedConfig.model}`;
-                } else if (providerPrefix === 'anthropic') {
-                    modelIdentifierForGenkit = `anthropic/${parsedConfig.model}`;
                 } else if (providerPrefix === 'openai' || providerPrefix === 'azureopenai') {
                     modelIdentifierForGenkit = `openai/${parsedConfig.model}`; 
                 } else {
-                    console.warn(`Unmapped provider for Genkit model identifier: ${connector.provider}`);
+                    // console.warn(`Unmapped provider for Genkit model identifier: ${connector.provider}`);
                 }
             }
         } catch (e) {
@@ -389,7 +390,7 @@ export default function EvalRunsPage() {
     const newRunData: NewEvalRunPayload = {
       name: newRunName.trim(), runType: newRunType, status: 'Pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(), userId: currentUserId,
       datasetId: selectedDatasetId, datasetName: dataset?.name, datasetVersionId: selectedDatasetVersionId, datasetVersionNumber: datasetVersion?.versionNumber,
-      modelConnectorId: selectedConnectorId, modelConnectorName: connector?.name, modelConnectorProvider: connector?.provider, modelIdentifierForGenkit,
+      modelConnectorId: selectedConnectorId, modelConnectorName: connector?.name, modelConnectorProvider: connector?.provider, modelConnectorConfigString: connector?.config, modelIdentifierForGenkit,
       promptId: selectedPromptId, promptName: prompt?.name, promptVersionId: selectedPromptVersionId, promptVersionNumber: promptVersion?.versionNumber,
       selectedEvalParamIds: selectedEvalParamIds, selectedEvalParamNames: selEvalParams.map(ep => ep.name),
       selectedSummarizationDefIds: selectedSummarizationDefIds, 

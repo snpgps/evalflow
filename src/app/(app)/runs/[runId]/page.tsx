@@ -54,7 +54,8 @@ interface EvalRun {
   modelConnectorId: string;
   modelConnectorName?: string;
   modelConnectorProvider?: string;
-  modelIdentifierForGenkit?: string; // For passing to Genkit flows
+  modelConnectorConfigString?: string; // Stores the JSON config string from the connector
+  modelIdentifierForGenkit?: string; // For passing to Genkit flows (non-Anthropic)
   promptId: string;
   promptName?: string;
   promptVersionId?: string;
@@ -553,7 +554,15 @@ export default function RunDetailsPage() {
       addLog(`Fetched prompt template (v${runDetails.promptVersionNumber}).`);
       if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} evaluation parameter details for LLM call.`);
       if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization definition details for LLM call.`);
-      if(runDetails.modelIdentifierForGenkit) addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); else addLog(`Warning: No specific Genkit model identifier found for run. Using default.`);
+      
+      if (runDetails.modelConnectorProvider === 'Anthropic') {
+        addLog(`Using direct Anthropic client via modelConnectorConfigString: ${runDetails.modelConnectorConfigString || 'N/A'}`);
+      } else if(runDetails.modelIdentifierForGenkit) {
+         addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); 
+      } else {
+         addLog(`Warning: No specific Genkit model identifier found for run. Using Genkit default.`);
+      }
+
 
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} previewed rows with concurrency: ${effectiveConcurrencyLimit}.`);
       const parameterIdsRequiringRationale = hasEvalParams ? evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id) : [];
@@ -583,12 +592,14 @@ export default function RunDetailsPage() {
             evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [],
             summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [],
             parameterIdsRequiringRationale: parameterIdsRequiringRationale,
-            modelName: runDetails.modelIdentifierForGenkit || undefined,
+            modelName: runDetails.modelIdentifierForGenkit || undefined, // For Genkit calls
+            modelConnectorProvider: runDetails.modelConnectorProvider, // For flow to decide client
+            modelConnectorConfigString: runDetails.modelConnectorConfigString, // For flow to get model if direct
           };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex };
           if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
-          try { addLog(`Sending prompt for row ${overallRowIndex + 1} to Genkit flow (Model: ${runDetails.modelIdentifierForGenkit || 'Default'})...`); const judgeOutput = await judgeLlmEvaluation(genkitInput); addLog(`Genkit flow for row ${overallRowIndex + 1} responded.`); itemResultShell.judgeLlmOutput = judgeOutput;
-          } catch(flowError: any) { addLog(`Error in Genkit flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error");
+          try { addLog(`Sending prompt for row ${overallRowIndex + 1} to Judge LLM Evaluation flow (Provider: ${runDetails.modelConnectorProvider || 'Genkit Default'})...`); const judgeOutput = await judgeLlmEvaluation(genkitInput); addLog(`Judge LLM Evaluation flow for row ${overallRowIndex + 1} responded.`); itemResultShell.judgeLlmOutput = judgeOutput;
+          } catch(flowError: any) { addLog(`Error in Judge LLM Evaluation flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error");
             const errorOutputForAllParams: Record<string, { chosenLabel?: string; generatedSummary?: string; error?: string }> = {};
             runDetails.selectedEvalParamIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: flowError.message || 'Unknown error processing row with LLM.' }; });
             runDetails.selectedSummarizationDefIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { generatedSummary: 'ERROR: Processing row with LLM.', error: flowError.message || 'Unknown error processing row with LLM.' }; });
@@ -824,7 +835,7 @@ export default function RunDetailsPage() {
 
       <Tabs defaultValue="results_table">
         <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 mb-4"> <TabsTrigger value="config">Run Configuration</TabsTrigger> <TabsTrigger value="results_table">LLM Results Table</TabsTrigger> <TabsTrigger value="breakdown">Metrics Breakdown</TabsTrigger> </TabsList>
-        <TabsContent value="config"> <Card> <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader> <CardContent className="space-y-3 text-sm"> <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"> <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p> <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p> <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId} {runDetails.modelIdentifierForGenkit && <Badge variant="outline" className="ml-1 text-xs">Using: {runDetails.modelIdentifierForGenkit}</Badge>}</p> <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p> <p><strong>Test on Rows Config:</strong> {runDetails.runOnNRows === 0 ? 'All (capped)' : `First ${runDetails.runOnNRows} (capped)`}</p> <p><strong>LLM Concurrency Limit:</strong> {runDetails.concurrencyLimit || 'Default (3)'}</p> <div><strong>Evaluation Parameters:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for labeling.")} </div>
+        <TabsContent value="config"> <Card> <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader> <CardContent className="space-y-3 text-sm"> <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4"> <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p> <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p> <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId} {runDetails.modelConnectorProvider && <Badge variant="outline" className="ml-1 text-xs">Provider: {runDetails.modelConnectorProvider}</Badge>} { (runDetails.modelConnectorProvider !== 'Anthropic' && runDetails.modelIdentifierForGenkit) ? <Badge variant="outline" className="ml-1 text-xs">Using (Genkit): {runDetails.modelIdentifierForGenkit}</Badge> : (runDetails.modelConnectorProvider === 'Anthropic' && runDetails.modelConnectorConfigString) ? <Badge variant="outline" className="ml-1 text-xs">Using (Direct): {JSON.parse(runDetails.modelConnectorConfigString).model || 'N/A'}</Badge> : null } </p> <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p> <p><strong>Test on Rows Config:</strong> {runDetails.runOnNRows === 0 ? 'All (capped)' : `First ${runDetails.runOnNRows} (capped)`}</p> <p><strong>LLM Concurrency Limit:</strong> {runDetails.concurrencyLimit || 'Default (3)'}</p> <div><strong>Evaluation Parameters:</strong> {evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {evalParamDetailsForLLM.map(ep => <li key={ep.id}>{ep.name} (ID: {ep.id}){ep.requiresRationale ? <Badge variant="outline" className="ml-2 text-xs border-blue-400 text-blue-600">Rationale Requested</Badge> : ''}</li>)} </ul> ) : (runDetails.selectedEvalParamNames && runDetails.selectedEvalParamNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedEvalParamNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for labeling.")} </div>
           <div><strong>Summarization Definitions:</strong> {summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {summarizationDefDetailsForLLM.map(sd => <li key={sd.id}>{sd.name} (ID: {sd.id})</li>)} </ul> ) : (runDetails.selectedSummarizationDefNames && runDetails.selectedSummarizationDefNames.length > 0 ? ( <ul className="list-disc list-inside ml-4 mt-1"> {runDetails.selectedSummarizationDefNames.map(name => <li key={name}>{name}</li>)} </ul> ) : "None selected for summarization.")} </div>
           {runDetails.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0 && (
             <div><strong>Context Documents:</strong>
