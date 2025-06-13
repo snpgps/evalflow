@@ -16,7 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from '@/components/ui/textarea';
@@ -790,7 +790,7 @@ export default function RunDetailsPage() {
   const formatTimestamp = (timestamp?: Timestamp, includeTime = false) => { if (!timestamp) return 'N/A'; return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString(); };
   const isRunTerminal = runDetails.status === 'Completed';
   const canFetchData = runDetails.status === 'Pending' || runDetails.status === 'Failed' || runDetails.status === 'DataPreviewed';
-  const canStartLLMTask = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook && ( (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0) ); 
+  const canStartLLMTask = (runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0)) && !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook && ( (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0) );
   const canDownloadResults = runDetails.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
   const canSuggestImprovements = runDetails.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
   const getStatusBadge = (status: EvalRun['status']) => {
@@ -809,7 +809,7 @@ export default function RunDetailsPage() {
     <div className="space-y-6 p-4 md:p-6">
       <Card className="shadow-lg">
         <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-           <div className="flex-grow"> <div className="flex items-center gap-3"> <FileSearch className="h-8 w-8 text-primary" /> <CardTitle className="text-2xl md:text-3xl font-headline">{runDetails.name}</CardTitle> </div> <CardDescription className="mt-1 ml-0 md:ml-11 text-xs md:text-sm"> Run ID: {runDetails.id} | Type: {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'} | Created: {formatTimestamp(runDetails.createdAt, true)} {runDetails.status === 'Completed' && runDetails.completedAt && ` | Completed: ${formatTimestamp(runDetails.completedAt, true)}`} </CardDescription> </div>
+           <div className="flex-grow"> <div className="flex items-center gap-3"> <FileSearch className="h-8 w-8 text-primary" /> <CardTitle className="text-2xl md:text-3xl font-headline">{runDetails.name}</CardTitle> </div> <CardDescription className="mt-1 ml-0 md:ml-11 text-xs md:text-sm"> Run ID: {runDetails.id} | Type: {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'} | Created: {formatTimestamp(runDetails.createdAt, true)}{runDetails.status === 'Completed' && runDetails.completedAt && ` | Completed: ${formatTimestamp(runDetails.completedAt, true)}`} </CardDescription> </div>
           <div className="flex flex-col items-start md:items-end gap-2 w-full md:w-auto">
             <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto self-start md:self-center">
                 <Button variant="outline" onClick={handleFetchAndPreviewData} disabled={isPreviewDataLoading || (runDetails.status === 'Running' || runDetails.status === 'Processing') || !canFetchData || isRunTerminal} className="w-full sm:w-auto"> {isPreviewDataLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <DatabaseZap className="mr-2 h-4 w-4" />} {runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0 ? 'Refetch Sample' : 'Fetch & Preview Sample'} </Button>
