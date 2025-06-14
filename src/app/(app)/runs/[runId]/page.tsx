@@ -26,7 +26,6 @@ import { RunProgressAndLogs } from '@/components/run-details/RunProgressAndLogs'
 import { DatasetSampleTable } from '@/components/run-details/DatasetSampleTable';
 import { RunConfigTab } from '@/components/run-details/RunConfigTab';
 import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
-import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab';
 import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
 import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
 
@@ -511,7 +510,23 @@ export default function RunDetailsPage() {
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
       const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt.");
-      const mismatchDetails: MismatchDetail[] = []; runDetails.results.forEach(item => { evalParamDetailsForLLM.forEach(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase()) { mismatchDetails.push({ inputData: item.inputData, evaluationParameterName: paramDetail.name, evaluationParameterDefinition: paramDetail.definition, llmChosenLabel: llmOutput.chosenLabel, groundTruthLabel: gtLabel, llmRationale: llmOutput.rationale, }); } }); });
+      const mismatchDetails: MismatchDetail[] = [];
+      runDetails.results.forEach(item => {
+        evalParamDetailsForLLM.forEach(paramDetail => {
+          const llmOutput = item.judgeLlmOutput[paramDetail.id];
+          const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
+          if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase()) {
+            mismatchDetails.push({
+              inputData: item.inputData,
+              evaluationParameterName: paramDetail.name,
+              evaluationParameterDefinition: paramDetail.definition,
+              llmChosenLabel: llmOutput.chosenLabel,
+              groundTruthLabel: gtLabel,
+              llmRationale: llmOutput.rationale ?? undefined,
+            });
+          }
+        });
+      });
       if (mismatchDetails.length === 0) { setSuggestionError("No mismatches found."); setIsLoadingSuggestion(false); return; }
       const productParamsSchemaString = productParametersForSchema.length > 0 ? "Product Parameters:\n" + productParametersForSchema.map(p => `- ${p.name} (${p.type}): ${p.definition}${p.options ? ` Options: [${p.options.join(', ')}]` : ''}`).join("\n") : "No product params.";
       const evalParamsSchemaString = "Evaluation Parameters Used:\n" + evalParamDetailsForLLM.map(ep => { let schema = `- ID: ${ep.id}, Name: ${ep.name}\n  Definition: ${ep.definition}\n`; if (ep.requiresRationale) schema += `  (Requires Rationale)\n`; if (ep.labels && ep.labels.length > 0) { schema += `  Labels:\n` + ep.labels.map(l => `    - "${l.name}": ${l.definition} ${l.example ? `(e.g., "${l.example}")` : ''}`).join("\n"); } return schema; }).join("\n\n");
@@ -532,7 +547,7 @@ export default function RunDetailsPage() {
     setIsAnalyzingJudgment(true); setJudgmentAnalysisError(null); setJudgmentAnalysisResult(null);
     try {
       const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt.");
-      const inputForFlow: AnalyzeJudgmentDiscrepancyInput = { inputData: questioningItemData.inputData, evaluationParameterName: questioningItemData.paramName, evaluationParameterDefinition: questioningItemData.paramDefinition, evaluationParameterLabels: questioningItemData.paramLabels, judgeLlmChosenLabel: questioningItemData.judgeLlmOutput.chosenLabel, judgeLlmRationale: questioningItemData.judgeLlmOutput.rationale, groundTruthLabel: questioningItemData.groundTruthLabel, userQuestion: userQuestionText, originalPromptTemplate: originalPromptTemplate, };
+      const inputForFlow: AnalyzeJudgmentDiscrepancyInput = { inputData: questioningItemData.inputData, evaluationParameterName: questioningItemData.paramName, evaluationParameterDefinition: questioningItemData.paramDefinition, evaluationParameterLabels: questioningItemData.paramLabels, judgeLlmChosenLabel: questioningItemData.judgeLlmOutput.chosenLabel, judgeLlmRationale: questioningItemData.judgeLlmOutput.rationale ?? undefined, groundTruthLabel: questioningItemData.groundTruthLabel, userQuestion: userQuestionText, originalPromptTemplate: originalPromptTemplate, };
       const analysisOutput = await analyzeJudgmentDiscrepancy(inputForFlow); setJudgmentAnalysisResult(analysisOutput);
     } catch (error: any) { console.error("Error analyzing judgment:", error); setJudgmentAnalysisError(error.message || "Failed to get analysis."); } finally { setIsAnalyzingJudgment(false); }
   };
@@ -568,7 +583,7 @@ export default function RunDetailsPage() {
         if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') {
           const gtDbValue = item.groundTruth?.[paramId];
           if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || gtDbValue === undefined || llmOutput.error) {
-            return false; 
+            return false;
           }
           const isMatch = String(llmOutput.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
           if (currentParamFilters.matchMismatch === 'match' && !isMatch) return false;
@@ -578,14 +593,14 @@ export default function RunDetailsPage() {
         // Label Filter
         if (currentParamFilters.selectedLabel !== 'all') {
           if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || llmOutput.error) {
-            return false; 
+            return false;
           }
           if (String(llmOutput.chosenLabel).trim().toLowerCase() !== String(currentParamFilters.selectedLabel).toLowerCase()) {
             return false;
           }
         }
       }
-      return true; 
+      return true;
     });
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
