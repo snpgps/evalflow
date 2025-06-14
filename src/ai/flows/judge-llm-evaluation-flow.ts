@@ -283,15 +283,28 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
             messages: messages, 
             max_tokens: 4096, 
             temperature: 0.3 
-            // Removed: response_format: { type: "json_object" } 
         });
-        const responseText = response.choices[0]?.message?.content;
+        let responseText = response.choices[0]?.message?.content;
         if (!responseText) {
             console.error("OpenAI response content is null or undefined. Full response:", response);
             errorReason = "OpenAI response content was empty.";
             throw new Error(errorReason);
         }
         console.log('OpenAI raw response text:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
+        
+        // Clean the responseText from markdown code blocks
+        responseText = responseText.trim();
+        if (responseText.startsWith("```json")) {
+          responseText = responseText.substring(responseText.indexOf('\n') + 1);
+        }
+        if (responseText.startsWith("```")) {
+          responseText = responseText.substring(3);
+        }
+        if (responseText.endsWith("```")) {
+          responseText = responseText.substring(0, responseText.length - 3);
+        }
+        responseText = responseText.trim();
+
         try {
           const parsedJson = JSON.parse(responseText);
           if (Array.isArray(parsedJson)) { // Case 1: Correct array
@@ -322,7 +335,7 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
              throw new Error("OpenAI returned JSON but not in the expected array format or object format.");
           }
         } catch (parseError: any) {
-           console.error("Failed to parse OpenAI JSON response:", parseError, "Raw response:", responseText);
+           console.error("Failed to parse OpenAI JSON response:", parseError, "Cleaned response for parsing:", responseText);
            errorReason = `Failed to parse OpenAI JSON response: ${parseError.message}. Raw: ${responseText.substring(0,100)}`;
            throw new Error(errorReason);
         }
