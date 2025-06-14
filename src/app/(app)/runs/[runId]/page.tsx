@@ -20,16 +20,15 @@ import { suggestRecursivePromptImprovements, type SuggestRecursivePromptImprovem
 import { analyzeJudgmentDiscrepancy, type AnalyzeJudgmentDiscrepancyInput, type AnalyzeJudgmentDiscrepancyOutput } from '@/ai/flows/analyze-judgment-discrepancy';
 import * as XLSX from 'xlsx';
 
-// Import new child components
-import { RunHeaderCard, type RunHeaderCardProps } from '@/components/run-details/RunHeaderCard';
-import { RunProgressAndLogs, type RunProgressAndLogsProps } from '@/components/run-details/RunProgressAndLogs';
-import { RunSummaryCards, type RunSummaryCardsProps } from '@/components/run-details/RunSummaryCards';
-import { DatasetSampleTable, type DatasetSampleTableProps } from '@/components/run-details/DatasetSampleTable';
-import { RunConfigTab, type RunConfigTabProps } from '@/components/run-details/RunConfigTab';
-import { ResultsTableTab, type ResultsTableTabProps } from '@/components/run-details/ResultsTableTab';
-import { MetricsBreakdownTab, type MetricsBreakdownTabProps } from '@/components/run-details/MetricsBreakdownTab';
-import { ImprovementSuggestionDialog, type ImprovementSuggestionDialogProps } from '@/components/run-details/ImprovementSuggestionDialog';
-import { QuestionJudgmentDialog, type QuestionJudgmentDialogProps } from '@/components/run-details/QuestionJudgmentDialog';
+import { RunHeaderCard } from '@/components/run-details/RunHeaderCard';
+import { RunProgressAndLogs } from '@/components/run-details/RunProgressAndLogs';
+import { RunSummaryCards } from '@/components/run-details/RunSummaryCards';
+import { DatasetSampleTable } from '@/components/run-details/DatasetSampleTable';
+import { RunConfigTab } from '@/components/run-details/RunConfigTab';
+import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
+import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab';
+import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
+import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
 import { Badge } from '@/components/ui/badge';
 
 
@@ -135,6 +134,16 @@ export interface QuestioningItemContext {
     judgeLlmOutput: { chosenLabel: string; rationale?: string; error?: string };
     groundTruthLabel?: string;
 }
+
+// Type for filter states
+export type FilterValueMatchMismatch = 'all' | 'match' | 'mismatch';
+export type FilterValueSelectedLabel = string | 'all';
+export interface ParamFilterState {
+  matchMismatch: FilterValueMatchMismatch;
+  selectedLabel: FilterValueSelectedLabel;
+}
+export type AllFilterStates = Record<string, ParamFilterState>;
+
 
 const MAX_ROWS_FOR_PROCESSING: number = 200;
 
@@ -294,7 +303,7 @@ export default function RunDetailsPage() {
   const [isAnalyzingJudgment, setIsAnalyzingJudgment] = useState<boolean>(false);
   const [judgmentAnalysisError, setJudgmentAnalysisError] = useState<string | null>(null);
 
-  const [filterStates, setFilterStates] = useState<Record<string, 'all' | 'match' | 'mismatch'>>({});
+  const [filterStates, setFilterStates] = useState<AllFilterStates>({});
 
   const formatTimestamp = (timestamp?: Timestamp, includeTime: boolean = false): string => {
     if (!timestamp) return 'N/A';
@@ -361,16 +370,21 @@ export default function RunDetailsPage() {
 
   useEffect(() => {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-    if (hasEvalParams && runDetails?.runType === 'GroundTruth') {
-      const newInitialFilters: Record<string, 'all' | 'match' | 'mismatch'> = {};
-      evalParamDetailsForLLM.forEach(param => { newInitialFilters[param.id] = 'all'; });
-      if (JSON.stringify(filterStates) !== JSON.stringify(newInitialFilters)) { setFilterStates(newInitialFilters); }
-    } else if (!hasEvalParams || runDetails?.runType !== 'GroundTruth') {
+    if (hasEvalParams) {
+      const newInitialFilters: AllFilterStates = {};
+      evalParamDetailsForLLM.forEach(param => {
+        newInitialFilters[param.id] = { matchMismatch: 'all', selectedLabel: 'all' };
+      });
+      if (JSON.stringify(filterStates) !== JSON.stringify(newInitialFilters)) {
+        setFilterStates(newInitialFilters);
+      }
+    } else if (!hasEvalParams) {
       if (Object.keys(filterStates).length > 0) {
         setFilterStates({});
       }
     }
-  }, [evalParamDetailsForLLM, runDetails?.runType, filterStates]);
+  }, [evalParamDetailsForLLM, runDetails?.runType]);
+
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
     queryKey: ['selectedContextDocDetails', currentUserId, runDetails?.selectedContextDocumentIds?.join(',')],
@@ -441,7 +455,7 @@ export default function RunDetailsPage() {
     try {
       const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateText) throw new Error("Failed to fetch prompt template.");
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
-      if (runDetails.modelConnectorProvider === 'Anthropic') { addLog(`Using direct Anthropic client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
+      if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
       const parameterIdsRequiringRationale = hasEvalParams ? evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id) : [];
       for (let batchStartIndex = 0; batchStartIndex < rowsToProcess; batchStartIndex += effectiveConcurrencyLimit) {
@@ -511,40 +525,57 @@ export default function RunDetailsPage() {
   };
 
   const hasMismatches = useMemo((): boolean => { if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; return runDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase(); }) ); }, [runDetails, evalParamDetailsForLLM]);
-  const handleFilterChange = (paramId: string, value: 'all' | 'match' | 'mismatch'): void => { setFilterStates(prev => ({ ...prev, [paramId]: value })); };
+
+  const handleFilterChange = (paramId: string, filterType: 'matchMismatch' | 'label', value: FilterValueMatchMismatch | FilterValueSelectedLabel): void => {
+    setFilterStates(prev => {
+      const currentParamState = prev[paramId] || { matchMismatch: 'all', selectedLabel: 'all' };
+      return {
+        ...prev,
+        [paramId]: {
+          ...currentParamState,
+          [filterType]: value,
+        }
+      };
+    });
+  };
+
   const filteredResultsToDisplay = useMemo((): EvalRunResultItem[] => {
     if (!runDetails?.results) return [];
-    if (runDetails.runType !== 'GroundTruth' || Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) {
+    if (Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) {
       return runDetails.results;
     }
     return runDetails.results.filter(item => {
       for (const paramId in filterStates) {
         if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) continue;
 
-        const filterValue = filterStates[paramId];
-        if (filterValue === 'all') continue;
-
+        const currentParamFilters = filterStates[paramId];
         const llmOutput = item.judgeLlmOutput?.[paramId];
-        const gtDbValue = item.groundTruth?.[paramId];
 
-        if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || gtDbValue === undefined || llmOutput.error) {
-            if (filterValue === 'match' || filterValue === 'mismatch') {
-                return false;
-            }
-            continue;
+        // Match/Mismatch Filter
+        if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') {
+          const gtDbValue = item.groundTruth?.[paramId];
+          if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || gtDbValue === undefined || llmOutput.error) {
+            return false; // If data is insufficient for match/mismatch, and filter is active, item fails the filter
+          }
+          const isMatch = String(llmOutput.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
+          if (currentParamFilters.matchMismatch === 'match' && !isMatch) return false;
+          if (currentParamFilters.matchMismatch === 'mismatch' && isMatch) return false;
         }
-        const isMatch = String(llmOutput.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
 
-        if (filterValue === 'match' && !isMatch) {
+        // Label Filter
+        if (currentParamFilters.selectedLabel !== 'all') {
+          if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || llmOutput.error) {
+            return false; // If no LLM label, it can't match a specific label filter
+          }
+          if (String(llmOutput.chosenLabel).trim().toLowerCase() !== String(currentParamFilters.selectedLabel).toLowerCase()) {
             return false;
-        }
-        if (filterValue === 'mismatch' && isMatch) {
-            return false;
+          }
         }
       }
       return true;
     });
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
+
 
   const displayedPreviewData: Array<Record<string, any>> = runDetails?.previewedDatasetSample || [];
   const previewTableHeaders: string[] = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
@@ -650,3 +681,4 @@ export default function RunDetailsPage() {
   );
   return pageJSX;
 }
+

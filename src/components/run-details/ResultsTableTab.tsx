@@ -1,21 +1,21 @@
 
 'use client';
 
-import type { FC } from 'react';
+import type { FC, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { MessageSquareText, MessageSquareQuote, CheckCircle, XCircle, Filter as FilterIcon } from "lucide-react";
-import type { EvalRun, EvalRunResultItem, EvalParamDetailForPrompt, SummarizationDefDetailForPrompt } from '@/app/(app)/runs/[runId]/page';
+import { MessageSquareText, MessageSquareQuote, CheckCircle, XCircle, Filter as FilterIcon, Tags } from "lucide-react";
+import type { EvalRun, EvalRunResultItem, EvalParamDetailForPrompt, SummarizationDefDetailForPrompt, AllFilterStates, FilterValueMatchMismatch, FilterValueSelectedLabel } from '@/app/(app)/runs/[runId]/page';
 
 export interface ResultsTableTabProps {
   runDetails: EvalRun;
   filteredResultsToDisplay: EvalRunResultItem[];
   evalParamDetailsForLLM: EvalParamDetailForPrompt[];
   summarizationDefDetailsForLLM: SummarizationDefDetailForPrompt[];
-  filterStates: Record<string, 'all' | 'match' | 'mismatch'>;
-  onFilterChange: (paramId: string, value: 'all' | 'match' | 'mismatch') => void;
+  filterStates: AllFilterStates;
+  onFilterChange: (paramId: string, filterType: 'matchMismatch' | 'label', value: FilterValueMatchMismatch | FilterValueSelectedLabel) => void;
   onOpenQuestionDialog: (item: EvalRunResultItem, paramId: string, rowIndex: number) => void;
 }
 
@@ -23,34 +23,65 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
   runDetails, filteredResultsToDisplay, evalParamDetailsForLLM, summarizationDefDetailsForLLM,
   filterStates, onFilterChange, onOpenQuestionDialog
 }) => {
+
+  const getUniqueLabelsForParam = (paramId: string): string[] => {
+    if (!runDetails.results) return [];
+    const labels = new Set<string>();
+    runDetails.results.forEach(item => {
+        const output = item.judgeLlmOutput[paramId];
+        if (output?.chosenLabel && !output.error) {
+            labels.add(output.chosenLabel);
+        }
+    });
+    return Array.from(labels).sort();
+  };
+
+
   return (
     <Card>
       <CardHeader> <CardTitle>Detailed LLM Task Results</CardTitle> <CardDescription>Row-by-row results from the Genkit LLM flow on the processed data.</CardDescription> </CardHeader>
       <CardContent>
-        {filteredResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results for the current filter. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization.' : (runDetails.status === 'Pending' ? 'Fetch data sample.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : (Object.values(filterStates).some(f => f !== 'all') ? 'Try adjusting filters.' : 'Run may have failed or has no results.')))}</p> ) : (
+        {filteredResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results for the current filter. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization.' : (runDetails.status === 'Pending' ? 'Fetch data sample.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : (Object.values(filterStates).some(f => f.matchMismatch !== 'all' || f.selectedLabel !== 'all') ? 'Try adjusting filters.' : 'Run may have failed or has no results.')))}</p> ) : (
           <div className="max-h-[600px] overflow-auto">
             <Table><TableHeader><TableRow><TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>
-            {evalParamDetailsForLLM?.map(paramDetail => (
+            {evalParamDetailsForLLM?.map(paramDetail => {
+              const uniqueLabels = getUniqueLabelsForParam(paramDetail.id);
+              return (
               <TableHead key={paramDetail.id} className="min-w-[200px] sm:min-w-[250px] align-top">
-                <div className="flex flex-col">
+                <div className="flex flex-col gap-1">
                   <span>{paramDetail.name}</span>
                   {runDetails.runType === 'GroundTruth' && (
                     <Select
-                      value={filterStates[paramDetail.id] || 'all'}
-                      onValueChange={(value) => onFilterChange(paramDetail.id, value as 'all' | 'match' | 'mismatch')}
+                      value={filterStates[paramDetail.id]?.matchMismatch || 'all'}
+                      onValueChange={(value) => onFilterChange(paramDetail.id, 'matchMismatch', value as FilterValueMatchMismatch)}
                     >
-                      <SelectTrigger className="h-7 text-xs mt-1 w-full max-w-[180px] bg-background focus:ring-primary focus:border-primary">
+                      <SelectTrigger className="h-7 text-xs w-full max-w-[180px] bg-background focus:ring-primary focus:border-primary">
                         <FilterIcon className="h-3 w-3 mr-1 opacity-70" />
                         <SelectValue>
-                          { filterStates[paramDetail.id] === 'match' ? 'GT Matches Only' : filterStates[paramDetail.id] === 'mismatch' ? 'GT Mismatches Only' : 'Filter: All' }
+                          { filterStates[paramDetail.id]?.matchMismatch === 'match' ? 'GT Matches Only' : filterStates[paramDetail.id]?.matchMismatch === 'mismatch' ? 'GT Mismatches Only' : 'Filter GT: All' }
                         </SelectValue>
                       </SelectTrigger>
-                      <SelectContent> <SelectItem value="all">Show All</SelectItem> <SelectItem value="match">Ground Truth Matches</SelectItem> <SelectItem value="mismatch">Ground Truth Mismatches</SelectItem> </SelectContent>
+                      <SelectContent> <SelectItem value="all">Show All (GT)</SelectItem> <SelectItem value="match">Ground Truth Matches</SelectItem> <SelectItem value="mismatch">Ground Truth Mismatches</SelectItem> </SelectContent>
+                    </Select>
+                  )}
+                  {uniqueLabels.length > 0 && (
+                    <Select
+                        value={filterStates[paramDetail.id]?.selectedLabel || 'all'}
+                        onValueChange={(value) => onFilterChange(paramDetail.id, 'label', value as FilterValueSelectedLabel)}
+                    >
+                        <SelectTrigger className="h-7 text-xs w-full max-w-[180px] bg-background focus:ring-primary focus:border-primary">
+                            <Tags className="h-3 w-3 mr-1 opacity-70" />
+                            <SelectValue placeholder="Filter by Label" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Labels</SelectItem>
+                            {uniqueLabels.map(label => <SelectItem key={label} value={label}>{label}</SelectItem>)}
+                        </SelectContent>
                     </Select>
                   )}
                 </div>
               </TableHead>
-            ))}
+            )})}
             {summarizationDefDetailsForLLM?.map(summDef => ( <TableHead key={summDef.id} className="min-w-[200px] sm:min-w-[300px] align-top">{summDef.name} (Summary)</TableHead> ))}
             </TableRow></TableHeader>
               <TableBody>{filteredResultsToDisplay.map((item, index) => (<TableRow key={`result-${index}`}><TableCell className="text-xs align-top"><pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre></TableCell>
@@ -79,3 +110,4 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
     </Card>
   );
 };
+
