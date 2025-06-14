@@ -3,16 +3,17 @@
 /**
  * @fileOverview A Genkit flow that uses an LLM to judge an input against evaluation parameters
  * and generate summaries for summarization definitions.
- * It can use Genkit-configured models or a direct Anthropic client.
+ * It can use Genkit-configured models or direct Anthropic/OpenAI clients.
  *
  * - judgeLlmEvaluation - A function that takes prompt text, parameter IDs, and connector info.
  * - JudgeLlmEvaluationInput - The input type.
  * - JudgeLlmEvaluationOutput - The return type (structured evaluation and summaries).
  */
 
-import {ai, anthropicClient} from '@/ai/genkit'; // anthropicClient imported
+import {ai, anthropicClient, openAIClient} from '@/ai/genkit'; // anthropicClient and openAIClient imported
 import {z} from 'genkit';
 import type {MessageParam} from '@anthropic-ai/sdk/resources/messages';
+import type {ChatCompletionMessageParam} from 'openai/resources/chat/completions';
 
 // Zod schema for the input to the flow and prompt
 const JudgeLlmEvaluationInputSchema = z.object({
@@ -32,8 +33,8 @@ const JudgeLlmEvaluationInputSchema = z.object({
   modelName: z.string().optional().describe(
     "The Genkit model identifier, e.g., 'googleai/gemini-1.5-pro' or 'anthropic/claude-3-opus-20240229'. If not provided, Genkit's default model will be used."
   ),
-  // For direct client usage (like Anthropic):
-  modelConnectorProvider: z.string().optional().describe("The provider of the model connector, e.g., 'Anthropic', 'Vertex AI'."),
+  // For direct client usage (like Anthropic or OpenAI):
+  modelConnectorProvider: z.string().optional().describe("The provider of the model connector, e.g., 'Anthropic', 'OpenAI', 'Vertex AI'."),
   modelConnectorConfigString: z.string().optional().describe("The JSON string configuration for the model connector, potentially containing the model name for direct client usage."),
 });
 export type JudgeLlmEvaluationInput = z.infer<typeof JudgeLlmEvaluationInputSchema>;
@@ -153,9 +154,10 @@ Example of the expected JSON array format:
   { "parameterId": "summary_task_abc_id", "generatedSummary": "The user is asking about their recent order's delivery status and seems frustrated with the standard delivery time." },
   { "parameterId": "eval_param3_id", "chosenLabel": "Effective", "rationale": "This part was very clear." }
 ]
+Ensure your response starts with '[' and ends with ']'. Do not include any other text before or after the JSON array.
 `;
 
-// This is the Genkit prompt object, used when provider is not Anthropic
+// This is the Genkit prompt object, used when provider is not Anthropic or OpenAI
 const judgePrompt = ai.definePrompt({
   name: 'judgeLlmEvaluationGenkitPrompt', // Renamed for clarity
   input: { schema: JudgeLlmEvaluationInputSchema },
@@ -181,35 +183,16 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
     }
 
     let output: z.infer<typeof LlmOutputArraySchema> | undefined | null = null;
-    let usage: any = null; // To store usage from Genkit or Anthropic
+    let usage: any = null; // To store usage from Genkit or Anthropic/OpenAI
     let errorReason = "LLM did not return a parsable output.";
 
-    try {
-      if (input.modelConnectorProvider === 'Anthropic' && input.modelConnectorConfigString) {
-        let anthropicModelName: string | undefined;
-        try {
-          const connectorConfig = JSON.parse(input.modelConnectorConfigString);
-          anthropicModelName = connectorConfig.model;
-        } catch (e) {
-          throw new Error("Failed to parse Anthropic modelConnectorConfigString.");
-        }
-
-        if (!anthropicModelName) {
-          throw new Error("Anthropic model name not found in modelConnectorConfigString.");
-        }
-        if (!anthropicClient) {
-          throw new Error("Anthropic client is not initialized. Check ANTHROPIC_API_KEY environment variable and server restart.");
-        }
-
-        console.log(`Using direct Anthropic client with model: ${anthropicModelName}`);
-        
-        const contentToAnalyze = input.fullPromptText; // This is the user's prompt with data + criteria text
-
+    // Shared prompt construction logic for direct client calls
+    const constructDirectClientPrompt = (providerName: 'Anthropic' | 'OpenAI') => {
+        const contentToAnalyze = input.fullPromptText;
         let rationaleInstruction = `The "rationale" field is optional for all evaluation parameters.`;
         if (input.parameterIdsRequiringRationale && input.parameterIdsRequiringRationale.length > 0) {
           rationaleInstruction = `For the following evaluation parameter IDs, you MUST also include a "rationale" field, explaining your reasoning for the chosen label: ${input.parameterIdsRequiringRationale.join(', ')}.\nFor other evaluation parameter IDs, the "rationale" field is optional.`;
         }
-        
         const evalParamIdsList = input.evaluationParameterIds && input.evaluationParameterIds.length > 0 
                                   ? input.evaluationParameterIds.map(id => `- ${id}`).join('\n  ') 
                                   : '(No evaluation parameters specified for labeling in this run)';
@@ -217,7 +200,7 @@ const internalJudgeLlmEvaluationFlow = ai.defineFlow(
                                   ? input.summarizationParameterIds.map(id => `- ${id}`).join('\n  ')
                                   : '(No summarization tasks specified for this run)';
 
-        const anthropicUserPrompt = `You are an expert evaluator. Analyze the following text based on the criteria described within it.
+        return `You are an expert evaluator. Analyze the following text based on the criteria described within it.
 The text to evaluate is:
 \`\`\`text
 ${contentToAnalyze}
@@ -249,16 +232,27 @@ Example of the expected JSON array format:
 ]
 Ensure your response starts with '[' and ends with ']'. Do not include any other text before or after the JSON array.
 `;
+    };
 
+
+    try {
+      if (input.modelConnectorProvider === 'Anthropic' && input.modelConnectorConfigString) {
+        let anthropicModelName: string | undefined;
+        try {
+          const connectorConfig = JSON.parse(input.modelConnectorConfigString);
+          anthropicModelName = connectorConfig.model;
+        } catch (e) {
+          throw new Error("Failed to parse Anthropic modelConnectorConfigString.");
+        }
+
+        if (!anthropicModelName) { throw new Error("Anthropic model name not found in modelConnectorConfigString."); }
+        if (!anthropicClient) { throw new Error("Anthropic client is not initialized. Check ANTHROPIC_API_KEY."); }
+
+        console.log(`Using direct Anthropic client with model: ${anthropicModelName}`);
+        const anthropicUserPrompt = constructDirectClientPrompt('Anthropic');
         const messages: MessageParam[] = [{ role: 'user', content: anthropicUserPrompt }];
         
-        const response = await anthropicClient.messages.create({
-          model: anthropicModelName,
-          messages: messages,
-          max_tokens: 4096,
-          temperature: 0.3, 
-        });
-        
+        const response = await anthropicClient.messages.create({ model: anthropicModelName, messages: messages, max_tokens: 4096, temperature: 0.3 });
         const responseText = response.content[0].text;
         console.log('Anthropic raw response text:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
         try {
@@ -266,6 +260,53 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
         } catch (parseError: any) {
            console.error("Failed to parse Anthropic JSON response:", parseError, "Raw response:", responseText);
            errorReason = `Failed to parse Anthropic JSON response: ${parseError.message}. Raw: ${responseText.substring(0,100)}`;
+           throw new Error(errorReason);
+        }
+      } else if (input.modelConnectorProvider === 'OpenAI' && input.modelConnectorConfigString) {
+        let openAIModelName: string | undefined;
+        try {
+          const connectorConfig = JSON.parse(input.modelConnectorConfigString);
+          openAIModelName = connectorConfig.model;
+        } catch (e) {
+          throw new Error("Failed to parse OpenAI modelConnectorConfigString.");
+        }
+
+        if (!openAIModelName) { throw new Error("OpenAI model name not found in modelConnectorConfigString."); }
+        if (!openAIClient) { throw new Error("OpenAI client is not initialized. Check OPENAI_API_KEY."); }
+        
+        console.log(`Using direct OpenAI client with model: ${openAIModelName}`);
+        const openAIUserPrompt = constructDirectClientPrompt('OpenAI');
+        const messages: ChatCompletionMessageParam[] = [{ role: 'user', content: openAIUserPrompt }];
+
+        // For OpenAI, it's good practice to instruct it to output JSON in the system prompt too
+        // For now, keeping user prompt consistent with Anthropic direct call
+        // messages.unshift({role: 'system', content: 'You are an expert evaluator. Your response MUST be a valid JSON array.'});
+
+        const response = await openAIClient.chat.completions.create({ model: openAIModelName, messages: messages, max_tokens: 4096, temperature: 0.3, response_format: { type: "json_object" } });
+        const responseText = response.choices[0]?.message?.content;
+        if (!responseText) {
+            console.error("OpenAI response content is null or undefined. Full response:", response);
+            errorReason = "OpenAI response content was empty.";
+            throw new Error(errorReason);
+        }
+        console.log('OpenAI raw response text:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
+        try {
+          // OpenAI's response_format: {type: "json_object"} should ensure it's JSON, but we still parse the content string.
+          // The prompt asks for an array. If OpenAI wraps it in an object like {"output": [...]}, we might need to adjust.
+          // For now, assuming it directly outputs the array string as requested.
+          const parsedJson = JSON.parse(responseText);
+          if (Array.isArray(parsedJson)) {
+            output = LlmOutputArraySchema.parse(parsedJson);
+          } else if (typeof parsedJson === 'object' && parsedJson !== null && Object.keys(parsedJson).length === 1 && Array.isArray(Object.values(parsedJson)[0])) {
+            // Handle if OpenAI wraps the array in a single-key object, e.g. {"result": [...]}
+            console.warn("OpenAI returned JSON object, attempting to extract array from its first value.");
+            output = LlmOutputArraySchema.parse(Object.values(parsedJson)[0]);
+          } else {
+             throw new Error("OpenAI returned JSON but not in the expected array format.");
+          }
+        } catch (parseError: any) {
+           console.error("Failed to parse OpenAI JSON response:", parseError, "Raw response:", responseText);
+           errorReason = `Failed to parse OpenAI JSON response: ${parseError.message}. Raw: ${responseText.substring(0,100)}`;
            throw new Error(errorReason);
         }
 
@@ -276,7 +317,7 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
         usage = result.usage;
       }
     } catch (err: any) {
-      console.error(`Error during LLM call (Provider: ${input.modelConnectorProvider || 'Genkit Default'}, Model: ${input.modelName || 'N/A'}). Error:`, err);
+      console.error(`Error during LLM call (Provider: ${input.modelConnectorProvider || 'Genkit Default'}, Model: ${input.modelName || getProviderModelName(input) || 'N/A'}). Error:`, err);
       errorReason = `LLM call failed: ${err.message || 'Unknown error during LLM call.'}`;
       const errorResults: z.infer<typeof LlmOutputArraySchema> = [];
       input.evaluationParameterIds?.forEach(id => {
@@ -289,9 +330,9 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
     }
 
     if (!output) {
-      console.error('LLM did not return a parsable output. Provider:', input.modelConnectorProvider || 'Genkit Default', '. Model used:', input.modelName || 'N/A', '. Usage/Error Details (if any):', usage);
+      console.error('LLM did not return a parsable output. Provider:', input.modelConnectorProvider || 'Genkit Default', '. Model used:', input.modelName || getProviderModelName(input) || 'N/A', '. Usage/Error Details (if any):', usage);
       const errorResults: z.infer<typeof LlmOutputArraySchema> = [];
-      const rationaleForError = `LLM did not return a parsable output. Provider: ${input.modelConnectorProvider || 'Genkit Default'}. Model: ${input.modelName || 'N/A'}. Details: ${JSON.stringify(usage || errorReason || 'N/A')}`;
+      const rationaleForError = `LLM did not return a parsable output. Provider: ${input.modelConnectorProvider || 'Genkit Default'}. Model: ${input.modelName || getProviderModelName(input) || 'N/A'}. Details: ${JSON.stringify(usage || errorReason || 'N/A')}`;
       input.evaluationParameterIds?.forEach(id => {
         errorResults.push({ parameterId: id, chosenLabel: "ERROR_NO_LLM_OUTPUT", rationale: rationaleForError, generatedSummary: undefined });
       });
@@ -305,4 +346,14 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
   }
 );
 
+// Helper to get model name from config string for logging
+function getProviderModelName(input: JudgeLlmEvaluationInput): string | undefined {
+    if (!input.modelConnectorConfigString) return undefined;
+    try {
+        const config = JSON.parse(input.modelConnectorConfigString);
+        return config.model;
+    } catch {
+        return undefined;
+    }
+}
     

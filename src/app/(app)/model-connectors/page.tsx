@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
 import { testDirectAnthropicClient, type TestDirectAnthropicClientInput, type TestDirectAnthropicClientOutput } from '@/ai/flows/test-direct-anthropic-client-flow';
 import { testGoogleAIConnection, type TestGoogleAIConnectionInput, type TestGoogleAIConnectionOutput } from '@/ai/flows/test-googleai-connection-flow.ts';
+import { testDirectOpenAIClient, type TestDirectOpenAIClientInput, type TestDirectOpenAIClientOutput } from '@/ai/flows/test-direct-openai-client-flow'; // Added OpenAI test flow
 
 interface ModelConnector {
   id: string; // Firestore document ID
@@ -46,12 +47,13 @@ const OPENAI_MODELS = [
   "gpt-4o",
   "gpt-4o-mini",
   "gpt-4-turbo",
+  "gpt-4-turbo-preview", 
   "gpt-4",
   "gpt-3.5-turbo",
 ];
-const AZURE_OPENAI_MODELS = [
-  "gpt-4 (via Azure)",
-  "gpt-35-turbo (via Azure)",
+const AZURE_OPENAI_MODELS = [ // These are examples, actual deployment names vary
+  "gpt-4", // (Deployment Name for GPT-4 on Azure)
+  "gpt-35-turbo", // (Deployment Name for GPT-3.5-Turbo on Azure)
 ];
 const ANTHROPIC_MODELS = [
   "claude-3-5-sonnet-20240620",
@@ -107,7 +109,7 @@ export default function ModelConnectorsPage() {
   const [isTestConnectionDialogOpen, setIsTestConnectionDialogOpen] = useState(false);
   const [connectorToTest, setConnectorToTest] = useState<ModelConnector | null>(null);
   const [testPrompt, setTestPrompt] = useState<string>("Hello, please respond with a short friendly greeting and mention your model name if you know it.");
-  const [testResult, setTestResult] = useState<TestDirectAnthropicClientOutput | TestGoogleAIConnectionOutput | null>(null);
+  const [testResult, setTestResult] = useState<TestDirectAnthropicClientOutput | TestGoogleAIConnectionOutput | TestDirectOpenAIClientOutput | null>(null);
   const [isSubmittingTest, setIsSubmittingTest] = useState(false);
 
   // State for Delete Confirmation Dialog
@@ -137,8 +139,14 @@ export default function ModelConnectorsPage() {
       if (relevantProvidersForModelDropdown.includes(effectiveProvider) && selectedModelForDropdown) {
         currentConfigJson.model = selectedModelForDropdown;
       } else if (!selectedModelForDropdown && currentConfigJson.model && relevantProvidersForModelDropdown.includes(effectiveProvider)) {
-         delete currentConfigJson.model;
+         // If no model selected in dropdown, but model exists in config, remove it from config (dropdown takes precedence)
+         // Only do this if the provider is one that USES the dropdown.
+         // For "Other" or "Local LLM", user might manually set "model" in JSON.
+         if (relevantProvidersForModelDropdown.includes(effectiveProvider)) {
+            delete currentConfigJson.model;
+         }
       }
+
 
       const newConfigString = Object.keys(currentConfigJson).length === 0 ? '{}' : JSON.stringify(currentConfigJson, null, 2);
       if (newConfigString !== config.trim()) {
@@ -262,16 +270,16 @@ export default function ModelConnectorsPage() {
           if (currentModels.includes(parsedConfig.model)) {
             setSelectedModelForDropdown(parsedConfig.model);
           } else {
-            setSelectedModelForDropdown('');
+            setSelectedModelForDropdown(''); // Model in config not in standard list for provider
           }
         } else {
-          setSelectedModelForDropdown('');
+          setSelectedModelForDropdown(''); // No model in config
         }
       } else {
-         setSelectedModelForDropdown('');
+         setSelectedModelForDropdown(''); // Config is empty
       }
     } catch (e) {
-      setSelectedModelForDropdown('');
+      setSelectedModelForDropdown(''); // Error parsing config
       console.warn("Failed to parse connector.config in openEditDialog for model dropdown", e);
     }
     setIsFormDialogOpen(true);
@@ -308,14 +316,17 @@ export default function ModelConnectorsPage() {
     setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // For Genkit-based tests (e.g., Google AI via Vertex AI)
   const getGenkitModelId = (connector: ModelConnector | null): string | undefined => {
     if (!connector || !connector.config) return undefined;
-    if (connector.provider === 'Anthropic') return undefined; // Anthropic uses direct client, no Genkit ID needed for its specific test flow
+    if (connector.provider === 'Anthropic' || connector.provider === 'OpenAI') return undefined; // These use direct clients for tests
     try {
       const parsedConfig = JSON.parse(connector.config);
       if (parsedConfig.model && typeof parsedConfig.model === 'string') {
         if (connector.provider === 'Vertex AI') return `googleai/${parsedConfig.model}`;
-        if (connector.provider === 'OpenAI') return `openai/${parsedConfig.model}`;
+        // For Azure OpenAI, the model name might be the deployment name itself
+        // This might need adjustment based on how Genkit's Azure OpenAI plugin handles model IDs
+        if (connector.provider === 'Azure OpenAI') return `openai/${parsedConfig.model}`; // Assuming Genkit uses an openai/ prefix
         // Add other Genkit plugin providers here if needed
       }
     } catch (e) {
@@ -324,13 +335,15 @@ export default function ModelConnectorsPage() {
     return undefined;
   };
   
-  const getAnthropicModelNameFromConfig = (connector: ModelConnector | null): string | undefined => {
-    if (!connector || connector.provider !== 'Anthropic' || !connector.config) return undefined;
+  // For direct client tests (e.g., Anthropic, OpenAI)
+  const getDirectClientModelName = (connector: ModelConnector | null): string | undefined => {
+    if (!connector || !connector.config) return undefined;
+    if (connector.provider !== 'Anthropic' && connector.provider !== 'OpenAI') return undefined;
     try {
       const parsedConfig = JSON.parse(connector.config);
       return parsedConfig.model as string | undefined;
     } catch (e) {
-      // console.warn("Could not parse Anthropic model from config:", connector.name);
+      // console.warn("Could not parse direct client model from config:", connector.name);
     }
     return undefined;
   };
@@ -341,6 +354,7 @@ export default function ModelConnectorsPage() {
     let defaultPromptText = "Hello, please respond with a short friendly greeting and mention your model name if you know it.";
     if (connector.provider === 'Anthropic') defaultPromptText = "Hello Claude, please respond with a short friendly greeting and mention your model name if you know it.";
     else if (connector.provider === 'Vertex AI') defaultPromptText = "Hello Gemini, please respond with a short friendly greeting and mention your model name if you know it.";
+    else if (connector.provider === 'OpenAI') defaultPromptText = "Hello OpenAI, please respond with a short friendly greeting and mention your model name if you know it.";
     setTestPrompt(defaultPromptText);
     setTestResult(null);
     setIsTestConnectionDialogOpen(true);
@@ -353,9 +367,9 @@ export default function ModelConnectorsPage() {
     setTestResult(null);
 
     try {
-      let result: TestDirectAnthropicClientOutput | TestGoogleAIConnectionOutput;
+      let result: TestDirectAnthropicClientOutput | TestGoogleAIConnectionOutput | TestDirectOpenAIClientOutput;
       if (connectorToTest.provider === 'Anthropic') {
-        const anthropicModelName = getAnthropicModelNameFromConfig(connectorToTest);
+        const anthropicModelName = getDirectClientModelName(connectorToTest);
         if (!anthropicModelName) {
            setTestResult({ success: false, error: `Anthropic model not specified in connector config.` });
            setIsSubmittingTest(false);
@@ -363,6 +377,16 @@ export default function ModelConnectorsPage() {
         }
         const input: TestDirectAnthropicClientInput = { modelName: anthropicModelName, testPrompt: testPrompt };
         result = await testDirectAnthropicClient(input);
+
+      } else if (connectorToTest.provider === 'OpenAI') {
+        const openAIModelName = getDirectClientModelName(connectorToTest);
+         if (!openAIModelName) {
+           setTestResult({ success: false, error: `OpenAI model not specified in connector config.` });
+           setIsSubmittingTest(false);
+           return;
+        }
+        const input: TestDirectOpenAIClientInput = { modelName: openAIModelName, testPrompt: testPrompt };
+        result = await testDirectOpenAIClient(input);
 
       } else if (connectorToTest.provider === 'Vertex AI') {
         const genkitModelId = getGenkitModelId(connectorToTest);
@@ -380,7 +404,10 @@ export default function ModelConnectorsPage() {
       }
       setTestResult(result);
     } catch (error: any) {
-      const modelIdAttempted = connectorToTest.provider === 'Anthropic' ? getAnthropicModelNameFromConfig(connectorToTest) : getGenkitModelId(connectorToTest);
+      const modelIdAttempted = 
+        (connectorToTest.provider === 'Anthropic' || connectorToTest.provider === 'OpenAI') 
+        ? getDirectClientModelName(connectorToTest) 
+        : getGenkitModelId(connectorToTest);
       setTestResult({ success: false, error: error.message || "Flow execution failed.", modelUsed: modelIdAttempted });
     } finally {
       setIsSubmittingTest(false);
@@ -448,17 +475,17 @@ export default function ModelConnectorsPage() {
                 </div>
                 <div>
                   <Label htmlFor="conn-provider">LLM Provider</Label>
-                  <Select value={provider} onValueChange={(value: any) => { setProvider(value); setSelectedModelForDropdown(''); }}>
+                  <Select value={provider} onValueChange={(value: any) => { setProvider(value); setSelectedModelForDropdown(''); setConfig('{}'); /* Reset config when provider changes */ }}>
                     <SelectTrigger id="conn-provider">
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="OpenAI">OpenAI (Genkit)</SelectItem>
+                      <SelectItem value="OpenAI">OpenAI (Direct Client)</SelectItem>
                       <SelectItem value="Vertex AI">Vertex AI (Gemini via Genkit)</SelectItem>
                       <SelectItem value="Anthropic">Anthropic (Claude via Direct Client)</SelectItem>
-                      <SelectItem value="Azure OpenAI">Azure OpenAI (Genkit)</SelectItem>
-                      <SelectItem value="Local LLM">Local LLM (Genkit)</SelectItem>
-                      <SelectItem value="Other">Other (Genkit)</SelectItem>
+                      <SelectItem value="Azure OpenAI">Azure OpenAI (Genkit - Not fully tested)</SelectItem>
+                      <SelectItem value="Local LLM">Local LLM (Genkit - Not fully tested)</SelectItem>
+                      <SelectItem value="Other">Other (Genkit - Not fully tested)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -491,21 +518,25 @@ export default function ModelConnectorsPage() {
                     value={config}
                     onChange={(e) => {
                       setConfig(e.target.value);
-                      try {
-                        const parsed = JSON.parse(e.target.value);
-                        if (parsed.model && typeof parsed.model === 'string' && currentModelsForProvider.includes(parsed.model) && provider && ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider)) {
-                           setSelectedModelForDropdown(parsed.model);
-                        } else if (provider && ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider) && !parsed.model) {
-                           setSelectedModelForDropdown('');
-                        }
-                      } catch (err) { /* Ignore parse errors while typing */ }
+                      // Attempt to sync dropdown if model is manually changed in JSON, for relevant providers
+                      if (provider && ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider)) {
+                          try {
+                            const parsed = JSON.parse(e.target.value);
+                            if (parsed.model && typeof parsed.model === 'string' && currentModelsForProvider.includes(parsed.model)) {
+                               setSelectedModelForDropdown(parsed.model);
+                            } else if (!parsed.model && selectedModelForDropdown) {
+                               // If model removed from JSON, clear dropdown selection
+                               //setSelectedModelForDropdown(''); // This can cause loop if dropdown also clears JSON
+                            }
+                          } catch (err) { /* Ignore parse errors while typing */ }
+                      }
                     }}
                     placeholder='e.g., { "temperature": 0.7, "maxOutputTokens": 1024 }'
                     rows={3}
                   />
                    <p className="text-xs text-muted-foreground mt-1">
                      Use this for settings like temperature, token limits.
-                     The "model" field will be managed by the dropdown above if applicable and provider is not 'Other' or 'Local LLM'.
+                     For OpenAI, Vertex AI, Anthropic, and Azure OpenAI, the "model" field is managed by the dropdown above. For "Other" or "Local LLM", you may need to set it here.
                    </p>
                 </div>
                 <DialogFooter>
@@ -551,11 +582,14 @@ export default function ModelConnectorsPage() {
               <TableBody>
                 {connectors.map((conn) => {
                   const canTestGoogleAI = conn.provider === 'Vertex AI' && !!getGenkitModelId(conn);
-                  const canTestAnthropicDirect = conn.provider === 'Anthropic' && !!getAnthropicModelNameFromConfig(conn);
+                  const canTestAnthropicDirect = conn.provider === 'Anthropic' && !!getDirectClientModelName(conn);
+                  const canTestOpenAIDirect = conn.provider === 'OpenAI' && !!getDirectClientModelName(conn);
                   
                   let testIconColor = "text-gray-400"; 
                   if (conn.provider === 'Anthropic') testIconColor = "text-orange-500";
                   else if (conn.provider === 'Vertex AI') testIconColor = "text-green-500";
+                  else if (conn.provider === 'OpenAI') testIconColor = "text-sky-500";
+
 
                   return (
                     <TableRow key={conn.id} className="hover:bg-muted/50">
@@ -572,7 +606,7 @@ export default function ModelConnectorsPage() {
                       <TableCell className="text-sm text-muted-foreground hidden md:table-cell truncate" title={conn.config}>{conn.config || '{}'}</TableCell>
                       <TableCell className="text-right">
                           <div className="flex justify-end items-center gap-0">
-                            {(canTestGoogleAI || canTestAnthropicDirect) && (
+                            {(canTestGoogleAI || canTestAnthropicDirect || canTestOpenAIDirect) && (
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -606,7 +640,9 @@ export default function ModelConnectorsPage() {
             <DialogHeader>
                 <DialogTitle>Test {connectorToTest?.provider} Connection: {connectorToTest?.name}</DialogTitle>
                 <DialogDescription>Send a test prompt to the selected model (Model for test: {
-                  connectorToTest?.provider === 'Anthropic' ? getAnthropicModelNameFromConfig(connectorToTest) || "N/A (Check Config)" : getGenkitModelId(connectorToTest) || "N/A (Check Config)"
+                  (connectorToTest?.provider === 'Anthropic' || connectorToTest?.provider === 'OpenAI') 
+                  ? (getDirectClientModelName(connectorToTest) || "N/A (Check Config)") 
+                  : (getGenkitModelId(connectorToTest) || "N/A (Check Config)")
                 }).</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -636,7 +672,7 @@ export default function ModelConnectorsPage() {
                                     <p className="font-semibold">Model: {testResult.modelUsed || 'N/A'}</p>
                                     <p className="font-semibold mt-1">Response:</p>
                                     <p className="mt-0.5">{testResult.responseText}</p>
-                                    {(testResult as TestGoogleAIConnectionOutput).usage && <p className="text-xs mt-2 opacity-80">Usage (Genkit): {JSON.stringify((testResult as TestGoogleAIConnectionOutput).usage)}</p>}
+                                    {(testResult as TestGoogleAIConnectionOutput | TestDirectOpenAIClientOutput).usage && <p className="text-xs mt-2 opacity-80">Usage: {JSON.stringify((testResult as TestGoogleAIConnectionOutput | TestDirectOpenAIClientOutput).usage)}</p>}
                                 </AlertDescription>
                             </Alert>
                         ) : (
@@ -697,3 +733,4 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
+
