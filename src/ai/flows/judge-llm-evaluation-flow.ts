@@ -278,10 +278,6 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
         const openAIUserPrompt = constructDirectClientPrompt('OpenAI');
         const messages: ChatCompletionMessageParam[] = [{ role: 'user', content: openAIUserPrompt }];
 
-        // For OpenAI, it's good practice to instruct it to output JSON in the system prompt too
-        // For now, keeping user prompt consistent with Anthropic direct call
-        // messages.unshift({role: 'system', content: 'You are an expert evaluator. Your response MUST be a valid JSON array.'});
-
         const response = await openAIClient.chat.completions.create({ model: openAIModelName, messages: messages, max_tokens: 4096, temperature: 0.3, response_format: { type: "json_object" } });
         const responseText = response.choices[0]?.message?.content;
         if (!responseText) {
@@ -291,18 +287,33 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
         }
         console.log('OpenAI raw response text:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
         try {
-          // OpenAI's response_format: {type: "json_object"} should ensure it's JSON, but we still parse the content string.
-          // The prompt asks for an array. If OpenAI wraps it in an object like {"output": [...]}, we might need to adjust.
-          // For now, assuming it directly outputs the array string as requested.
           const parsedJson = JSON.parse(responseText);
-          if (Array.isArray(parsedJson)) {
+          if (Array.isArray(parsedJson)) { // Case 1: Correct array
             output = LlmOutputArraySchema.parse(parsedJson);
-          } else if (typeof parsedJson === 'object' && parsedJson !== null && Object.keys(parsedJson).length === 1 && Array.isArray(Object.values(parsedJson)[0])) {
-            // Handle if OpenAI wraps the array in a single-key object, e.g. {"result": [...]}
-            console.warn("OpenAI returned JSON object, attempting to extract array from its first value.");
-            output = LlmOutputArraySchema.parse(Object.values(parsedJson)[0]);
-          } else {
-             throw new Error("OpenAI returned JSON but not in the expected array format.");
+          } else if (typeof parsedJson === 'object' && parsedJson !== null) {
+            // Case 2: OpenAI returns the first object of the array directly
+            if ('parameterId' in parsedJson && ('chosenLabel' in parsedJson || 'generatedSummary' in parsedJson)) {
+              console.warn("OpenAI returned a single JSON object instead of an array. Wrapping it in an array.");
+              try {
+                output = LlmOutputArraySchema.parse([parsedJson]); // Wrap the single object
+              } catch (singleItemParseError) {
+                // Fallback: Check if it's an object containing the array (e.g. { "result": [...] })
+                if (Object.keys(parsedJson).length === 1 && Array.isArray(Object.values(parsedJson)[0])) {
+                  console.warn("OpenAI returned JSON object (single key wrapper), attempting to extract array from its first value.");
+                  output = LlmOutputArraySchema.parse(Object.values(parsedJson)[0]);
+                } else { // If neither, then it's an unexpected format
+                  throw new Error(`OpenAI returned JSON object but not in the expected array format or a known wrapper format. Object keys: ${Object.keys(parsedJson).join(', ')}`);
+                }
+              }
+            } else if (Object.keys(parsedJson).length === 1 && Array.isArray(Object.values(parsedJson)[0])) {
+              // Case 3: OpenAI wraps the array in a single-key object, e.g. {"result": [...]}
+              console.warn("OpenAI returned JSON object (single key wrapper), attempting to extract array from its first value.");
+              output = LlmOutputArraySchema.parse(Object.values(parsedJson)[0]);
+            } else { // Case 4: Unexpected object format
+               throw new Error(`OpenAI returned an unexpected JSON object format. Object keys: ${Object.keys(parsedJson).join(', ')}`);
+            }
+          } else { // Case 5: Not an array, not an object
+             throw new Error("OpenAI returned JSON but not in the expected array format or object format.");
           }
         } catch (parseError: any) {
            console.error("Failed to parse OpenAI JSON response:", parseError, "Raw response:", responseText);
