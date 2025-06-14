@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { FC } from 'react';
+import React, { type FC } from 'react'; // Imported React
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -20,7 +20,7 @@ export interface RunProgressAndLogsProps {
   previewDataError: string | null;
 }
 
-export const RunProgressAndLogs: FC<RunProgressAndLogsProps> = ({
+const OriginalRunProgressAndLogs: FC<RunProgressAndLogsProps> = ({
   runDetails, isPreviewDataLoading, isLoadingEvalParamsForLLMHook, isLoadingSummarizationDefsForLLMHook, simulationLog, previewDataError
 }) => {
   const showProgress = isPreviewDataLoading || (runDetails.status === 'Running' || runDetails.status === 'Processing') || isLoadingEvalParamsForLLMHook || isLoadingSummarizationDefsForLLMHook;
@@ -63,3 +63,5 @@ export const RunProgressAndLogs: FC<RunProgressAndLogsProps> = ({
     </Card>
   );
 };
+
+export const RunProgressAndLogs = React.memo(OriginalRunProgressAndLogs);

@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { FC } from 'react';
+import React, { type FC } from 'react'; // Imported React
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle as CardTitleInner } from "@/components/ui/card"; // Renamed to avoid conflict
@@ -28,7 +28,7 @@ export interface QuestionJudgmentDialogProps {
   runDetails: EvalRun | null;
 }
 
-export const QuestionJudgmentDialog: FC<QuestionJudgmentDialogProps> = ({
+const OriginalQuestionJudgmentDialog: FC<QuestionJudgmentDialogProps> = ({
   isOpen, onOpenChange, itemData, userQuestion, onUserQuestionChange,
   analysisResult, isAnalyzing, analysisError, onSubmitAnalysis, runDetails
 }) => {
@@ -83,3 +83,5 @@ export const QuestionJudgmentDialog: FC<QuestionJudgmentDialogProps> = ({
     </Dialog>
   );
 };
+
+export const QuestionJudgmentDialog = React.memo(OriginalQuestionJudgmentDialog);

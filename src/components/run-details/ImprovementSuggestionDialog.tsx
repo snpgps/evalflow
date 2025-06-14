@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { FC } from 'react';
+import React, { type FC } from 'react'; // Imported React
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from '@/components/ui/textarea';
@@ -20,7 +20,7 @@ export interface ImprovementSuggestionDialogProps {
   result: SuggestRecursivePromptImprovementsOutput | null;
 }
 
-export const ImprovementSuggestionDialog: FC<ImprovementSuggestionDialogProps> = ({ isOpen, onOpenChange, isLoading, error, result }) => {
+const OriginalImprovementSuggestionDialog: FC<ImprovementSuggestionDialogProps> = ({ isOpen, onOpenChange, isLoading, error, result }) => {
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
@@ -35,3 +35,5 @@ export const ImprovementSuggestionDialog: FC<ImprovementSuggestionDialogProps> =
     </Dialog>
   );
 };
+
+export const ImprovementSuggestionDialog = React.memo(OriginalImprovementSuggestionDialog);

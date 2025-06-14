@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { FC } from 'react';
+import React, { type FC } from 'react'; // Imported React
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Play, Loader2, DatabaseZap, Wand2, Download, FileSearch, Tags, ClockIcon, CheckCheckIcon, CalendarDaysIcon, InfoIcon } from "lucide-react";
@@ -26,7 +26,7 @@ export interface RunHeaderCardProps {
   getStatusBadge: (status?: EvalRun['status']) => JSX.Element;
 }
 
-export const RunHeaderCard: FC<RunHeaderCardProps> = ({
+const OriginalRunHeaderCard: FC<RunHeaderCardProps> = ({
   runDetails, isPreviewDataLoading, canFetchData, isRunTerminal, canStartLLMTask,
   isLoadingEvalParamsForLLMHook, isLoadingSummarizationDefsForLLMHook,
   canSuggestImprovements, onFetchAndPreviewData, onSimulateRunExecution,
@@ -76,3 +76,5 @@ export const RunHeaderCard: FC<RunHeaderCardProps> = ({
     </Card>
   );
 };
+
+export const RunHeaderCard = React.memo(OriginalRunHeaderCard);

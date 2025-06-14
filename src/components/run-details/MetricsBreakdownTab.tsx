@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { FC } from 'react';
+import React, { type FC } from 'react'; // Imported React
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip as RechartsTooltip, Bar as RechartsBar } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
@@ -13,7 +13,7 @@ export interface MetricsBreakdownTabProps {
   metricsBreakdownData: ParameterChartData[];
 }
 
-export const MetricsBreakdownTab: FC<MetricsBreakdownTabProps> = ({ runDetails, metricsBreakdownData }) => {
+const OriginalMetricsBreakdownTab: FC<MetricsBreakdownTabProps> = ({ runDetails, metricsBreakdownData }) => {
   return (
     <>
       {metricsBreakdownData.length === 0 && (!runDetails?.results || runDetails.results.length === 0) && (
@@ -39,3 +39,5 @@ export const MetricsBreakdownTab: FC<MetricsBreakdownTabProps> = ({ runDetails, 
     </>
   );
 };
+
+export const MetricsBreakdownTab = React.memo(OriginalMetricsBreakdownTab);

@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import { RunConfigTab } from '@/components/run-details/RunConfigTab';
 import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
 import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
 import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
+import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab';
 
 
 // Interfaces - Exported for use in child components
@@ -373,6 +374,7 @@ export default function RunDetailsPage() {
         const nextFilters: AllFilterStates = { ...prevFilters };
         let changed = false;
 
+        // Add new filters for params not yet in state
         evalParamDetailsForLLM.forEach(param => {
           if (!nextFilters[param.id]) {
             nextFilters[param.id] = { matchMismatch: 'all', selectedLabel: 'all' };
@@ -380,6 +382,7 @@ export default function RunDetailsPage() {
           }
         });
 
+        // Remove filters for params no longer in evalParamDetailsForLLM
         Object.keys(nextFilters).forEach(paramId => {
           if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) {
             delete nextFilters[paramId];
@@ -389,9 +392,10 @@ export default function RunDetailsPage() {
         return changed ? nextFilters : prevFilters;
       });
     } else if ((!evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) && Object.keys(filterStates).length > 0) {
+      // If there are no eval params for the run, clear all filters
       setFilterStates({});
     }
-  }, [evalParamDetailsForLLM, filterStates]);
+  }, [evalParamDetailsForLLM]);
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
@@ -427,7 +431,7 @@ export default function RunDetailsPage() {
     } else { if (metricsBreakdownData.length > 0) { setMetricsBreakdownData([]); } }
   }, [runDetails, evalParamDetailsForLLM, metricsBreakdownData]);
 
-  const handleFetchAndPreviewData = async (): Promise<void> => {
+  const handleFetchAndPreviewData = useCallback(async (): Promise<void> => {
     if (!runDetails || !currentUserId || !runDetails.datasetId || !runDetails.datasetVersionId) { toast({ title: "Configuration Missing", description: "Dataset or version ID missing.", variant: "destructive" }); return; }
     setIsPreviewDataLoading(true); setPreviewDataError(null); setSimulationLog([]); addLog("Data Preview: Start.");
     try {
@@ -453,9 +457,9 @@ export default function RunDetailsPage() {
         toast({ title: "Data Preview Ready", description: `${sanitizedSample.length} rows fetched.`});
     } catch (error: any) { addLog(`Data Preview: Error: ${error.message}`, "error"); setPreviewDataError(error.message); toast({ title: "Preview Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `Data preview failed: ${error.message}` });
     } finally { setIsPreviewDataLoading(false); }
-  };
+  }, [currentUserId, runId, runDetails, updateRunMutation]);
 
-  const simulateRunExecution = async (): Promise<void> => {
+  const simulateRunExecution = useCallback(async (): Promise<void> => {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0; const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) { const errorMsg = "Missing config or no eval/summarization params."; toast({ title: "Cannot start", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return; }
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start", description: "No dataset sample.", variant: "destructive"}); addLog("Error: No previewed data.", "error"); return; }
@@ -487,9 +491,9 @@ export default function RunDetailsPage() {
       }
       addLog("LLM tasks complete."); updateRunMutation.mutate({ id: runId, status: 'Completed', results: sanitizeDataForFirestore(collectedResults), progress: 100, completedAt: serverTimestamp() }); toast({ title: "LLM Tasks Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
     } catch (error: any) { addLog(`Error during LLM tasks: ${error.message}`, "error"); console.error("LLM Task Error: ", error); toast({ title: "LLM Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM task failed: ${error.message}`, results: sanitizeDataForFirestore(collectedResults) }); }
-  };
+  }, [currentUserId, runId, runDetails, updateRunMutation, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
 
-  const handleDownloadResults = (): void => {
+  const handleDownloadResults = useCallback((): void => {
     if (!runDetails || !runDetails.results || runDetails.results.length === 0 ) { toast({ title: "No Results", description: "No results to download.", variant: "destructive" }); return; }
     const dataForExcel: any[] = []; const inputDataKeys = new Set<string>(); runDetails.results.forEach(item => { Object.keys(item.inputData).forEach(key => inputDataKeys.add(key)); }); const sortedInputDataKeys = Array.from(inputDataKeys).sort();
     runDetails.results.forEach(item => { const row: Record<string, any> = {}; sortedInputDataKeys.forEach(key => { row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : ''; });
@@ -497,11 +501,11 @@ export default function RunDetailsPage() {
       summarizationDefDetailsForLLM?.forEach(summDefDetail => { const output = item.judgeLlmOutput[summDefDetail.id]; row[`${summDefDetail.name} - LLM Summary`] = output?.generatedSummary || (output?.error ? 'ERROR' : 'N/A'); if(output?.error) row[`${summDefDetail.name} - LLM Error`] = output.error; });
       dataForExcel.push(row); });
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results"); const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`; XLSX.writeFile(workbook, fileName); toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
-  };
+  }, [runDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
 
   const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId], queryFn: () => fetchProductParametersForSchema(currentUserId), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
 
-  const handleSuggestImprovementsClick = async (): Promise<void> => {
+  const handleSuggestImprovementsClick = useCallback(async (): Promise<void> => {
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest", description: "Missing data for Ground Truth comparison.", variant: "destructive" }); return; }
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
@@ -529,16 +533,16 @@ export default function RunDetailsPage() {
       const flowInput: SuggestRecursivePromptImprovementsInput = { originalPromptTemplate, mismatchDetails, productParametersSchema: productParamsSchemaString, evaluationParametersSchema: evalParamsSchemaString, };
       const result = await suggestRecursivePromptImprovements(flowInput); setSuggestionResult(result);
     } catch (error: any) { console.error("Error suggesting improvements:", error); setSuggestionError(error.message || "Failed to get suggestions."); } finally { setIsLoadingSuggestion(false); }
-  };
+  }, [currentUserId, runDetails, evalParamDetailsForLLM, productParametersForSchema]);
 
-  const handleOpenQuestionDialog = (item: EvalRunResultItem, paramId: string, rowIndex: number): void => {
+  const handleOpenQuestionDialog = useCallback((item: EvalRunResultItem, paramId: string, rowIndex: number): void => {
     const paramDetail = evalParamDetailsForLLM.find(p => p.id === paramId); const outputData = item.judgeLlmOutput[paramId];
     if (!paramDetail || !outputData || typeof outputData.chosenLabel !== 'string') { console.error("Invalid data for question dialog.", paramDetail, outputData); toast({ title: "Internal Error", description: "Cannot open question dialog.", variant: "destructive" }); return; }
     setQuestioningItemData({ rowIndex, inputData: item.inputData, paramId: paramId, paramName: paramDetail.name, paramDefinition: paramDetail.definition, paramLabels: paramDetail.labels, judgeLlmOutput: { chosenLabel: outputData.chosenLabel, rationale: outputData.rationale, error: outputData.error, }, groundTruthLabel: item.groundTruth ? item.groundTruth[paramId] : undefined, });
     setUserQuestionText(''); setJudgmentAnalysisResult(null); setJudgmentAnalysisError(null); setIsQuestionDialogVisible(true);
-  };
+  }, [evalParamDetailsForLLM]);
 
-  const handleSubmitQuestionAnalysis = async (): Promise<void> => {
+  const handleSubmitQuestionAnalysis = useCallback(async (): Promise<void> => {
     if (!questioningItemData || !currentUserId || !runDetails?.promptId || !runDetails?.promptVersionId) { setJudgmentAnalysisError("Missing data for analysis."); return; }
     setIsAnalyzingJudgment(true); setJudgmentAnalysisError(null); setJudgmentAnalysisResult(null);
     try {
@@ -546,11 +550,11 @@ export default function RunDetailsPage() {
       const inputForFlow: AnalyzeJudgmentDiscrepancyInput = { inputData: questioningItemData.inputData, evaluationParameterName: questioningItemData.paramName, evaluationParameterDefinition: questioningItemData.paramDefinition, evaluationParameterLabels: questioningItemData.paramLabels, judgeLlmChosenLabel: questioningItemData.judgeLlmOutput.chosenLabel, judgeLlmRationale: questioningItemData.judgeLlmOutput.rationale ?? undefined, groundTruthLabel: questioningItemData.groundTruthLabel, userQuestion: userQuestionText, originalPromptTemplate: originalPromptTemplate, };
       const analysisOutput = await analyzeJudgmentDiscrepancy(inputForFlow); setJudgmentAnalysisResult(analysisOutput);
     } catch (error: any) { console.error("Error analyzing judgment:", error); setJudgmentAnalysisError(error.message || "Failed to get analysis."); } finally { setIsAnalyzingJudgment(false); }
-  };
+  }, [currentUserId, runDetails, questioningItemData, userQuestionText]);
 
   const hasMismatches = useMemo((): boolean => { if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; return runDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase(); }) ); }, [runDetails, evalParamDetailsForLLM]);
 
-  const handleFilterChange = (paramId: string, filterType: 'matchMismatch' | 'label', value: FilterValueMatchMismatch | FilterValueSelectedLabel): void => {
+  const handleFilterChange = useCallback((paramId: string, filterType: 'matchMismatch' | 'label', value: FilterValueMatchMismatch | FilterValueSelectedLabel): void => {
     setFilterStates(prev => {
       const currentParamState = prev[paramId] || { matchMismatch: 'all', selectedLabel: 'all' };
       return {
@@ -561,7 +565,7 @@ export default function RunDetailsPage() {
         }
       };
     });
-  };
+  }, []);
 
   const filteredResultsToDisplay = useMemo((): EvalRunResultItem[] => {
     if (!runDetails?.results) return [];
@@ -611,7 +615,7 @@ export default function RunDetailsPage() {
   const canStartLLMTask: boolean = isRunReadyForProcessing_flag && dependenciesLoadedForRunStart_flag && hasParamsOrDefsForRunStart_flag;
   const hasResultsForDownload_flag: boolean = runDetails?.status === 'Completed' && Array.isArray(runDetails.results) && runDetails.results.length > 0;
   const canDownloadResults: boolean = hasResultsForDownload_flag;
-  const canSuggestImprovements: boolean = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails?.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
+  const canSuggestImprovements: boolean = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails?.results && Array.isArray(runDetails.results) && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
   const showProgressArea = isPreviewDataLoading || (runDetails?.status === 'Running' || runDetails?.status === 'Processing') || runDetails?.errorMessage || simulationLog.length > 0 || previewDataError;
 
 

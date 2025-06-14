@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { FC } from 'react';
+import React, { type FC } from 'react'; // Imported React
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,7 +23,7 @@ export interface ResultsTableTabProps {
   canDownloadResults: boolean;
 }
 
-export const ResultsTableTab: FC<ResultsTableTabProps> = ({
+const OriginalResultsTableTab: FC<ResultsTableTabProps> = ({
   runDetails, filteredResultsToDisplay, evalParamDetailsForLLM, summarizationDefDetailsForLLM,
   filterStates, onFilterChange, onOpenQuestionDialog, onDownloadResults, canDownloadResults
 }) => {
@@ -139,3 +139,4 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
   );
 };
 
+export const ResultsTableTab = React.memo(OriginalResultsTableTab);

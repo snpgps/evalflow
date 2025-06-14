@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { FC } from 'react';
+import React, { type FC } from 'react'; // Imported React
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,7 +15,7 @@ export interface RunConfigTabProps {
   isLoadingSelectedContextDocs: boolean;
 }
 
-export const RunConfigTab: FC<RunConfigTabProps> = ({ runDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM, selectedContextDocDetails, isLoadingSelectedContextDocs }) => {
+const OriginalRunConfigTab: FC<RunConfigTabProps> = ({ runDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM, selectedContextDocDetails, isLoadingSelectedContextDocs }) => {
   // Helper to parse config string and get model, safely
   const getModelFromConfig = (configString?: string): string | null => {
     if (!configString) return null;
@@ -68,3 +68,5 @@ export const RunConfigTab: FC<RunConfigTabProps> = ({ runDetails, evalParamDetai
     </Card>
   );
 };
+
+export const RunConfigTab = React.memo(OriginalRunConfigTab);

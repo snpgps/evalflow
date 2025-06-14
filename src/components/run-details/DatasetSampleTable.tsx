@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { FC } from 'react';
+import React, { type FC } from 'react'; // Imported React
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { EvalRun } from '@/app/(app)/runs/[runId]/page';
@@ -15,7 +15,7 @@ export interface DatasetSampleTableProps {
   runDetails: EvalRun;
 }
 
-export const DatasetSampleTable: FC<DatasetSampleTableProps> = ({ displayedPreviewData, previewTableHeaders, runDetails }) => {
+const OriginalDatasetSampleTable: FC<DatasetSampleTableProps> = ({ displayedPreviewData, previewTableHeaders, runDetails }) => {
   if (displayedPreviewData.length === 0) return null;
 
   const rowsForUITable = displayedPreviewData.slice(0, MAX_ROWS_FOR_UI_PREVIEW);
@@ -55,3 +55,5 @@ export const DatasetSampleTable: FC<DatasetSampleTableProps> = ({ displayedPrevi
     </Card>
   );
 };
+
+export const DatasetSampleTable = React.memo(OriginalDatasetSampleTable);
