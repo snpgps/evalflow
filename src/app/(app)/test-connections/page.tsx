@@ -1,3 +1,8 @@
+// This page is a placeholder.
+// Its original functionality has been moved to the "Model Connectors" page.
+// This file is kept as a valid module to prevent build errors
+// pending a mechanism for actual file deletion.
 
-// This file is intentionally left blank as it will be deleted.
-// The functionality has been moved to the Model Connectors page.
+export default function TestConnectionsPagePlaceholder() {
+  return null;
+}
