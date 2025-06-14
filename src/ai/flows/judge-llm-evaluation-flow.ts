@@ -278,7 +278,13 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
         const openAIUserPrompt = constructDirectClientPrompt('OpenAI');
         const messages: ChatCompletionMessageParam[] = [{ role: 'user', content: openAIUserPrompt }];
 
-        const response = await openAIClient.chat.completions.create({ model: openAIModelName, messages: messages, max_tokens: 4096, temperature: 0.3, response_format: { type: "json_object" } });
+        const response = await openAIClient.chat.completions.create({ 
+            model: openAIModelName, 
+            messages: messages, 
+            max_tokens: 4096, 
+            temperature: 0.3 
+            // Removed: response_format: { type: "json_object" } 
+        });
         const responseText = response.choices[0]?.message?.content;
         if (!responseText) {
             console.error("OpenAI response content is null or undefined. Full response:", response);
