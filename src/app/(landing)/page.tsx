@@ -19,12 +19,9 @@ export default function LandingPage() {
         <Link href="/login" className="w-full sm:w-auto">
           <Button size="lg" className="font-semibold w-full sm:w-auto">
             <LogIn className="mr-2 h-5 w-5" />
-            Get Started / Log In
+            Log In
           </Button>
         </Link>
-        <Button size="lg" variant="outline" className="font-semibold w-full sm:w-auto">
-          Learn More
-        </Button>
       </div>
       <footer className="absolute bottom-4 sm:bottom-8 text-muted-foreground text-xs sm:text-sm">
         © {new Date().getFullYear()} EvalFlow. Built with Firebase Studio.
@@ -32,3 +29,4 @@ export default function LandingPage() {
     </div>
   );
 }
+
