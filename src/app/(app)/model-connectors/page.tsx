@@ -19,7 +19,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
 import { testDirectAnthropicClient, type TestDirectAnthropicClientInput, type TestDirectAnthropicClientOutput } from '@/ai/flows/test-direct-anthropic-client-flow';
-import { testGoogleAIConnection, type TestGoogleAIConnectionInput, type TestGoogleAIConnectionOutput } from '@/ai/flows/test-googleai-connection-flow.ts';
+import { testGoogleAIConnection, type TestGoogleAIConnectionInput, type TestGoogleAIConnectionOutput } from '@/ai/flows/test-googleai-connection-flow';
 import { testDirectOpenAIClient, type TestDirectOpenAIClientInput, type TestDirectOpenAIClientOutput } from '@/ai/flows/test-direct-openai-client-flow'; // Added OpenAI test flow
 
 interface ModelConnector {
@@ -47,7 +47,7 @@ const OPENAI_MODELS = [
   "gpt-4o",
   "gpt-4o-mini",
   "gpt-4-turbo",
-  "gpt-4-turbo-preview", 
+  "gpt-4-turbo-preview",
   "gpt-4",
   "gpt-3.5-turbo",
 ];
@@ -334,7 +334,7 @@ export default function ModelConnectorsPage() {
     }
     return undefined;
   };
-  
+
   // For direct client tests (e.g., Anthropic, OpenAI)
   const getDirectClientModelName = (connector: ModelConnector | null): string | undefined => {
     if (!connector || !connector.config) return undefined;
@@ -362,7 +362,7 @@ export default function ModelConnectorsPage() {
 
   const handleRunTest = async () => {
     if (!connectorToTest) return;
-    
+
     setIsSubmittingTest(true);
     setTestResult(null);
 
@@ -404,9 +404,9 @@ export default function ModelConnectorsPage() {
       }
       setTestResult(result);
     } catch (error: any) {
-      const modelIdAttempted = 
-        (connectorToTest.provider === 'Anthropic' || connectorToTest.provider === 'OpenAI') 
-        ? getDirectClientModelName(connectorToTest) 
+      const modelIdAttempted =
+        (connectorToTest.provider === 'Anthropic' || connectorToTest.provider === 'OpenAI')
+        ? getDirectClientModelName(connectorToTest)
         : getGenkitModelId(connectorToTest);
       setTestResult({ success: false, error: error.message || "Flow execution failed.", modelUsed: modelIdAttempted });
     } finally {
@@ -584,8 +584,8 @@ export default function ModelConnectorsPage() {
                   const canTestGoogleAI = conn.provider === 'Vertex AI' && !!getGenkitModelId(conn);
                   const canTestAnthropicDirect = conn.provider === 'Anthropic' && !!getDirectClientModelName(conn);
                   const canTestOpenAIDirect = conn.provider === 'OpenAI' && !!getDirectClientModelName(conn);
-                  
-                  let testIconColor = "text-gray-400"; 
+
+                  let testIconColor = "text-gray-400";
                   if (conn.provider === 'Anthropic') testIconColor = "text-orange-500";
                   else if (conn.provider === 'Vertex AI') testIconColor = "text-green-500";
                   else if (conn.provider === 'OpenAI') testIconColor = "text-sky-500";
@@ -640,8 +640,8 @@ export default function ModelConnectorsPage() {
             <DialogHeader>
                 <DialogTitle>Test {connectorToTest?.provider} Connection: {connectorToTest?.name}</DialogTitle>
                 <DialogDescription>Send a test prompt to the selected model (Model for test: {
-                  (connectorToTest?.provider === 'Anthropic' || connectorToTest?.provider === 'OpenAI') 
-                  ? (getDirectClientModelName(connectorToTest) || "N/A (Check Config)") 
+                  (connectorToTest?.provider === 'Anthropic' || connectorToTest?.provider === 'OpenAI')
+                  ? (getDirectClientModelName(connectorToTest) || "N/A (Check Config)")
                   : (getGenkitModelId(connectorToTest) || "N/A (Check Config)")
                 }).</DialogDescription>
             </DialogHeader>
@@ -733,4 +733,3 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
-
