@@ -41,17 +41,22 @@ const internalTestGoogleAIConnectionFlow = ai.defineFlow(
   async (input) => {
     try {
       console.log(`Attempting to test Google AI connection with model: ${input.modelId}`);
-      const { text, usage, finishReason, model } = await ai.generate({
+      const response = await ai.generate({
         model: input.modelId, // This should be the fully qualified Genkit model ID like 'googleai/gemini-1.5-pro-latest'
         prompt: input.testPrompt,
         config: { temperature: 0.7 }, // Using a slightly higher temp for more varied test responses
       });
 
-      console.log('Google AI Test call successful. Response:', text, 'Usage:', usage, 'Finish Reason:', finishReason);
+      const text = response.text;
+      const usage = response.usage;
+      const modelUsed = response.candidates[0]?.model;
+      const finishReason = response.candidates[0]?.finishReason;
+
+      console.log('Google AI Test call successful. Response:', text, 'Usage:', usage, 'Finish Reason:', finishReason, 'Model Used:', modelUsed);
       return {
         success: true,
         responseText: text,
-        modelUsed: model,
+        modelUsed: modelUsed || input.modelId, // Fallback to input.modelId if not present on candidate
         usage: usage,
       };
     } catch (error: any) {
@@ -106,3 +111,4 @@ Original error: ${error.message}`;
     }
   }
 );
+
