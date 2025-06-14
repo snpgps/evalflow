@@ -49,14 +49,15 @@ const internalTestGoogleAIConnectionFlow = ai.defineFlow(
 
       const text = response.text;
       const usage = response.usage;
-      const modelUsed = response.candidates[0]?.model;
-      const finishReason = response.candidates[0]?.finishReason;
+      // In Genkit 1.x, the exact model string used by the provider isn't guaranteed on response.
+      // We will report the modelId requested. Finish reason might be in response.custom for some providers.
+      const modelUsed = input.modelId;
 
-      console.log('Google AI Test call successful. Response:', text, 'Usage:', usage, 'Finish Reason:', finishReason, 'Model Used:', modelUsed);
+      console.log('Google AI Test call successful. Response:', text, 'Usage:', usage, 'Model Used:', modelUsed);
       return {
         success: true,
         responseText: text,
-        modelUsed: modelUsed || input.modelId, // Fallback to input.modelId if not present on candidate
+        modelUsed: modelUsed,
         usage: usage,
       };
     } catch (error: any) {
@@ -97,7 +98,7 @@ Original error: ${error.message}`;
       }
       
       if (error.cause && typeof error.cause === 'object' && error.cause !== null && 'message' in error.cause && errorMessage !== error.message) {
-         errorMessage += ` (Cause: ${error.cause.message})`;
+         errorMessage += ` (Cause: ${(error.cause as Error).message})`;
       }
       if (error.details && errorMessage !== error.message) {
         errorMessage += ` (Details: ${JSON.stringify(error.details)})`;
