@@ -440,26 +440,20 @@ export default function EvalRunsPage() {
   return (
     <div className="space-y-6 p-4 md:p-0">
       <Card className="shadow-lg">
-        <CardHeader>
-          <div className="flex items-center gap-3"> <PlayCircle className="h-7 w-7 text-primary" /> <div> <CardTitle className="text-xl md:text-2xl font-headline">Evaluation Runs</CardTitle> <CardDescription>Manage and track your AI model evaluation runs. Choose between Product or Ground Truth comparison.</CardDescription> </div> </div>
-        </CardHeader>
-        <CardContent>
-          {/* Button removed from here */}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <PlayCircle className="h-7 w-7 text-primary" />
             <div>
-                <CardTitle>Evaluation Run History</CardTitle>
-                <CardDescription>Review past and ongoing evaluation runs.</CardDescription>
+              <CardTitle className="text-xl md:text-2xl font-headline">Evaluation Runs</CardTitle>
+              <CardDescription>Manage and track your AI model evaluation runs. Choose between Product or Ground Truth comparison.</CardDescription>
             </div>
-            <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
+          </div>
+          <Dialog open={isNewRunDialogOpen} onOpenChange={(isOpen) => { setIsNewRunDialogOpen(isOpen); if(!isOpen) resetNewRunForm();}}>
             <DialogTrigger asChild>
               <Button 
                 onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} 
                 disabled={addEvalRunMutation.isPending || !currentUserId} 
-                className="w-full sm:w-auto"
+                className="w-full sm:w-auto shrink-0" // Added shrink-0
               >
                 <PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run
               </Button>
@@ -561,6 +555,18 @@ export default function EvalRunsPage() {
               )}
             </DialogContent>
           </Dialog>
+        </CardHeader>
+        <CardContent>
+          {/* Content for the top card, if any, goes here */}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+            <div>
+                <CardTitle>Evaluation Run History</CardTitle>
+                <CardDescription>Review past and ongoing evaluation runs.</CardDescription>
+            </div>
         </CardHeader>
         <CardContent>
           {isLoadingEvalRuns && <div className="p-6"><Skeleton className="h-40 w-full"/></div>}
