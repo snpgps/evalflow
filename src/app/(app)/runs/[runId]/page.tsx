@@ -132,6 +132,18 @@ export interface ParamFilterState {
 }
 export type AllFilterStates = Record<string, ParamFilterState>;
 
+// Context for the Question Judgment Dialog
+export interface QuestioningItemContext {
+  rowIndex: number;
+  inputData: Record<string, any>;
+  paramId: string;
+  paramName: string;
+  paramDefinition: string;
+  paramLabels?: EvalParamLabelForAnalysis[];
+  judgeLlmOutput: { chosenLabel: string; rationale?: string | null; error?: string };
+  groundTruthLabel?: string;
+}
+
 
 const MAX_ROWS_FOR_PROCESSING: number = 200;
 
@@ -384,7 +396,7 @@ export default function RunDetailsPage() {
       setFilterStates({});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [evalParamDetailsForLLM]); // Only depends on evalParamDetailsForLLM
+  }, [evalParamDetailsForLLM]);
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
