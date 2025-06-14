@@ -373,15 +373,13 @@ export default function RunDetailsPage() {
         const nextFilters: AllFilterStates = { ...prevFilters };
         let changed = false;
 
-        // Add/update filters for current evalParams
         evalParamDetailsForLLM.forEach(param => {
-          if (!nextFilters[param.id]) { // If param not in filters, add with defaults
+          if (!nextFilters[param.id]) {
             nextFilters[param.id] = { matchMismatch: 'all', selectedLabel: 'all' };
             changed = true;
           }
         });
 
-        // Remove filters for params that no longer exist in current run's evalParamDetailsForLLM
         Object.keys(nextFilters).forEach(paramId => {
           if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) {
             delete nextFilters[paramId];
@@ -391,11 +389,9 @@ export default function RunDetailsPage() {
         return changed ? nextFilters : prevFilters;
       });
     } else if ((!evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) && Object.keys(filterStates).length > 0) {
-      // If no eval params associated with the run, clear all filters
       setFilterStates({});
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [evalParamDetailsForLLM]);
+  }, [evalParamDetailsForLLM, filterStates]);
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
@@ -613,7 +609,7 @@ export default function RunDetailsPage() {
   const dependenciesLoadedForRunStart_flag: boolean = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
   const hasParamsOrDefsForRunStart_flag: boolean = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
   const canStartLLMTask: boolean = isRunReadyForProcessing_flag && dependenciesLoadedForRunStart_flag && hasParamsOrDefsForRunStart_flag;
-  const hasResultsForDownload_flag: boolean = runDetails?.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
+  const hasResultsForDownload_flag: boolean = runDetails?.status === 'Completed' && Array.isArray(runDetails.results) && runDetails.results.length > 0;
   const canDownloadResults: boolean = hasResultsForDownload_flag;
   const canSuggestImprovements: boolean = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails?.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
   const showProgressArea = isPreviewDataLoading || (runDetails?.status === 'Running' || runDetails?.status === 'Processing') || runDetails?.errorMessage || simulationLog.length > 0 || previewDataError;
