@@ -31,11 +31,31 @@ type ProductParameterUpdatePayload = { id: string } & Partial<Omit<ProductParame
 
 
 const fetchProductParameters = async (userId: string | null): Promise<ProductParameter[]> => {
-  if (!userId) return [];
-  const parametersCollection = collection(db, 'users', userId, 'productParameters');
-  // const q = query(parametersCollection, orderBy('createdAt', 'asc')); // Temporarily removed orderBy for diagnosis
-  const snapshot = await getDocs(parametersCollection); // Query directly on collection for diagnosis
-  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ProductParameter));
+  if (!userId) {
+    console.log("fetchProductParameters: No userId provided, returning empty array.");
+    return [];
+  }
+  console.log(`fetchProductParameters: Fetching for userId: ${userId}`);
+  try {
+    const parametersCollection = collection(db, 'users', userId, 'productParameters');
+    const q = query(parametersCollection, orderBy('createdAt', 'asc'));
+    const snapshot = await getDocs(q);
+    console.log(`fetchProductParameters: Snapshot received. Empty: ${snapshot.empty}. Size: ${snapshot.size}`);
+    if (snapshot.empty) {
+        console.log("fetchProductParameters: No documents found.");
+    }
+    const params = snapshot.docs.map(docSnap => {
+      const data = docSnap.data();
+      console.log(`fetchProductParameters: Document ID: ${docSnap.id}, Data:`, data);
+      return { id: docSnap.id, ...data } as ProductParameter;
+    });
+    console.log("fetchProductParameters: Successfully fetched and mapped parameters:", params);
+    return params;
+  } catch (error) {
+    console.error("fetchProductParameters: Error fetching product parameters from Firestore:", error);
+    // Re-throw the error so react-query can handle it and set the error state
+    throw error;
+  }
 };
 
 export default function SchemaDefinitionPage() {
@@ -46,8 +66,10 @@ export default function SchemaDefinitionPage() {
   useEffect(() => {
     const storedUserId = localStorage.getItem('currentUserId');
     if (storedUserId && storedUserId.trim() !== "") {
+      console.log("SchemaDefinitionPage: User ID found in localStorage:", storedUserId);
       setCurrentUserId(storedUserId.trim());
     } else {
+      console.log("SchemaDefinitionPage: No User ID in localStorage.");
       setCurrentUserId(null);
     }
     setIsLoadingUserId(false);
@@ -58,6 +80,15 @@ export default function SchemaDefinitionPage() {
     queryFn: () => fetchProductParameters(currentUserId),
     enabled: !!currentUserId && !isLoadingUserId,
   });
+
+  useEffect(() => {
+    if(fetchError) {
+      console.error("SchemaDefinitionPage: React Query fetchError:", fetchError);
+    }
+    if(!isLoadingParameters && parameters.length === 0 && !!currentUserId && !fetchError) {
+      console.log("SchemaDefinitionPage: Parameters loaded, but the array is empty.");
+    }
+  }, [fetchError, isLoadingParameters, parameters, currentUserId]);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingParameter, setEditingParameter] = useState<ProductParameter | null>(null);
@@ -223,6 +254,7 @@ export default function SchemaDefinitionPage() {
     );
   }
 
+  // This check is more specific: if there IS a fetchError from react-query
   if (fetchError) {
     return (
       <Card className="shadow-lg m-4 md:m-0">
@@ -231,10 +263,10 @@ export default function SchemaDefinitionPage() {
         </CardHeader>
         <CardContent>
           <p>Could not fetch product parameters: {fetchError.message}</p>
-           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered a User ID on the login page and have a stable internet connection. Check Firebase console for potential issues with Firestore rules or connectivity for project evalflow-d19ab.</p>
+           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered a User ID on the login page and have a stable internet connection. Check your browser's developer console (Network and Console tabs) for more specific Firebase errors. Also, verify your Firebase project's Firestore security rules and API key restrictions.</p>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   return (
@@ -311,23 +343,17 @@ export default function SchemaDefinitionPage() {
              <div className="text-center text-muted-foreground py-8">
                 <p>Please log in to see your parameters.</p>
               </div>
-          ) : isLoadingParameters ? (
+          ) : isLoadingParameters ? ( // This case is now less likely to show due to the top-level loader, but good fallback
             <div className="space-y-2">
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
             </div>
-          ) : fetchError ? (
-             <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Error</AlertTitle>
-                <AlertDescription>{fetchError.message}</AlertDescription>
-            </Alert>
-          ) : parameters.length === 0 ? (
+          ) : parameters.length === 0 && !fetchError ? ( // Check if parameters array is empty AND there was no fetchError
             <div className="text-center text-muted-foreground py-8">
               <p>No product parameters defined yet {currentUserId ? `for User ID: ${currentUserId}` : ''}.</p>
               <p className="text-sm">Click "Add New Parameter" to get started.</p>
             </div>
-          ) : (
+          ) : ( // This implies parameters.length > 0 AND no fetchError
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>

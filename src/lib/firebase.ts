@@ -14,23 +14,37 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
+console.log("Firebase Config being used:", firebaseConfig);
+
 let app: FirebaseApp;
 let db: Firestore;
 let analytics: Analytics | undefined;
 let storage: FirebaseStorage;
 
-if (getApps().length === 0) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApps()[0];
-}
+try {
+  if (getApps().length === 0) {
+    app = initializeApp(firebaseConfig);
+    console.log("Firebase app initialized successfully.");
+  } else {
+    app = getApps()[0];
+    console.log("Firebase app already initialized.");
+  }
 
-db = getFirestore(app);
-storage = getStorage(app); // Initialize storage
+  db = getFirestore(app);
+  storage = getStorage(app); // Initialize storage
+  console.log("Firestore and Storage initialized.");
 
-// Initialize Analytics only in the browser environment and if measurementId is available
-if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
-  analytics = getAnalytics(app);
+  // Initialize Analytics only in the browser environment and if measurementId is available
+  if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
+    analytics = getAnalytics(app);
+    console.log("Firebase Analytics initialized.");
+  } else if (typeof window !== 'undefined' && !firebaseConfig.measurementId) {
+    console.log("Firebase Analytics not initialized: measurementId is missing.");
+  }
+} catch (error) {
+  console.error("Error initializing Firebase:", error);
+  // Propagate the error or handle it as needed for your app's startup.
+  // For example, you might want to set a global error state.
 }
 
 export { app, db, analytics, storage };
