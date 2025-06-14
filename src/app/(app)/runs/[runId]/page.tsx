@@ -28,7 +28,7 @@ import { RunConfigTab } from '@/components/run-details/RunConfigTab';
 import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
 import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
 import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
-import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab';
+import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab'; // Added import
 
 
 // Interfaces - Exported for use in child components
@@ -371,30 +371,31 @@ export default function RunDetailsPage() {
  useEffect(() => {
     if (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) {
       setFilterStates(prevFilters => {
-        const nextFilters: AllFilterStates = { ...prevFilters };
-        let changed = false;
+        const nextFiltersState: AllFilterStates = { ...prevFilters };
+        let filtersChanged = false;
 
-        // Add new filters for params not yet in state
+        // Add new filters for parameters not yet in state or if state is empty
         evalParamDetailsForLLM.forEach(param => {
-          if (!nextFilters[param.id]) {
-            nextFilters[param.id] = { matchMismatch: 'all', selectedLabel: 'all' };
-            changed = true;
+          if (!nextFiltersState[param.id]) {
+            nextFiltersState[param.id] = { matchMismatch: 'all', selectedLabel: 'all' };
+            filtersChanged = true;
           }
         });
 
-        // Remove filters for params no longer in evalParamDetailsForLLM
-        Object.keys(nextFilters).forEach(paramId => {
+        // Remove filters for parameters that are no longer in evalParamDetailsForLLM
+        Object.keys(nextFiltersState).forEach(paramId => {
           if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) {
-            delete nextFilters[paramId];
-            changed = true;
+            delete nextFiltersState[paramId];
+            filtersChanged = true;
           }
         });
-        return changed ? nextFilters : prevFilters;
+        return filtersChanged ? nextFiltersState : prevFilters;
       });
     } else if ((!evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) && Object.keys(filterStates).length > 0) {
       // If there are no eval params for the run, clear all filters
       setFilterStates({});
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [evalParamDetailsForLLM]);
 
 
@@ -491,7 +492,7 @@ export default function RunDetailsPage() {
       }
       addLog("LLM tasks complete."); updateRunMutation.mutate({ id: runId, status: 'Completed', results: sanitizeDataForFirestore(collectedResults), progress: 100, completedAt: serverTimestamp() }); toast({ title: "LLM Tasks Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
     } catch (error: any) { addLog(`Error during LLM tasks: ${error.message}`, "error"); console.error("LLM Task Error: ", error); toast({ title: "LLM Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM task failed: ${error.message}`, results: sanitizeDataForFirestore(collectedResults) }); }
-  }, [currentUserId, runId, runDetails, updateRunMutation, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
+  }, [currentUserId, runId, runDetails, updateRunMutation, evalParamDetailsForLLM, summarizationDefDetailsForLLM, addLog]);
 
   const handleDownloadResults = useCallback((): void => {
     if (!runDetails || !runDetails.results || runDetails.results.length === 0 ) { toast({ title: "No Results", description: "No results to download.", variant: "destructive" }); return; }
