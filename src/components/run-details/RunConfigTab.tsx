@@ -16,6 +16,19 @@ export interface RunConfigTabProps {
 }
 
 export const RunConfigTab: FC<RunConfigTabProps> = ({ runDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM, selectedContextDocDetails, isLoadingSelectedContextDocs }) => {
+  // Helper to parse config string and get model, safely
+  const getModelFromConfig = (configString?: string): string | null => {
+    if (!configString) return null;
+    try {
+      const parsed = JSON.parse(configString);
+      return parsed.model || null;
+    } catch (e) {
+      return null;
+    }
+  };
+  const directClientModel = getModelFromConfig(runDetails.modelConnectorConfigString);
+
+
   return (
     <Card>
       <CardHeader><CardTitle>Run Configuration Details</CardTitle></CardHeader>
@@ -23,7 +36,16 @@ export const RunConfigTab: FC<RunConfigTabProps> = ({ runDetails, evalParamDetai
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
           <p><strong>Run Type:</strong> {runDetails.runType === 'GroundTruth' ? 'Ground Truth Comparison' : 'Product Evaluation'}</p>
           <p><strong>Dataset:</strong> {runDetails.datasetName || runDetails.datasetId}{runDetails.datasetVersionNumber ? ` (v${runDetails.datasetVersionNumber})` : ''}</p>
-          <p><strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId} {runDetails.modelConnectorProvider && <Badge variant="outline" className="ml-1 text-xs">Provider: {runDetails.modelConnectorProvider}</Badge>} { (runDetails.modelConnectorProvider !== 'Anthropic' && runDetails.modelIdentifierForGenkit) ? <Badge variant="outline" className="ml-1 text-xs">Using (Genkit): {runDetails.modelIdentifierForGenkit}</Badge> : (runDetails.modelConnectorProvider === 'Anthropic' && runDetails.modelConnectorConfigString) ? <Badge variant="outline" className="ml-1 text-xs">Using (Direct): {JSON.parse(runDetails.modelConnectorConfigString).model || 'N/A'}</Badge> : null } </p>
+          <div> {/* Changed from p to div */}
+            <strong>Model Connector:</strong> {runDetails.modelConnectorName || runDetails.modelConnectorId}
+            {runDetails.modelConnectorProvider && <Badge variant="outline" className="ml-1 text-xs">Provider: {runDetails.modelConnectorProvider}</Badge>}
+            { (runDetails.modelConnectorProvider !== 'Anthropic' && runDetails.modelConnectorProvider !== 'OpenAI' && runDetails.modelIdentifierForGenkit) ?
+              <Badge variant="outline" className="ml-1 text-xs">Using (Genkit): {runDetails.modelIdentifierForGenkit}</Badge> :
+              ((runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') && directClientModel) ?
+              <Badge variant="outline" className="ml-1 text-xs">Using (Direct): {directClientModel}</Badge> :
+              null
+            }
+          </div>
           <p><strong>Prompt Template:</strong> {runDetails.promptName || runDetails.promptId}{runDetails.promptVersionNumber ? ` (v${runDetails.promptVersionNumber})` : ''}</p>
           <p><strong>Test on Rows Config:</strong> {runDetails.runOnNRows === 0 ? 'All (capped)' : `First ${runDetails.runOnNRows} (capped)`}</p>
           <p><strong>LLM Concurrency Limit:</strong> {runDetails.concurrencyLimit || 'Default (3)'}</p>
