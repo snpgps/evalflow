@@ -23,7 +23,7 @@ import { Badge } from '@/components/ui/badge';
 
 import { RunHeaderCard } from '@/components/run-details/RunHeaderCard';
 import { RunProgressAndLogs } from '@/components/run-details/RunProgressAndLogs';
-import { RunSummaryCards } from '@/components/run-details/RunSummaryCards';
+// import { RunSummaryCards } from '@/components/run-details/RunSummaryCards'; // Removed
 import { DatasetSampleTable } from '@/components/run-details/DatasetSampleTable';
 import { RunConfigTab } from '@/components/run-details/RunConfigTab';
 import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
@@ -383,7 +383,7 @@ export default function RunDetailsPage() {
         setFilterStates({});
       }
     }
-  }, [evalParamDetailsForLLM, runDetails?.runType]);
+  }, [evalParamDetailsForLLM, runDetails?.runType, filterStates]);
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
@@ -608,29 +608,24 @@ export default function RunDetailsPage() {
         isLoadingEvalParamsForLLMHook={isLoadingEvalParamsForLLMHook}
         isLoadingSummarizationDefsForLLMHook={isLoadingSummarizationDefsForLLMHook}
         canSuggestImprovements={canSuggestImprovements}
-        canDownloadResults={canDownloadResults}
         onFetchAndPreviewData={handleFetchAndPreviewData}
         onSimulateRunExecution={simulateRunExecution}
         onSuggestImprovementsClick={handleSuggestImprovementsClick}
-        onDownloadResults={handleDownloadResults}
         isLoadingSuggestion={isLoadingSuggestion}
         formatTimestamp={formatTimestamp}
+        getStatusBadge={getStatusBadge}
       />
 
       {showProgressArea && (
-        <Card>
-            <RunProgressAndLogs
-                runDetails={runDetails}
-                isPreviewDataLoading={isPreviewDataLoading}
-                isLoadingEvalParamsForLLMHook={isLoadingEvalParamsForLLMHook}
-                isLoadingSummarizationDefsForLLMHook={isLoadingSummarizationDefsForLLMHook}
-                simulationLog={simulationLog}
-                previewDataError={previewDataError}
-            />
-        </Card>
+        <RunProgressAndLogs
+            runDetails={runDetails}
+            isPreviewDataLoading={isPreviewDataLoading}
+            isLoadingEvalParamsForLLMHook={isLoadingEvalParamsForLLMHook}
+            isLoadingSummarizationDefsForLLMHook={isLoadingSummarizationDefsForLLMHook}
+            simulationLog={simulationLog}
+            previewDataError={previewDataError}
+        />
       )}
-
-      <RunSummaryCards runDetails={runDetails} getStatusBadge={getStatusBadge} />
       
       <Tabs defaultValue="results">
         <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 mb-4">
@@ -649,6 +644,8 @@ export default function RunDetailsPage() {
             filterStates={filterStates}
             onFilterChange={handleFilterChange}
             onOpenQuestionDialog={handleOpenQuestionDialog}
+            onDownloadResults={handleDownloadResults}
+            canDownloadResults={canDownloadResults}
           />
         </TabsContent>
         <TabsContent value="metrics">

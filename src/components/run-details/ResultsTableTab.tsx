@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
-import { MessageSquareText, MessageSquareQuote, CheckCircle, XCircle, Filter as FilterIcon, Tags } from "lucide-react";
+import { MessageSquareText, MessageSquareQuote, CheckCircle, XCircle, Filter as FilterIcon, Download, ListChecks } from "lucide-react";
 import type { EvalRun, EvalRunResultItem, EvalParamDetailForPrompt, SummarizationDefDetailForPrompt, AllFilterStates, FilterValueMatchMismatch, FilterValueSelectedLabel } from '@/app/(app)/runs/[runId]/page';
 
 export interface ResultsTableTabProps {
@@ -19,11 +19,13 @@ export interface ResultsTableTabProps {
   filterStates: AllFilterStates;
   onFilterChange: (paramId: string, filterType: 'matchMismatch' | 'label', value: FilterValueMatchMismatch | FilterValueSelectedLabel) => void;
   onOpenQuestionDialog: (item: EvalRunResultItem, paramId: string, rowIndex: number) => void;
+  onDownloadResults: () => void;
+  canDownloadResults: boolean;
 }
 
 export const ResultsTableTab: FC<ResultsTableTabProps> = ({
   runDetails, filteredResultsToDisplay, evalParamDetailsForLLM, summarizationDefDetailsForLLM,
-  filterStates, onFilterChange, onOpenQuestionDialog
+  filterStates, onFilterChange, onOpenQuestionDialog, onDownloadResults, canDownloadResults
 }) => {
 
   const getUniqueLabelsForParam = (paramId: string): string[] => {
@@ -41,9 +43,17 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
 
   return (
     <Card>
-      <CardHeader> <CardTitle>Detailed LLM Task Results</CardTitle> <CardDescription>Row-by-row results from the Genkit LLM flow on the processed data.</CardDescription> </CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+            <CardTitle>Detailed LLM Task Results</CardTitle>
+            <CardDescription>Row-by-row results from the Genkit LLM flow on the processed data.</CardDescription>
+        </div>
+        <Button variant="outline" onClick={onDownloadResults} disabled={!canDownloadResults}>
+            <Download className="mr-2 h-4 w-4" /> Download Results
+        </Button>
+      </CardHeader>
       <CardContent>
-        {filteredResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results for the current filter. {runDetails.status === 'DataPreviewed' ? 'Start LLM Categorization.' : (runDetails.status === 'Pending' ? 'Fetch data sample.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : (Object.values(filterStates).some(f => f.matchMismatch !== 'all' || f.selectedLabel !== 'all') ? 'Try adjusting filters.' : 'Run may have failed or has no results.')))}</p> ) : (
+        {filteredResultsToDisplay.length === 0 ? ( <p className="text-muted-foreground">No LLM categorization results for the current filter. {runDetails.status === 'DataPreviewed' ? 'Start Eval.' : (runDetails.status === 'Pending' ? 'Fetch data sample.' : (runDetails.status === 'Running' || runDetails.status === 'Processing' ? 'Categorization in progress...' : (Object.values(filterStates).some(f => f.matchMismatch !== 'all' || f.selectedLabel !== 'all') ? 'Try adjusting filters.' : 'Run may have failed or has no results.')))}</p> ) : (
           <div className="max-h-[600px] overflow-auto">
             <Table><TableHeader><TableRow><TableHead className="min-w-[150px] sm:min-w-[200px]">Input Data (Mapped)</TableHead>
             {evalParamDetailsForLLM?.map(paramDetail => {
@@ -128,4 +138,3 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
     </Card>
   );
 };
-
