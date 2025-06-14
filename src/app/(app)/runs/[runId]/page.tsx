@@ -23,7 +23,6 @@ import { Badge } from '@/components/ui/badge';
 
 import { RunHeaderCard } from '@/components/run-details/RunHeaderCard';
 import { RunProgressAndLogs } from '@/components/run-details/RunProgressAndLogs';
-// import { RunSummaryCards } from '@/components/run-details/RunSummaryCards'; // Removed
 import { DatasetSampleTable } from '@/components/run-details/DatasetSampleTable';
 import { RunConfigTab } from '@/components/run-details/RunConfigTab';
 import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
@@ -35,7 +34,7 @@ import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmen
 // Interfaces - Exported for use in child components
 export interface EvalRunResultItem {
   inputData: Record<string, any>;
-  judgeLlmOutput: Record<string, { chosenLabel?: string; generatedSummary?: string; rationale?: string; error?: string }>;
+  judgeLlmOutput: Record<string, { chosenLabel?: string | null; generatedSummary?: string | null; rationale?: string | null; error?: string }>;
   groundTruth?: Record<string, string>;
 }
 
@@ -122,17 +121,6 @@ export interface ContextDocumentDisplayDetail {
     id: string;
     name: string;
     fileName: string;
-}
-
-export interface QuestioningItemContext {
-    rowIndex: number;
-    inputData: Record<string, any>;
-    paramId: string;
-    paramName: string;
-    paramDefinition: string;
-    paramLabels: EvalParamLabelForAnalysis[];
-    judgeLlmOutput: { chosenLabel: string; rationale?: string; error?: string };
-    groundTruthLabel?: string;
 }
 
 // Type for filter states
@@ -368,22 +356,35 @@ export default function RunDetailsPage() {
     staleTime: Infinity,
   });
 
-  useEffect(() => {
-    const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
-    if (hasEvalParams) {
-      const newInitialFilters: AllFilterStates = {};
-      evalParamDetailsForLLM.forEach(param => {
-        newInitialFilters[param.id] = { matchMismatch: 'all', selectedLabel: 'all' };
+ useEffect(() => {
+    if (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) {
+      setFilterStates(prevFilters => {
+        const nextFilters: AllFilterStates = { ...prevFilters };
+        let changed = false;
+
+        // Add/update filters for current evalParams
+        evalParamDetailsForLLM.forEach(param => {
+          if (!nextFilters[param.id]) { // If param not in filters, add with defaults
+            nextFilters[param.id] = { matchMismatch: 'all', selectedLabel: 'all' };
+            changed = true;
+          }
+        });
+
+        // Remove filters for params that no longer exist in current run's evalParamDetailsForLLM
+        Object.keys(nextFilters).forEach(paramId => {
+          if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) {
+            delete nextFilters[paramId];
+            changed = true;
+          }
+        });
+        return changed ? nextFilters : prevFilters;
       });
-      if (JSON.stringify(filterStates) !== JSON.stringify(newInitialFilters)) {
-        setFilterStates(newInitialFilters);
-      }
-    } else if (!hasEvalParams) {
-      if (Object.keys(filterStates).length > 0) {
-        setFilterStates({});
-      }
+    } else if ((!evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) && Object.keys(filterStates).length > 0) {
+      // If no eval params associated with the run, clear all filters
+      setFilterStates({});
     }
-  }, [evalParamDetailsForLLM, runDetails?.runType, filterStates]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evalParamDetailsForLLM]); // Only depends on evalParamDetailsForLLM
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
@@ -470,7 +471,7 @@ export default function RunDetailsPage() {
           const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [], summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [], parameterIdsRequiringRationale: parameterIdsRequiringRationale, modelName: runDetails.modelIdentifierForGenkit || undefined, modelConnectorProvider: runDetails.modelConnectorProvider, modelConnectorConfigString: runDetails.modelConnectorConfigString, };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex }; if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
           try { addLog(`Sending row ${overallRowIndex + 1} to Judge LLM (Provider: ${runDetails.modelConnectorProvider || 'Genkit Default'})...`); const judgeOutput = await judgeLlmEvaluation(genkitInput); addLog(`Row ${overallRowIndex + 1} responded.`); itemResultShell.judgeLlmOutput = judgeOutput;
-          } catch(flowError: any) { addLog(`Error in Judge LLM flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error"); const errorOutputForAllParams: Record<string, { chosenLabel?: string; generatedSummary?: string; error?: string }> = {}; runDetails.selectedEvalParamIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: flowError.message || 'Unknown LLM error.' }; }); runDetails.selectedSummarizationDefIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { generatedSummary: 'ERROR: LLM processing error.', error: flowError.message || 'Unknown LLM error.' }; }); itemResultShell.judgeLlmOutput = errorOutputForAllParams; }
+          } catch(flowError: any) { addLog(`Error in Judge LLM flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error"); const errorOutputForAllParams: Record<string, { chosenLabel?: string | null; generatedSummary?: string | null; error?: string }> = {}; runDetails.selectedEvalParamIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: flowError.message || 'Unknown LLM error.' }; }); runDetails.selectedSummarizationDefIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { generatedSummary: 'ERROR: LLM processing error.', error: flowError.message || 'Unknown LLM error.' }; }); itemResultShell.judgeLlmOutput = errorOutputForAllParams; }
           return itemResultShell;
         });
         const settledBatchResults = await Promise.all(batchPromises); settledBatchResults.forEach(itemWithIndex => { const { originalIndex, ...resultItem } = itemWithIndex; collectedResults.push(resultItem as EvalRunResultItem); });
@@ -498,7 +499,7 @@ export default function RunDetailsPage() {
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
       const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt.");
-      const mismatchDetails: MismatchDetail[] = []; runDetails.results.forEach(item => { evalParamDetailsForLLM.forEach(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase()) { mismatchDetails.push({ inputData: item.inputData, evaluationParameterName: paramDetail.name, evaluationParameterDefinition: paramDetail.definition, llmChosenLabel: llmOutput.chosenLabel, groundTruthLabel: gtLabel, llmRationale: llmOutput.rationale, }); } }); });
+      const mismatchDetails: MismatchDetail[] = []; runDetails.results.forEach(item => { evalParamDetailsForLLM.forEach(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; if (gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase()) { mismatchDetails.push({ inputData: item.inputData, evaluationParameterName: paramDetail.name, evaluationParameterDefinition: paramDetail.definition, llmChosenLabel: llmOutput.chosenLabel, groundTruthLabel: gtLabel, llmRationale: llmOutput.rationale, }); } }); });
       if (mismatchDetails.length === 0) { setSuggestionError("No mismatches found."); setIsLoadingSuggestion(false); return; }
       const productParamsSchemaString = productParametersForSchema.length > 0 ? "Product Parameters:\n" + productParametersForSchema.map(p => `- ${p.name} (${p.type}): ${p.definition}${p.options ? ` Options: [${p.options.join(', ')}]` : ''}`).join("\n") : "No product params.";
       const evalParamsSchemaString = "Evaluation Parameters Used:\n" + evalParamDetailsForLLM.map(ep => { let schema = `- ID: ${ep.id}, Name: ${ep.name}\n  Definition: ${ep.definition}\n`; if (ep.requiresRationale) schema += `  (Requires Rationale)\n`; if (ep.labels && ep.labels.length > 0) { schema += `  Labels:\n` + ep.labels.map(l => `    - "${l.name}": ${l.definition} ${l.example ? `(e.g., "${l.example}")` : ''}`).join("\n"); } return schema; }).join("\n\n");
@@ -555,7 +556,7 @@ export default function RunDetailsPage() {
         if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') {
           const gtDbValue = item.groundTruth?.[paramId];
           if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || gtDbValue === undefined || llmOutput.error) {
-            return false; // If data is insufficient for match/mismatch, and filter is active, item fails the filter
+            return false; 
           }
           const isMatch = String(llmOutput.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
           if (currentParamFilters.matchMismatch === 'match' && !isMatch) return false;
@@ -565,14 +566,14 @@ export default function RunDetailsPage() {
         // Label Filter
         if (currentParamFilters.selectedLabel !== 'all') {
           if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || llmOutput.error) {
-            return false; // If no LLM label, it can't match a specific label filter
+            return false; 
           }
           if (String(llmOutput.chosenLabel).trim().toLowerCase() !== String(currentParamFilters.selectedLabel).toLowerCase()) {
             return false;
           }
         }
       }
-      return true;
+      return true; 
     });
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 

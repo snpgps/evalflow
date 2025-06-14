@@ -32,7 +32,7 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
     if (!runDetails.results) return [];
     const labels = new Set<string>();
     runDetails.results.forEach(item => {
-        const output = item.judgeLlmOutput[paramId];
+        const output = item.judgeLlmOutput?.[paramId]; // Safe access
         if (output?.chosenLabel && !output.error) {
             labels.add(output.chosenLabel);
         }
@@ -114,7 +114,7 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
             </TableRow></TableHeader>
               <TableBody>{filteredResultsToDisplay.map((item, index) => (<TableRow key={`result-${index}`}><TableCell className="text-xs align-top"><pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm">{JSON.stringify(item.inputData, null, 2)}</pre></TableCell>
                 {evalParamDetailsForLLM?.map(paramDetail => {
-                  const paramId = paramDetail.id; const outputForCell = item.judgeLlmOutput[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = outputForCell?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && !outputForCell?.error && String(llmLabel).trim().toLowerCase() === String(gtLabel).trim().toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
+                  const paramId = paramDetail.id; const outputForCell = item.judgeLlmOutput?.[paramId]; const groundTruthValue = item.groundTruth ? item.groundTruth[paramId] : undefined; const llmLabel = outputForCell?.chosenLabel; const gtLabel = groundTruthValue; const isMatch = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && llmLabel && !outputForCell?.error && String(llmLabel).trim().toLowerCase() === String(gtLabel).trim().toLowerCase(); const showGroundTruth = runDetails.runType === 'GroundTruth' && gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '';
                   return (
                     <TableCell key={paramId} className="text-xs align-top">
                       <div className="flex justify-between items-start">
@@ -129,7 +129,7 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
                     </TableCell>
                   );
                 })}
-                {summarizationDefDetailsForLLM?.map(summDef => { const paramId = summDef.id; const outputForCell = item.judgeLlmOutput[paramId]; return ( <TableCell key={paramId} className="text-xs align-top"> <div>{outputForCell?.generatedSummary || (outputForCell?.error ? <span className="text-destructive">ERROR: {outputForCell.error}</span> : 'N/A')}</div> </TableCell> ); })}
+                {summarizationDefDetailsForLLM?.map(summDef => { const paramId = summDef.id; const outputForCell = item.judgeLlmOutput?.[paramId]; return ( <TableCell key={paramId} className="text-xs align-top"> <div>{outputForCell?.generatedSummary || (outputForCell?.error ? <span className="text-destructive">ERROR: {outputForCell.error}</span> : 'N/A')}</div> </TableCell> ); })}
                 </TableRow>))}</TableBody>
             </Table>
           </div>
@@ -138,3 +138,4 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
     </Card>
   );
 };
+
