@@ -33,9 +33,9 @@ type ProductParameterUpdatePayload = { id: string } & Partial<Omit<ProductParame
 const fetchProductParameters = async (userId: string | null): Promise<ProductParameter[]> => {
   if (!userId) return [];
   const parametersCollection = collection(db, 'users', userId, 'productParameters');
-  const q = query(parametersCollection, orderBy('createdAt', 'asc'));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ProductParameter));
+  // const q = query(parametersCollection, orderBy('createdAt', 'asc')); // Temporarily removed orderBy for diagnosis
+  const snapshot = await getDocs(parametersCollection); // Query directly on collection for diagnosis
+  return snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as ProductParameter));
 };
 
 export default function SchemaDefinitionPage() {
@@ -311,7 +311,18 @@ export default function SchemaDefinitionPage() {
              <div className="text-center text-muted-foreground py-8">
                 <p>Please log in to see your parameters.</p>
               </div>
-          ) : parameters.length === 0 && !isLoadingParameters ? (
+          ) : isLoadingParameters ? (
+            <div className="space-y-2">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : fetchError ? (
+             <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{fetchError.message}</AlertDescription>
+            </Alert>
+          ) : parameters.length === 0 ? (
             <div className="text-center text-muted-foreground py-8">
               <p>No product parameters defined yet {currentUserId ? `for User ID: ${currentUserId}` : ''}.</p>
               <p className="text-sm">Click "Add New Parameter" to get started.</p>
