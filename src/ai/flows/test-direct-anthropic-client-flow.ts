@@ -57,7 +57,13 @@ const internalTestDirectAnthropicClientFlow = ai.defineFlow(
         temperature: 0.3,
       });
       
-      const responseText = response.content[0].text;
+      let responseText = "";
+      if (response.content && response.content[0] && response.content[0].type === 'text') {
+        responseText = response.content[0].text;
+      } else {
+        console.error("Anthropic response content is not in the expected text format. Full response:", response);
+        throw new Error("Anthropic response content was not text or was empty.");
+      }
       console.log('Direct Anthropic client test successful. Response:', responseText);
       return {
         success: true,
@@ -93,3 +99,4 @@ const internalTestDirectAnthropicClientFlow = ai.defineFlow(
     }
   }
 );
+
