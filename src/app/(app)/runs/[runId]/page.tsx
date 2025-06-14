@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch } from "lucide-react";
+import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog } from "lucide-react";
 import { Skeleton } from '@/components/ui/skeleton';
 
 import { db, storage } from '@/lib/firebase';
@@ -19,6 +19,7 @@ import { judgeLlmEvaluation, type JudgeLlmEvaluationInput } from '@/ai/flows/jud
 import { suggestRecursivePromptImprovements, type SuggestRecursivePromptImprovementsInput, type SuggestRecursivePromptImprovementsOutput, type MismatchDetail } from '@/ai/flows/suggest-recursive-prompt-improvements';
 import { analyzeJudgmentDiscrepancy, type AnalyzeJudgmentDiscrepancyInput, type AnalyzeJudgmentDiscrepancyOutput } from '@/ai/flows/analyze-judgment-discrepancy';
 import * as XLSX from 'xlsx';
+import { Badge } from '@/components/ui/badge';
 
 import { RunHeaderCard } from '@/components/run-details/RunHeaderCard';
 import { RunProgressAndLogs } from '@/components/run-details/RunProgressAndLogs';
@@ -29,7 +30,6 @@ import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
 import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab';
 import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
 import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
-import { Badge } from '@/components/ui/badge';
 
 
 // Interfaces - Exported for use in child components
@@ -588,6 +588,8 @@ export default function RunDetailsPage() {
   const hasResultsForDownload_flag: boolean = runDetails?.status === 'Completed' && runDetails.results && runDetails.results.length > 0;
   const canDownloadResults: boolean = hasResultsForDownload_flag;
   const canSuggestImprovements: boolean = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails?.results && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
+  const showProgressArea = isPreviewDataLoading || (runDetails?.status === 'Running' || runDetails?.status === 'Processing') || runDetails?.errorMessage || simulationLog.length > 0 || previewDataError;
+
 
   if (isLoadingUserId) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
   if (!currentUserId) { return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>; }
@@ -596,7 +598,7 @@ export default function RunDetailsPage() {
   if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
 
   const pageJSX = (
-    <div className="space-y-6 p-4 md:p-6">
+    <div className="space-y-6 p-4 md:p-0">
       <RunHeaderCard
         runDetails={runDetails}
         isPreviewDataLoading={isPreviewDataLoading}
@@ -615,34 +617,30 @@ export default function RunDetailsPage() {
         formatTimestamp={formatTimestamp}
       />
 
-      <RunProgressAndLogs
-        runDetails={runDetails}
-        isPreviewDataLoading={isPreviewDataLoading}
-        isLoadingEvalParamsForLLMHook={isLoadingEvalParamsForLLMHook}
-        isLoadingSummarizationDefsForLLMHook={isLoadingSummarizationDefsForLLMHook}
-        simulationLog={simulationLog}
-        previewDataError={previewDataError}
-      />
+      {showProgressArea && (
+        <Card>
+            <RunProgressAndLogs
+                runDetails={runDetails}
+                isPreviewDataLoading={isPreviewDataLoading}
+                isLoadingEvalParamsForLLMHook={isLoadingEvalParamsForLLMHook}
+                isLoadingSummarizationDefsForLLMHook={isLoadingSummarizationDefsForLLMHook}
+                simulationLog={simulationLog}
+                previewDataError={previewDataError}
+            />
+        </Card>
+      )}
 
       <RunSummaryCards runDetails={runDetails} getStatusBadge={getStatusBadge} />
-      <DatasetSampleTable displayedPreviewData={displayedPreviewData} previewTableHeaders={previewTableHeaders} runDetails={runDetails} />
-
-      <Tabs defaultValue="results_table">
-        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 mb-4">
-          <TabsTrigger value="config">Run Configuration</TabsTrigger>
-          <TabsTrigger value="results_table">LLM Results Table</TabsTrigger>
-          <TabsTrigger value="breakdown">Metrics Breakdown</TabsTrigger>
+      
+      <Tabs defaultValue="results">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 mb-4">
+          <TabsTrigger value="results"><FileSearch className="mr-2 h-4 w-4" />Results</TabsTrigger>
+          <TabsTrigger value="metrics"><BarChart3 className="mr-2 h-4 w-4" />Metrics Breakdown</TabsTrigger>
+          <TabsTrigger value="preview"><Database className="mr-2 h-4 w-4" />Dataset Preview</TabsTrigger>
+          <TabsTrigger value="config"><Cog className="mr-2 h-4 w-4" />Run Configuration</TabsTrigger>
         </TabsList>
-        <TabsContent value="config">
-          <RunConfigTab
-            runDetails={runDetails}
-            evalParamDetailsForLLM={evalParamDetailsForLLM}
-            summarizationDefDetailsForLLM={summarizationDefDetailsForLLM}
-            selectedContextDocDetails={selectedContextDocDetails}
-            isLoadingSelectedContextDocs={isLoadingSelectedContextDocs}
-          />
-        </TabsContent>
-        <TabsContent value="results_table">
+        
+        <TabsContent value="results">
           <ResultsTableTab
             runDetails={runDetails}
             filteredResultsToDisplay={filteredResultsToDisplay}
@@ -653,8 +651,20 @@ export default function RunDetailsPage() {
             onOpenQuestionDialog={handleOpenQuestionDialog}
           />
         </TabsContent>
-        <TabsContent value="breakdown">
+        <TabsContent value="metrics">
           <MetricsBreakdownTab runDetails={runDetails} metricsBreakdownData={metricsBreakdownData} />
+        </TabsContent>
+         <TabsContent value="preview">
+           <DatasetSampleTable displayedPreviewData={displayedPreviewData} previewTableHeaders={previewTableHeaders} runDetails={runDetails} />
+        </TabsContent>
+        <TabsContent value="config">
+          <RunConfigTab
+            runDetails={runDetails}
+            evalParamDetailsForLLM={evalParamDetailsForLLM}
+            summarizationDefDetailsForLLM={summarizationDefDetailsForLLM}
+            selectedContextDocDetails={selectedContextDocDetails}
+            isLoadingSelectedContextDocs={isLoadingSelectedContextDocs}
+          />
         </TabsContent>
       </Tabs>
 
