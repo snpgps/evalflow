@@ -1,11 +1,13 @@
 
 'use client';
 
-import type { FC, useMemo } from 'react';
+import type { FC } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
 import { MessageSquareText, MessageSquareQuote, CheckCircle, XCircle, Filter as FilterIcon, Tags } from "lucide-react";
 import type { EvalRun, EvalRunResultItem, EvalParamDetailForPrompt, SummarizationDefDetailForPrompt, AllFilterStates, FilterValueMatchMismatch, FilterValueSelectedLabel } from '@/app/(app)/runs/[runId]/page';
 
@@ -48,37 +50,53 @@ export const ResultsTableTab: FC<ResultsTableTabProps> = ({
               const uniqueLabels = getUniqueLabelsForParam(paramDetail.id);
               return (
               <TableHead key={paramDetail.id} className="min-w-[200px] sm:min-w-[250px] align-top">
-                <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1">
                   <span>{paramDetail.name}</span>
-                  {runDetails.runType === 'GroundTruth' && (
-                    <Select
-                      value={filterStates[paramDetail.id]?.matchMismatch || 'all'}
-                      onValueChange={(value) => onFilterChange(paramDetail.id, 'matchMismatch', value as FilterValueMatchMismatch)}
-                    >
-                      <SelectTrigger className="h-7 text-xs w-full max-w-[180px] bg-background focus:ring-primary focus:border-primary">
-                        <FilterIcon className="h-3 w-3 mr-1 opacity-70" />
-                        <SelectValue>
-                          { filterStates[paramDetail.id]?.matchMismatch === 'match' ? 'GT Matches Only' : filterStates[paramDetail.id]?.matchMismatch === 'mismatch' ? 'GT Mismatches Only' : 'Filter GT: All' }
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent> <SelectItem value="all">Show All (GT)</SelectItem> <SelectItem value="match">Ground Truth Matches</SelectItem> <SelectItem value="mismatch">Ground Truth Mismatches</SelectItem> </SelectContent>
-                    </Select>
-                  )}
-                  {uniqueLabels.length > 0 && (
-                    <Select
-                        value={filterStates[paramDetail.id]?.selectedLabel || 'all'}
-                        onValueChange={(value) => onFilterChange(paramDetail.id, 'label', value as FilterValueSelectedLabel)}
-                    >
-                        <SelectTrigger className="h-7 text-xs w-full max-w-[180px] bg-background focus:ring-primary focus:border-primary">
-                            <Tags className="h-3 w-3 mr-1 opacity-70" />
-                            <SelectValue placeholder="Filter by Label" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Labels</SelectItem>
-                            {uniqueLabels.map(label => <SelectItem key={label} value={label}>{label}</SelectItem>)}
-                        </SelectContent>
-                    </Select>
-                  )}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground">
+                        <FilterIcon className="h-3.5 w-3.5" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-60 p-3 space-y-3">
+                      {runDetails.runType === 'GroundTruth' && (
+                        <div className="space-y-1">
+                          <Label htmlFor={`gt-filter-${paramDetail.id}`} className="text-xs font-medium">Ground Truth Match</Label>
+                          <Select
+                            value={filterStates[paramDetail.id]?.matchMismatch || 'all'}
+                            onValueChange={(value) => onFilterChange(paramDetail.id, 'matchMismatch', value as FilterValueMatchMismatch)}
+                          >
+                            <SelectTrigger id={`gt-filter-${paramDetail.id}`} className="h-8 text-xs w-full bg-background focus:ring-primary focus:border-primary">
+                              <SelectValue>
+                                { filterStates[paramDetail.id]?.matchMismatch === 'match' ? 'Matches Only' : filterStates[paramDetail.id]?.matchMismatch === 'mismatch' ? 'Mismatches Only' : 'Show All (GT)' }
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent> <SelectItem value="all">Show All (GT)</SelectItem> <SelectItem value="match">Ground Truth Matches</SelectItem> <SelectItem value="mismatch">Ground Truth Mismatches</SelectItem> </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      {uniqueLabels.length > 0 && (
+                        <div className="space-y-1">
+                          <Label htmlFor={`label-filter-${paramDetail.id}`} className="text-xs font-medium">LLM Chosen Label</Label>
+                          <Select
+                              value={filterStates[paramDetail.id]?.selectedLabel || 'all'}
+                              onValueChange={(value) => onFilterChange(paramDetail.id, 'label', value as FilterValueSelectedLabel)}
+                          >
+                              <SelectTrigger id={`label-filter-${paramDetail.id}`} className="h-8 text-xs w-full bg-background focus:ring-primary focus:border-primary">
+                                  <SelectValue placeholder="Filter by Label" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                  <SelectItem value="all">All Labels</SelectItem>
+                                  {uniqueLabels.map(label => <SelectItem key={label} value={label}>{label}</SelectItem>)}
+                              </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                       {runDetails.runType !== 'GroundTruth' && uniqueLabels.length === 0 && (
+                        <p className="text-xs text-muted-foreground">No specific filters available for this parameter.</p>
+                      )}
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </TableHead>
             )})}
