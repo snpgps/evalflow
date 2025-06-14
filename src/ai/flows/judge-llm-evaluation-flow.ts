@@ -253,7 +253,16 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
         const messages: MessageParam[] = [{ role: 'user', content: anthropicUserPrompt }];
         
         const response = await anthropicClient.messages.create({ model: anthropicModelName, messages: messages, max_tokens: 4096, temperature: 0.3 });
-        const responseText = response.content[0].text;
+        
+        let responseText = "";
+        if (response.content && response.content[0] && response.content[0].type === 'text') {
+          responseText = response.content[0].text;
+        } else {
+          console.error("Anthropic response content is not in the expected text format. Full response:", response);
+          errorReason = "Anthropic response content was not text or was empty.";
+          throw new Error(errorReason);
+        }
+        
         console.log('Anthropic raw response text:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
         try {
           output = LlmOutputArraySchema.parse(JSON.parse(responseText));
@@ -282,7 +291,7 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
             model: openAIModelName, 
             messages: messages, 
             max_tokens: 4096, 
-            temperature: 0.3 
+            temperature: 0.3
         });
         let responseText = response.choices[0]?.message?.content;
         if (!responseText) {
@@ -290,20 +299,21 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
             errorReason = "OpenAI response content was empty.";
             throw new Error(errorReason);
         }
-        console.log('OpenAI raw response text:', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
+        console.log('OpenAI raw response text (pre-clean):', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
         
         // Clean the responseText from markdown code blocks
         responseText = responseText.trim();
         if (responseText.startsWith("```json")) {
-          responseText = responseText.substring(responseText.indexOf('\n') + 1);
+          responseText = responseText.substring(responseText.indexOf('\n') + 1).trim();
         }
         if (responseText.startsWith("```")) {
-          responseText = responseText.substring(3);
+          responseText = responseText.substring(3).trim();
         }
         if (responseText.endsWith("```")) {
-          responseText = responseText.substring(0, responseText.length - 3);
+          responseText = responseText.substring(0, responseText.length - 3).trim();
         }
-        responseText = responseText.trim();
+        console.log('OpenAI cleaned response text (for parsing):', responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
+
 
         try {
           const parsedJson = JSON.parse(responseText);
@@ -336,7 +346,7 @@ Ensure your response starts with '[' and ends with ']'. Do not include any other
           }
         } catch (parseError: any) {
            console.error("Failed to parse OpenAI JSON response:", parseError, "Cleaned response for parsing:", responseText);
-           errorReason = `Failed to parse OpenAI JSON response: ${parseError.message}. Raw: ${responseText.substring(0,100)}`;
+           errorReason = `Failed to parse OpenAI JSON response: ${parseError.message}. Cleaned Raw: ${responseText.substring(0,100)}`;
            throw new Error(errorReason);
         }
 
