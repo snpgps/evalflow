@@ -1,16 +1,16 @@
 
 'use client';
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react'; // Added React
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog, InfoIcon as InfoIconLucide } from "lucide-react"; // Added InfoIconLucide
+import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog, InfoIcon as InfoIconLucide, FileText as FileTextIcon } from "lucide-react"; // Added FileTextIcon
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"; // Added Dialog components
-import { ScrollArea } from '@/components/ui/scroll-area'; // Added ScrollArea
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 import { db, storage } from '@/lib/firebase';
 import { doc, getDoc, getDocs, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp, type FieldValue, query, orderBy } from 'firebase/firestore';
@@ -384,7 +384,7 @@ export default function RunDetailsPage() {
         return filtersChanged ? nextFiltersState : prevFilters;
       });
     } else if ((!evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) && Object.keys(filterStates).length > 0) { setFilterStates({}); }
-  }, [evalParamDetailsForLLM, filterStates]);
+  }, [evalParamDetailsForLLM]);
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
@@ -454,7 +454,10 @@ export default function RunDetailsPage() {
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start", description: "No dataset sample.", variant: "destructive"}); addLog("Error: No previewed data.", "error"); return; }
     updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [] }); setSimulationLog([]); addLog("LLM task init."); let collectedResults: EvalRunResultItem[] = [];
     try {
-      const promptTemplateTextFetched = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateTextFetched) throw new Error("Failed to fetch prompt template.");
+      setIsLoadingPromptTemplate(true); // Start loading prompt
+      const promptTemplateTextFetched = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
+      setIsLoadingPromptTemplate(false); // Finish loading prompt
+      if (!promptTemplateTextFetched) throw new Error("Failed to fetch prompt template.");
       setPromptTemplateText(promptTemplateTextFetched); 
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
       if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
@@ -550,18 +553,52 @@ export default function RunDetailsPage() {
   }, []);
 
   const filteredResultsToDisplay = useMemo((): EvalRunResultItem[] => {
-    if (!runDetails?.results) return []; if (Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) { return runDetails.results; }
+    if (!runDetails?.results) return [];
+    if (Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) {
+      return runDetails.results;
+    }
+
     return runDetails.results.filter(item => {
-      for (const paramId in filterStates) { if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) continue; const currentParamFilters = filterStates[paramId]; const llmOutput = item.judgeLlmOutput?.[paramId];
-        if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') { const gtDbValue = item.groundTruth?.[paramId]; if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || gtDbValue === undefined || llmOutput.error) { return false; } const isMatch = String(llmOutput.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase(); if (currentParamFilters.matchMismatch === 'match' && !isMatch) return false; if (currentParamFilters.matchMismatch === 'mismatch' && isMatch) return false; }
-        if (currentParamFilters.selectedLabel !== 'all') { if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || llmOutput.error) { return false; } if (String(llmOutput.chosenLabel).trim().toLowerCase() !== String(currentParamFilters.selectedLabel).toLowerCase()) { return false; } } }
-      return true;
+      for (const paramId in filterStates) {
+        // Ensure this paramId is relevant for the current run's configuration.
+        if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) {
+          continue; 
+        }
+
+        const currentParamFilters = filterStates[paramId];
+        const llmOutput = item.judgeLlmOutput?.[paramId];
+
+        // Ground Truth Match/Mismatch Filter
+        if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') {
+          const gtDbValue = item.groundTruth?.[paramId];
+          const hasValidLlmOutputForComparison = llmOutput && typeof llmOutput.chosenLabel === 'string' && !llmOutput.error;
+          const hasValidGtForComparison = gtDbValue !== undefined && gtDbValue !== null && String(gtDbValue).trim() !== '';
+
+          if (!hasValidLlmOutputForComparison || !hasValidGtForComparison) {
+             // If either LLM output or GT is not suitable for comparison, this row doesn't satisfy a specific match/mismatch filter.
+            return false;
+          }
+          const isMatch = String(llmOutput!.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
+          if (currentParamFilters.matchMismatch === 'match' && !isMatch) return false;
+          if (currentParamFilters.matchMismatch === 'mismatch' && isMatch) return false;
+        }
+
+        // LLM Chosen Label Filter
+        if (currentParamFilters.selectedLabel !== 'all') {
+          const hasValidLlmOutputForLabelFilter = llmOutput && typeof llmOutput.chosenLabel === 'string' && !llmOutput.error;
+          if (!hasValidLlmOutputForLabelFilter) {
+            return false; // If no valid label from LLM, it can't match a specific label filter.
+          }
+          const labelMatches = String(llmOutput!.chosenLabel).trim().toLowerCase() === String(currentParamFilters.selectedLabel).toLowerCase();
+          if (!labelMatches) {
+            return false;
+          }
+        }
+      }
+      return true; // Row passes all active filters for all relevant parameters
     });
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
-  // Fetch prompt template text effect is now part of simulateRunExecution's try block
-
-  // Construct the full prompt for the first row effect is now part of simulateRunExecution's try block
 
 
   const displayedPreviewData: Array<Record<string, any>> = runDetails?.previewedDatasetSample || [];
@@ -678,7 +715,7 @@ export default function RunDetailsPage() {
         <Dialog open={isFullPromptDialogVisible} onOpenChange={setIsFullPromptDialogVisible}>
             <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
                 <DialogHeader>
-                    <DialogTitle>Full Prompt for First Row</DialogTitle>
+                    <DialogTitle className="flex items-center"><FileTextIcon className="mr-2 h-5 w-5 text-primary" />Full Prompt for First Row</DialogTitle>
                     <DialogDescription>
                         This is the complete prompt that would be sent to the Judge LLM for the first row of your dataset,
                         including filled product parameters and appended evaluation/summarization criteria.
