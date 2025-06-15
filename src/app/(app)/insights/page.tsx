@@ -75,21 +75,21 @@ interface StoredAnalysisDataForFirestore {
   targetSummarizationDefId?: string;
   targetSummarizationDefName?: string;
   problemCategories: ProblemCategory[] | UserIntentCategory[];
-  overallSummary?: string | null; // Allow null
+  overallSummary?: string | null;
   sourceDataCount: number;
-  productContext?: string;
+  productContext?: string | null;
 }
 
 interface StoredAnalysis extends Omit<StoredAnalysisDataForFirestore, 'createdAt' | 'problemCategories' | 'overallSummary' | 'sourceDataCount' | 'productContext'> {
   id: string;
   createdAt: Timestamp;
   sourceDataCount: number;
-  productContext?: string;
+  productContext?: string | null;
 }
 
 interface StoredAnalysisWithDetails extends StoredAnalysis {
     problemCategories: ProblemCategory[] | UserIntentCategory[];
-    overallSummary?: string | null; // Allow null
+    overallSummary?: string | null;
 }
 
 
@@ -225,18 +225,18 @@ const fetchSingleStoredAnalysisDetails = async (userId: string | null, runId: st
     return null;
 }
 
-const sanitizeForFirestore = (data: any): any => {
+const sanitizeDataForFirestore = (data: any): any => {
   if (Array.isArray(data)) {
-    return data.map(item => sanitizeForFirestore(item));
+    return data.map(item => sanitizeDataForFirestore(item));
   } else if (data !== null && typeof data === 'object') {
     const sanitizedObject: Record<string, any> = {};
     for (const key in data) {
       if (Object.prototype.hasOwnProperty.call(data, key)) {
         const value = data[key];
         if (value === undefined) {
-          sanitizedObject[key] = null; // Convert undefined to null
+          sanitizedObject[key] = null; 
         } else {
-          sanitizedObject[key] = sanitizeForFirestore(value);
+          sanitizedObject[key] = sanitizeDataForFirestore(value);
         }
       }
     }
@@ -282,8 +282,8 @@ export default function AiInsightsPage() {
 
   const addAnalysisLog = (message: string, type: 'info' | 'error' = 'info') => {
     const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
-    console[type === 'error' ? 'error' : 'log'](logEntry); // Keep console log for debugging
-    setAnalysisLog(prev => [...prev, logEntry].slice(-50)); // Keep last 50 logs
+    console[type === 'error' ? 'error' : 'log'](logEntry); 
+    setAnalysisLog(prev => [...prev, logEntry].slice(-50)); 
   };
 
 
@@ -610,15 +610,15 @@ export default function AiInsightsPage() {
     if (!problemAnalysisResult) return;
 
     const categoriesToSave = 'problemCategories' in problemAnalysisResult ? problemAnalysisResult.problemCategories : ('userIntentCategories' in problemAnalysisResult ? problemAnalysisResult.userIntentCategories : []);
-    let overallSummaryToSave: string | undefined | null = undefined; // Allow null
+    let overallSummaryToSave: string | undefined | null = undefined; 
     if ('overallSummary' in problemAnalysisResult && problemAnalysisResult.overallSummary) {
       overallSummaryToSave = problemAnalysisResult.overallSummary;
     } else if ('overallSummaryOfUserIntents' in problemAnalysisResult && problemAnalysisResult.overallSummaryOfUserIntents) {
       overallSummaryToSave = problemAnalysisResult.overallSummaryOfUserIntents;
     }
     
-    const sanitizedCategories = sanitizeForFirestore(categoriesToSave);
-    const sanitizedOverallSummary = overallSummaryToSave === undefined ? null : sanitizeForFirestore(overallSummaryToSave);
+    const sanitizedCategories = sanitizeDataForFirestore(categoriesToSave);
+    const sanitizedOverallSummary = overallSummaryToSave === undefined ? null : sanitizeDataForFirestore(overallSummaryToSave);
 
 
     const dataToSave: Partial<StoredAnalysisDataForFirestore> & Pick<StoredAnalysisDataForFirestore, 'analysisName' | 'createdAt' | 'analysisType' | 'problemCategories' | 'sourceDataCount'> = {
@@ -642,8 +642,10 @@ export default function AiInsightsPage() {
         if (!currentDef) { toast({title: "Error", description: "Cannot save: target summarization def details missing."}); return; }
         dataToSave.targetSummarizationDefId = selectedSummarizationDefId;
         dataToSave.targetSummarizationDefName = currentDef.name;
-        dataToSave.productContext = sanitizeForFirestore(productContextForAnalysis.trim() || undefined);
-        if (dataToSave.productContext === undefined) dataToSave.productContext = null;
+        
+        const productContextValue = productContextForAnalysis.trim();
+        dataToSave.productContext = productContextValue === "" ? null : sanitizeDataForFirestore(productContextValue);
+
     } else {
          toast({title: "Error", description: "Cannot save: target configuration missing for the selected analysis type."}); return;
     }
@@ -680,7 +682,7 @@ export default function AiInsightsPage() {
                     problemCategories: fullAnalysis.problemCategories as ProblemCategory[],
                     overallSummary: fullAnalysis.overallSummary ?? undefined
                 };
-            } else { // analysisType === 'summarization'
+            } else { 
                  resultToSet = { 
                     userIntentCategories: fullAnalysis.problemCategories as UserIntentCategory[],
                     overallSummaryOfUserIntents: fullAnalysis.overallSummary ?? undefined
