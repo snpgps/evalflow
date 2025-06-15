@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { type FC } from 'react'; // Imported React
+import React, { type FC } from 'react'; 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Play, Loader2, DatabaseZap, Wand2, Download, FileSearch, Tags, ClockIcon, CheckCheckIcon, CalendarDaysIcon, InfoIcon } from "lucide-react";
@@ -24,13 +24,17 @@ export interface RunHeaderCardProps {
   isLoadingSuggestion: boolean;
   formatTimestamp: (timestamp?: Timestamp, includeTime?: boolean) => string;
   getStatusBadge: (status?: EvalRun['status']) => JSX.Element;
+  onShowFullPromptClick: () => void; // New prop
+  canShowFullPrompt: boolean; // New prop
+  isLoadingPromptTemplate: boolean; // New prop
 }
 
 const OriginalRunHeaderCard: FC<RunHeaderCardProps> = ({
   runDetails, isPreviewDataLoading, canFetchData, isRunTerminal, canStartLLMTask,
   isLoadingEvalParamsForLLMHook, isLoadingSummarizationDefsForLLMHook,
   canSuggestImprovements, onFetchAndPreviewData, onSimulateRunExecution,
-  onSuggestImprovementsClick, isLoadingSuggestion, formatTimestamp, getStatusBadge
+  onSuggestImprovementsClick, isLoadingSuggestion, formatTimestamp, getStatusBadge,
+  onShowFullPromptClick, canShowFullPrompt, isLoadingPromptTemplate
 }) => {
   const runDuration = runDetails.status === 'Completed' && runDetails.createdAt && runDetails.completedAt 
     ? `${((runDetails.completedAt.toMillis() - runDetails.createdAt.toMillis()) / 1000).toFixed(1)}s` 
@@ -54,6 +58,16 @@ const OriginalRunHeaderCard: FC<RunHeaderCardProps> = ({
                 <Badge variant="outline" className="text-xs"><CalendarDaysIcon className="mr-1.5 h-3 w-3"/>Completed: {formatTimestamp(runDetails.completedAt, true)}</Badge>
               )}
               <Badge variant="outline" className="text-xs"><ClockIcon className="mr-1.5 h-3 w-3"/>Duration: {runDuration}</Badge>
+               <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={onShowFullPromptClick} 
+                  disabled={!canShowFullPrompt || isLoadingPromptTemplate} 
+                  title="View Full Prompt for First Row"
+                  className="h-7 w-7 ml-1" 
+                >
+                  {isLoadingPromptTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : <InfoIcon className="h-4 w-4 text-blue-500" />}
+               </Button>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto self-start md:self-center shrink-0">

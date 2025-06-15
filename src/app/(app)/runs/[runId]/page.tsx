@@ -1,14 +1,16 @@
 
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react'; // Added React
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog } from "lucide-react";
+import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog, InfoIcon as InfoIconLucide } from "lucide-react"; // Added InfoIconLucide
 import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"; // Added Dialog components
+import { ScrollArea } from '@/components/ui/scroll-area'; // Added ScrollArea
 
 import { db, storage } from '@/lib/firebase';
 import { doc, getDoc, getDocs, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp, type FieldValue, query, orderBy } from 'firebase/firestore';
@@ -28,7 +30,7 @@ import { RunConfigTab } from '@/components/run-details/RunConfigTab';
 import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
 import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
 import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
-import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab'; // Added import
+import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab';
 
 
 // Interfaces - Exported for use in child components
@@ -100,6 +102,16 @@ export interface SummarizationDefDetailForPrompt {
     example?: string;
 }
 
+export interface QuestioningItemContext {
+  rowIndex: number;
+  inputData: Record<string, any>;
+  paramId: string;
+  paramName: string;
+  paramDefinition: string;
+  paramLabels?: EvalParamLabelForAnalysis[];
+  judgeLlmOutput: { chosenLabel: string; rationale?: string | null; error?: string };
+  groundTruthLabel?: string;
+}
 
 export interface ParameterChartData {
   parameterId: string;
@@ -131,18 +143,6 @@ export interface ParamFilterState {
   selectedLabel: FilterValueSelectedLabel;
 }
 export type AllFilterStates = Record<string, ParamFilterState>;
-
-// Context for the Question Judgment Dialog
-export interface QuestioningItemContext {
-  rowIndex: number;
-  inputData: Record<string, any>;
-  paramId: string;
-  paramName: string;
-  paramDefinition: string;
-  paramLabels?: EvalParamLabelForAnalysis[];
-  judgeLlmOutput: { chosenLabel: string; rationale?: string | null; error?: string };
-  groundTruthLabel?: string;
-}
 
 
 const MAX_ROWS_FOR_PROCESSING: number = 200;
@@ -305,6 +305,12 @@ export default function RunDetailsPage() {
 
   const [filterStates, setFilterStates] = useState<AllFilterStates>({});
 
+  const [promptTemplateText, setPromptTemplateText] = useState<string | null>(null);
+  const [isLoadingPromptTemplate, setIsLoadingPromptTemplate] = useState<boolean>(false);
+  const [firstRowFullPrompt, setFirstRowFullPrompt] = useState<string | null>(null);
+  const [isFullPromptDialogVisible, setIsFullPromptDialogVisible] = useState<boolean>(false);
+
+
   const formatTimestamp = (timestamp?: Timestamp, includeTime: boolean = false): string => {
     if (!timestamp) return 'N/A';
     return includeTime ? timestamp.toDate().toLocaleString() : timestamp.toDate().toLocaleDateString();
@@ -329,11 +335,11 @@ export default function RunDetailsPage() {
     setIsLoadingUserId(false);
   }, []);
 
-  const addLog = (message: string, type: 'info' | 'error' = 'info'): void => {
+  const addLog = useCallback((message: string, type: 'info' | 'error' = 'info'): void => {
     const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
     if (type === 'error') { console.error(logEntry); } else { console.log(logEntry); }
     setSimulationLog(prev => [...prev, logEntry].slice(-100));
-  };
+  }, []);
 
   const { data: runDetails, isLoading: isLoadingRunDetails, error: fetchRunError, refetch: refetchRunDetails } = useQuery<EvalRun | null, Error>({
     queryKey: ['evalRunDetails', currentUserId, runId],
@@ -373,30 +379,12 @@ export default function RunDetailsPage() {
       setFilterStates(prevFilters => {
         const nextFiltersState: AllFilterStates = { ...prevFilters };
         let filtersChanged = false;
-
-        // Add new filters for parameters not yet in state or if state is empty
-        evalParamDetailsForLLM.forEach(param => {
-          if (!nextFiltersState[param.id]) {
-            nextFiltersState[param.id] = { matchMismatch: 'all', selectedLabel: 'all' };
-            filtersChanged = true;
-          }
-        });
-
-        // Remove filters for parameters that are no longer in evalParamDetailsForLLM
-        Object.keys(nextFiltersState).forEach(paramId => {
-          if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) {
-            delete nextFiltersState[paramId];
-            filtersChanged = true;
-          }
-        });
+        evalParamDetailsForLLM.forEach(param => { if (!nextFiltersState[param.id]) { nextFiltersState[param.id] = { matchMismatch: 'all', selectedLabel: 'all' }; filtersChanged = true; } });
+        Object.keys(nextFiltersState).forEach(paramId => { if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) { delete nextFiltersState[paramId]; filtersChanged = true; } });
         return filtersChanged ? nextFiltersState : prevFilters;
       });
-    } else if ((!evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) && Object.keys(filterStates).length > 0) {
-      // If there are no eval params for the run, clear all filters
-      setFilterStates({});
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [evalParamDetailsForLLM]);
+    } else if ((!evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) && Object.keys(filterStates).length > 0) { setFilterStates({}); }
+  }, [evalParamDetailsForLLM, filterStates]);
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
@@ -458,7 +446,7 @@ export default function RunDetailsPage() {
         toast({ title: "Data Preview Ready", description: `${sanitizedSample.length} rows fetched.`});
     } catch (error: any) { addLog(`Data Preview: Error: ${error.message}`, "error"); setPreviewDataError(error.message); toast({ title: "Preview Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `Data preview failed: ${error.message}` });
     } finally { setIsPreviewDataLoading(false); }
-  }, [currentUserId, runId, runDetails, updateRunMutation]);
+  }, [currentUserId, runId, runDetails, updateRunMutation, addLog]);
 
   const simulateRunExecution = useCallback(async (): Promise<void> => {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0; const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
@@ -556,54 +544,58 @@ export default function RunDetailsPage() {
   const hasMismatches = useMemo((): boolean => { if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; return runDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase(); }) ); }, [runDetails, evalParamDetailsForLLM]);
 
   const handleFilterChange = useCallback((paramId: string, filterType: 'matchMismatch' | 'label', value: FilterValueMatchMismatch | FilterValueSelectedLabel): void => {
-    setFilterStates(prev => {
-      const currentParamState = prev[paramId] || { matchMismatch: 'all', selectedLabel: 'all' };
-      return {
-        ...prev,
-        [paramId]: {
-          ...currentParamState,
-          [filterType]: value,
-        }
-      };
-    });
+    setFilterStates(prev => { const currentParamState = prev[paramId] || { matchMismatch: 'all', selectedLabel: 'all' }; return { ...prev, [paramId]: { ...currentParamState, [filterType]: value, } }; });
   }, []);
 
   const filteredResultsToDisplay = useMemo((): EvalRunResultItem[] => {
-    if (!runDetails?.results) return [];
-    if (Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) {
-      return runDetails.results;
-    }
+    if (!runDetails?.results) return []; if (Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) { return runDetails.results; }
     return runDetails.results.filter(item => {
-      for (const paramId in filterStates) {
-        if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) continue;
-
-        const currentParamFilters = filterStates[paramId];
-        const llmOutput = item.judgeLlmOutput?.[paramId];
-
-        // Match/Mismatch Filter
-        if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') {
-          const gtDbValue = item.groundTruth?.[paramId];
-          if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || gtDbValue === undefined || llmOutput.error) {
-            return false;
-          }
-          const isMatch = String(llmOutput.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
-          if (currentParamFilters.matchMismatch === 'match' && !isMatch) return false;
-          if (currentParamFilters.matchMismatch === 'mismatch' && isMatch) return false;
-        }
-
-        // Label Filter
-        if (currentParamFilters.selectedLabel !== 'all') {
-          if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || llmOutput.error) {
-            return false;
-          }
-          if (String(llmOutput.chosenLabel).trim().toLowerCase() !== String(currentParamFilters.selectedLabel).toLowerCase()) {
-            return false;
-          }
-        }
-      }
+      for (const paramId in filterStates) { if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) continue; const currentParamFilters = filterStates[paramId]; const llmOutput = item.judgeLlmOutput?.[paramId];
+        if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') { const gtDbValue = item.groundTruth?.[paramId]; if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || gtDbValue === undefined || llmOutput.error) { return false; } const isMatch = String(llmOutput.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase(); if (currentParamFilters.matchMismatch === 'match' && !isMatch) return false; if (currentParamFilters.matchMismatch === 'mismatch' && isMatch) return false; }
+        if (currentParamFilters.selectedLabel !== 'all') { if (!llmOutput || typeof llmOutput.chosenLabel !== 'string' || llmOutput.error) { return false; } if (String(llmOutput.chosenLabel).trim().toLowerCase() !== String(currentParamFilters.selectedLabel).toLowerCase()) { return false; } } }
       return true;
     });
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
+
+  // Fetch prompt template text effect
+  useEffect(() => {
+    const fetchText = async () => {
+        if (currentUserId && runDetails?.promptId && runDetails.promptVersionId) {
+            setIsLoadingPromptTemplate(true);
+            try {
+                const text = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
+                setPromptTemplateText(text);
+            } catch (error) {
+                console.error("Error fetching prompt template text:", error);
+                setPromptTemplateText(null);
+            } finally {
+                setIsLoadingPromptTemplate(false);
+            }
+        } else {
+            setPromptTemplateText(null);
+        }
+    };
+    fetchText();
+  }, [currentUserId, runDetails?.promptId, runDetails?.promptVersionId]);
+
+  // Construct the full prompt for the first row effect
+  const constructAndSetFirstRowPrompt = useCallback(() => {
+    if (!runDetails || !promptTemplateText || (!evalParamDetailsForLLM && !summarizationDefDetailsForLLM) || !runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) {
+        setFirstRowFullPrompt(null); return;
+    }
+    const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0; const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
+    if (!hasEvalParams && !hasSummarizationDefs) { setFirstRowFullPrompt(null); return; }
+    const firstRowData = runDetails.previewedDatasetSample[0]; const inputDataForRow: Record<string, any> = {};
+    for (const key in firstRowData) { if (!key.startsWith('_gt_')) { inputDataForRow[key] = firstRowData[key]; } }
+    let fullPrompt = promptTemplateText;
+    for (const productParamName in inputDataForRow) { fullPrompt = fullPrompt.replace( new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName]) ); }
+    let structuredCriteriaText = "";
+    if (hasEvalParams) { structuredCriteriaText += "\n\n--- EVALUATION CRITERIA (LABELING) ---\n"; evalParamDetailsForLLM.forEach(ep => { structuredCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) { structuredCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; } if (ep.labels && ep.labels.length > 0) { structuredCriteriaText += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaText += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaText += " (No specific labels)\n"; } structuredCriteriaText += "\n"; }); structuredCriteriaText += "--- END EVALUATION CRITERIA ---\n"; }
+    if (hasSummarizationDefs) { structuredCriteriaText += "\n\n--- SUMMARIZATION TASKS ---\n"; summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaText += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) { structuredCriteriaText += `Example Hint: "${sd.example}"\n`; } structuredCriteriaText += "Provide summary.\n\n"; }); structuredCriteriaText += "--- END SUMMARIZATION TASKS ---\n"; }
+    fullPrompt += structuredCriteriaText; setFirstRowFullPrompt(fullPrompt);
+  }, [runDetails, promptTemplateText, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
+
+  useEffect(() => { constructAndSetFirstRowPrompt(); }, [constructAndSetFirstRowPrompt]);
 
 
   const displayedPreviewData: Array<Record<string, any>> = runDetails?.previewedDatasetSample || [];
@@ -643,6 +635,9 @@ export default function RunDetailsPage() {
         isLoadingSuggestion={isLoadingSuggestion}
         formatTimestamp={formatTimestamp}
         getStatusBadge={getStatusBadge}
+        onShowFullPromptClick={() => setIsFullPromptDialogVisible(true)}
+        canShowFullPrompt={!!firstRowFullPrompt}
+        isLoadingPromptTemplate={isLoadingPromptTemplate}
       />
 
       {showProgressArea && (
@@ -713,8 +708,28 @@ export default function RunDetailsPage() {
         onSubmitAnalysis={handleSubmitQuestionAnalysis}
         runDetails={runDetails}
       />
+       {isFullPromptDialogVisible && (
+        <Dialog open={isFullPromptDialogVisible} onOpenChange={setIsFullPromptDialogVisible}>
+            <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
+                <DialogHeader>
+                    <DialogTitle>Full Prompt for First Row</DialogTitle>
+                    <DialogDescription>
+                        This is the complete prompt that would be sent to the Judge LLM for the first row of your dataset,
+                        including filled product parameters and appended evaluation/summarization criteria.
+                    </DialogDescription>
+                </DialogHeader>
+                <ScrollArea className="flex-1 my-4 border rounded-md">
+                    <pre className="text-xs whitespace-pre-wrap p-4">
+                        {firstRowFullPrompt || (isLoadingPromptTemplate ? "Loading prompt template..." : "Prompt could not be constructed. Check configuration and data.")}
+                    </pre>
+                </ScrollArea>
+                <DialogFooter>
+                    <Button onClick={() => setIsFullPromptDialogVisible(false)}>Close</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
   return pageJSX;
 }
-
