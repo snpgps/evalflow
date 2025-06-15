@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, Tag, Loader2, Target, AlertTriangle, AlignLeft, PanelLeftClose, PanelRightOpen } from "lucide-react";
+import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, Tag, Loader2, Target, AlertTriangle, AlignLeft, PanelLeftClose, PanelRightOpen, HelpCircle } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { db } from '@/lib/firebase';
@@ -154,6 +154,7 @@ export default function PromptsPage() {
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [isPromptListCollapsed, setIsPromptListCollapsed] = useState(false);
+  const [isInstructionsDialogOpen, setIsInstructionsDialogOpen] = useState(false);
 
 
   useEffect(() => {
@@ -271,9 +272,9 @@ const defaultInitialPromptTemplate = `You are an AI assistant. Your task is to a
 --- END PRODUCT INPUT DATA ---
 
 --- DETAILED INSTRUCTIONS & CRITERIA ---
-(This is where you will insert the structured details for Evaluation Parameters and Summarization Definitions using the "Insert" buttons from the sidebar. The LLM will use these definitions to make its judgments and generate summaries.)
+(This is where the system will insert the structured details for Evaluation Parameters and Summarization Definitions based on your selections in the 'Eval Run' setup. The LLM will use these definitions to make its judgments and generate summaries.)
 
-Example of how Evaluation Parameter details will look when inserted:
+Example of how Evaluation Parameter details will look when inserted by the system:
 --- EVALUATION PARAMETER: [Parameter Name] ---
 ID: [Parameter ID]
 Definition: [Parameter Definition]
@@ -287,7 +288,7 @@ Relevant Categorization Labels:
     Definition: "[Label Definition 2]"
 --- END EVALUATION PARAMETER: [Parameter Name] ---
 
-Example of how Summarization Task details will look when inserted:
+Example of how Summarization Task details will look when inserted by the system:
 --- SUMMARIZATION TASK: [Task Name] ---
 ID: [Task ID]
 Definition: [Task Definition]
@@ -295,17 +296,7 @@ Example Output Hint: "[Example Hint]"
 Based on the input, provide a concise summary for "[Task Name]" that adheres to the above definition. Your summary should be a single block of text.
 --- END SUMMARIZATION TASK: [Task Name] ---
 
-INSTRUCTIONS FOR YOUR RESPONSE:
-Your entire response MUST be a JSON array. Each object in the array must have a "parameterId" key (for Evaluation Parameters) or a "summarizationId" key (for Summarization Tasks).
-- For Evaluation Parameters: Include "chosenLabel" and, if requested for that parameter, a "rationale".
-- For Summarization Tasks: Include "generatedSummary".
-
-Do NOT include any other text before or after the JSON array.
-Example Format:
-[
-  { "parameterId": "eval_param_id_1", "chosenLabel": "Accurate", "rationale": "The response directly answered the query." },
-  { "summarizationId": "summary_task_id_abc", "generatedSummary": "The user is asking about order status." }
-]
+(The system will automatically instruct the Judge LLM on the required JSON output format. You do not need to specify JSON structure here.)
 `;
 
   const addPromptTemplateMutation = useMutation<string, Error, { name: string; description: string }>({
@@ -712,6 +703,55 @@ Example Format:
                   ))}
                 </SelectContent>
               </Select>
+               <Dialog open={isInstructionsDialogOpen} onOpenChange={setIsInstructionsDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="w-full sm:w-auto" title="Prompting Instructions">
+                    <HelpCircle className="mr-2 h-4 w-4" /> Instructions
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2"><HelpCircle className="text-primary"/>Prompt Engineering Instructions for EvalFlow</DialogTitle>
+                    </DialogHeader>
+                    <ScrollArea className="flex-1 pr-2 -mr-2">
+                      <div className="space-y-3 text-sm py-2">
+                          <p>Your prompt should clearly instruct the AI on how to analyze the provided "Product Input Data" and then perform tasks based on the "Detailed Instructions & Criteria" section, which will be automatically populated by the system.</p>
+                          
+                          <h3 className="font-semibold mt-2">1. Using Product Parameters:</h3>
+                          <ul className="list-disc pl-5 space-y-1 text-xs">
+                              <li>In the "Product Input Data" section of your template, reference parameters defined in "Schema Definition" using Handlebars-like syntax: <code>{`{{ParameterName}}`}</code>.</li>
+                              <li>Example: <code>User Query: {`{{UserQuery}}`}</code></li>
+                              <li>The system replaces these with actual data during evaluation runs.</li>
+                          </ul>
+
+                          <h3 className="font-semibold mt-2">2. Evaluation Parameters & Summarization Definitions:</h3>
+                           <ul className="list-disc pl-5 space-y-1 text-xs">
+                              <li>You do <strong className="text-primary">not</strong> need to manually write out the full definitions for these in your prompt template.</li>
+                              <li>When you create an "Eval Run", you will select which Evaluation Parameters and Summarization Definitions to include.</li>
+                              <li>The system will then <strong className="text-primary">automatically inject</strong> their full details (ID, Name, Definition, Labels, Examples, Rationale requirement) into the "Detailed Instructions & Criteria" section of the prompt *before* it's sent to the Judge LLM.</li>
+                              <li>Your prompt template should simply have a placeholder or a general instruction for the AI to pay attention to this section. The default template includes:
+                                  <pre className="bg-muted p-2 rounded-md text-xs my-1 overflow-x-auto">
+{`--- DETAILED INSTRUCTIONS & CRITERIA ---
+(This is where the system will insert the structured details for Evaluation Parameters and Summarization Definitions. The LLM will use these definitions to make its judgments and generate summaries.)`}
+                                  </pre>
+                              </li>
+                              <li>The Judge LLM is <strong className="text-primary">already instructed by the system</strong> to output a JSON array. You do not need to repeat JSON formatting instructions in your template.</li>
+                          </ul>
+                          
+                          <h3 className="font-semibold mt-2">3. Best Practices:</h3>
+                          <ul className="list-disc pl-5 space-y-1 text-xs">
+                              <li><strong>Be Clear and Specific:</strong> Avoid ambiguity.</li>
+                              <li><strong>Provide Context:</strong> Briefly explain the overall task if it helps.</li>
+                              <li><strong>Role-Playing:</strong> You can assign a role (e.g., "You are an expert customer service analyst...").</li>
+                              <li><strong>Iterate:</strong> Use the "AI Insights" page for suggestions.</li>
+                          </ul>
+                      </div>
+                    </ScrollArea>
+                    <DialogFooter className="mt-auto pt-4 border-t">
+                        <Button onClick={() => setIsInstructionsDialogOpen(false)}>Close</Button>
+                    </DialogFooter>
+                </DialogContent>
+              </Dialog>
               <Button size="sm" variant="outline" onClick={handleCreateNewVersion} disabled={!selectedPrompt || addPromptVersionMutation.isPending} className="w-full sm:w-auto">
                 {addPromptVersionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <GitBranchPlus className="mr-2 h-4 w-4" />} New Version
               </Button>
