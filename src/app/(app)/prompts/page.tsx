@@ -255,6 +255,58 @@ export default function PromptsPage() {
     }
   }, [promptsData, selectedPromptId, selectedVersionId]);
 
+const defaultInitialPromptTemplate = `You are an AI assistant. Your task is to analyze the provided input data and then perform two types of tasks:
+1.  **Evaluation Labeling**: For each specified Evaluation Parameter, choose the most appropriate label based on its definition and the input data.
+2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.
+
+--- PRODUCT INPUT DATA ---
+{{#if productParameters.length}}
+{{#each productParameters}}
+- {{this.name}}: {{{this.name}}}
+{{/each}}
+{{else}}
+(No product parameters seem to be defined in the system. Please define them in Schema Definition and then reference them here using {{ParameterName}} syntax.)
+{{/if}}
+(Note: If you have product parameters, replace '{{this.name}}' above with the actual variable names you defined in Schema Definition, e.g., {{UserQuery}}, {{ProductDescription}})
+--- END PRODUCT INPUT DATA ---
+
+--- DETAILED INSTRUCTIONS & CRITERIA ---
+(This is where you will insert the structured details for Evaluation Parameters and Summarization Definitions using the "Insert" buttons from the sidebar. The LLM will use these definitions to make its judgments and generate summaries.)
+
+Example of how Evaluation Parameter details will look when inserted:
+--- EVALUATION PARAMETER: [Parameter Name] ---
+ID: [Parameter ID]
+Definition: [Parameter Definition]
+IMPORTANT: For this parameter ([Parameter Name]), when providing your evaluation, you MUST include a 'rationale' explaining your choice. (This line appears if rationale is required for this parameter)
+
+Relevant Categorization Labels:
+  - Label: "[Label Name 1]"
+    Definition: "[Label Definition 1]"
+    Example: "[Example 1]"
+  - Label: "[Label Name 2]"
+    Definition: "[Label Definition 2]"
+--- END EVALUATION PARAMETER: [Parameter Name] ---
+
+Example of how Summarization Task details will look when inserted:
+--- SUMMARIZATION TASK: [Task Name] ---
+ID: [Task ID]
+Definition: [Task Definition]
+Example Output Hint: "[Example Hint]"
+Based on the input, provide a concise summary for "[Task Name]" that adheres to the above definition. Your summary should be a single block of text.
+--- END SUMMARIZATION TASK: [Task Name] ---
+
+INSTRUCTIONS FOR YOUR RESPONSE:
+Your entire response MUST be a JSON array. Each object in the array must have a "parameterId" key (for Evaluation Parameters) or a "summarizationId" key (for Summarization Tasks).
+- For Evaluation Parameters: Include "chosenLabel" and, if requested for that parameter, a "rationale".
+- For Summarization Tasks: Include "generatedSummary".
+
+Do NOT include any other text before or after the JSON array.
+Example Format:
+[
+  { "parameterId": "eval_param_id_1", "chosenLabel": "Accurate", "rationale": "The response directly answered the query." },
+  { "summarizationId": "summary_task_id_abc", "generatedSummary": "The user is asking about order status." }
+]
+`;
 
   const addPromptTemplateMutation = useMutation<string, Error, { name: string; description: string }>({
     mutationFn: async ({ name, description }) => {
@@ -270,7 +322,7 @@ export default function PromptsPage() {
 
       const initialVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', newPromptRef.id, 'versions'), {
         versionNumber: 1,
-        template: "Your initial prompt template here. Use {{variable_name}} for product parameters. You can also insert structured evaluation parameter details.",
+        template: defaultInitialPromptTemplate,
         notes: 'Initial version',
         createdAt: serverTimestamp(),
       });
@@ -861,3 +913,4 @@ export default function PromptsPage() {
     </div>
   );
 }
+
