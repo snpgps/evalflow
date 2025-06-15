@@ -444,25 +444,35 @@ export default function DatasetsPage() {
     }
   };
 
-  const handleMappingDialogColumnMappingChange = (schemaParamName: string, sheetColumnName: string | undefined) => {
+  const handleMappingDialogColumnMappingChange = (schemaParamName: string, selectedIndexStr: string | undefined) => {
     setMappingDialogCurrentColumnMapping(prev => {
         const newMapping = { ...prev };
-        if (sheetColumnName === undefined || sheetColumnName === null || sheetColumnName === '') { // Also treat empty string as unsetting
+        if (selectedIndexStr === undefined || selectedIndexStr === null || selectedIndexStr === '') {
             delete newMapping[schemaParamName];
         } else {
-            newMapping[schemaParamName] = sheetColumnName;
+            const selectedIndex = parseInt(selectedIndexStr, 10);
+            if (!isNaN(selectedIndex) && selectedIndex >= 0 && selectedIndex < mappingDialogSheetColumnHeaders.length) {
+                newMapping[schemaParamName] = mappingDialogSheetColumnHeaders[selectedIndex];
+            } else {
+                 delete newMapping[schemaParamName]; // Invalid index
+            }
         }
         return newMapping;
     });
   };
 
-  const handleMappingDialogGtMappingChange = (evalParamId: string, sheetColumnName: string | undefined) => {
+  const handleMappingDialogGtMappingChange = (evalParamId: string, selectedIndexStr: string | undefined) => {
     setMappingDialogCurrentGtMapping(prev => {
         const newMapping = { ...prev };
-        if (sheetColumnName === undefined || sheetColumnName === null || sheetColumnName === '') { // Also treat empty string as unsetting
+        if (selectedIndexStr === undefined || selectedIndexStr === null || selectedIndexStr === '') {
             delete newMapping[evalParamId];
         } else {
-            newMapping[evalParamId] = sheetColumnName;
+            const selectedIndex = parseInt(selectedIndexStr, 10);
+            if (!isNaN(selectedIndex) && selectedIndex >= 0 && selectedIndex < mappingDialogSheetColumnHeaders.length) {
+                newMapping[evalParamId] = mappingDialogSheetColumnHeaders[selectedIndex];
+            } else {
+                delete newMapping[evalParamId]; // Invalid index
+            }
         }
         return newMapping;
     });
@@ -786,25 +796,31 @@ export default function DatasetsPage() {
                         </p>
                         <Card className="p-4 bg-muted/30 max-h-60 overflow-y-auto">
                            <div className="space-y-3">
-                            {productParametersForMapping.map(param => (
-                              <div key={param.id} className="grid grid-cols-2 gap-2 items-center">
-                                <Label htmlFor={`map-dialog-${param.id}`} className="text-sm font-medium truncate" title={param.name}>{param.name}:</Label>
-                                <Select
-                                  value={mappingDialogCurrentColumnMapping[param.name]}
-                                  onValueChange={(value) => handleMappingDialogColumnMappingChange(param.name, value === '' ? undefined : value)}
-                                >
-                                  <SelectTrigger id={`map-dialog-${param.id}`} className="h-9 text-xs">
-                                    <SelectValue placeholder="Select column" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {mappingDialogSheetColumnHeaders
-                                      .filter(col => col && String(col).trim() !== '')
-                                      .map((col, index) => <SelectItem key={`map-col-header-${index}`} value={col}>{col}</SelectItem>)
-                                    }
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            ))}
+                            {productParametersForMapping.map(param => {
+                               const currentMappedColumnName = mappingDialogCurrentColumnMapping[param.name];
+                               const selectedIndex = currentMappedColumnName !== undefined
+                                 ? mappingDialogSheetColumnHeaders.findIndex(header => header === currentMappedColumnName)
+                                 : -1;
+                              return (
+                                <div key={param.id} className="grid grid-cols-2 gap-2 items-center">
+                                  <Label htmlFor={`map-dialog-${param.id}`} className="text-sm font-medium truncate" title={param.name}>{param.name}:</Label>
+                                  <Select
+                                    value={selectedIndex !== -1 ? selectedIndex.toString() : ""}
+                                    onValueChange={(value) => handleMappingDialogColumnMappingChange(param.name, value === '' ? undefined : value)}
+                                  >
+                                    <SelectTrigger id={`map-dialog-${param.id}`} className="h-9 text-xs">
+                                      <SelectValue placeholder="Select column" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {mappingDialogSheetColumnHeaders
+                                        .filter(col => col && String(col).trim() !== '')
+                                        .map((col, index) => <SelectItem key={`map-col-header-${index}`} value={index.toString()}>{col}</SelectItem>)
+                                      }
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              );
+                            })}
                           </div>
                         </Card>
                       </div>
@@ -822,25 +838,31 @@ export default function DatasetsPage() {
                         </p>
                         <Card className="p-4 bg-muted/30 max-h-60 overflow-y-auto">
                            <div className="space-y-3">
-                            {evaluationParametersForGtMapping.map(evalParam => (
-                              <div key={`gt-${evalParam.id}`} className="grid grid-cols-2 gap-2 items-center">
-                                <Label htmlFor={`gt-map-dialog-${evalParam.id}`} className="text-sm font-medium truncate" title={evalParam.name}>{evalParam.name}:</Label>
-                                <Select
-                                  value={mappingDialogCurrentGtMapping[evalParam.id]}
-                                  onValueChange={(value) => handleMappingDialogGtMappingChange(evalParam.id, value === '' ? undefined : value)}
-                                >
-                                  <SelectTrigger id={`gt-map-dialog-${evalParam.id}`} className="h-9 text-xs">
-                                    <SelectValue placeholder="Select GT column" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {mappingDialogSheetColumnHeaders
-                                      .filter(col => col && String(col).trim() !== '')
-                                      .map((col, index) => <SelectItem key={`gt-map-col-header-${index}`} value={col}>{col}</SelectItem>)
-                                    }
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            ))}
+                            {evaluationParametersForGtMapping.map(evalParam => {
+                              const currentMappedGtColumnName = mappingDialogCurrentGtMapping[evalParam.id];
+                              const selectedGtIndex = currentMappedGtColumnName !== undefined
+                                ? mappingDialogSheetColumnHeaders.findIndex(header => header === currentMappedGtColumnName)
+                                : -1;
+                              return (
+                                <div key={`gt-${evalParam.id}`} className="grid grid-cols-2 gap-2 items-center">
+                                  <Label htmlFor={`gt-map-dialog-${evalParam.id}`} className="text-sm font-medium truncate" title={evalParam.name}>{evalParam.name}:</Label>
+                                  <Select
+                                    value={selectedGtIndex !== -1 ? selectedGtIndex.toString() : ""}
+                                    onValueChange={(value) => handleMappingDialogGtMappingChange(evalParam.id, value === '' ? undefined : value)}
+                                  >
+                                    <SelectTrigger id={`gt-map-dialog-${evalParam.id}`} className="h-9 text-xs">
+                                      <SelectValue placeholder="Select GT column" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {mappingDialogSheetColumnHeaders
+                                        .filter(col => col && String(col).trim() !== '')
+                                        .map((col, index) => <SelectItem key={`gt-map-col-header-${index}`} value={index.toString()}>{col}</SelectItem>)
+                                      }
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              );
+                            })}
                           </div>
                         </Card>
                       </div>
