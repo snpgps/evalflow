@@ -227,7 +227,7 @@ const fetchEvaluationParameterDetailsForPrompt = async (userId: string | null, p
 };
 
 const fetchSummarizationDefDetailsForPrompt = async (userId: string | null, defIds: string[]): Promise<SummarizationDefDetailForPrompt[]> => {
-    if (!userId || !defIds || defIds.length === 0) return [];
+    if (!userId || !defIds || !defIds || defIds.length === 0) return [];
     const details: SummarizationDefDetailForPrompt[] = [];
     const defsCollectionRef = collection(db, 'users', userId, 'summarizationDefinitions');
     for (const defId of defIds) {
@@ -261,7 +261,7 @@ const fetchProductParametersForSchema = async (userId: string | null): Promise<P
 };
 
 const fetchContextDocumentDetailsForRun = async (userId: string | null, docIds: string[]): Promise<ContextDocumentDisplayDetail[]> => {
-    if (!userId || !docIds || docIds.length === 0) return [];
+    if (!userId || !docIds || !docIds || docIds.length === 0) return [];
     const details: ContextDocumentDisplayDetail[] = [];
     const contextDocsCollectionRef = collection(db, 'users', userId, 'contextDocuments');
     for (const docId of docIds) {
@@ -364,7 +364,7 @@ export default function RunDetailsPage() {
   const { data: summarizationDefDetailsForLLM = [], isLoading: isLoadingSummarizationDefsForLLMHook } = useQuery<SummarizationDefDetailForPrompt[], Error>({
     queryKey: ['summarizationDefDetailsForLLM', currentUserId, runDetails?.selectedSummarizationDefIds?.join(',')],
     queryFn: async () => {
-        if (!currentUserId || !runDetails?.selectedSummarizationDefIds || runDetails.selectedSummarizationDefIds.length === 0) return [];
+        if (!currentUserId || !runDetails?.selectedSummarizationDefIds || !runDetails.selectedSummarizationDefIds || runDetails.selectedSummarizationDefIds.length === 0) return [];
         addLog("Fetching summarization definition details for LLM/UI...");
         const details = await fetchSummarizationDefDetailsForPrompt(currentUserId, runDetails.selectedSummarizationDefIds);
         addLog(`Fetched ${details.length} summarization definition details.`);
@@ -389,7 +389,7 @@ export default function RunDetailsPage() {
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
     queryKey: ['selectedContextDocDetails', currentUserId, runDetails?.selectedContextDocumentIds?.join(',')],
-    queryFn: () => { if (!currentUserId || !runDetails?.selectedContextDocumentIds || runDetails.selectedContextDocumentIds.length === 0) return []; return fetchContextDocumentDetailsForRun(currentUserId, runDetails.selectedContextDocumentIds); },
+    queryFn: () => { if (!currentUserId || !runDetails?.selectedContextDocumentIds || !runDetails.selectedContextDocumentIds || runDetails.selectedContextDocumentIds.length === 0) return []; return fetchContextDocumentDetailsForRun(currentUserId, runDetails.selectedContextDocumentIds); },
     enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
     staleTime: Infinity,
   });
@@ -454,7 +454,8 @@ export default function RunDetailsPage() {
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start", description: "No dataset sample.", variant: "destructive"}); addLog("Error: No previewed data.", "error"); return; }
     updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [] }); setSimulationLog([]); addLog("LLM task init."); let collectedResults: EvalRunResultItem[] = [];
     try {
-      const promptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateText) throw new Error("Failed to fetch prompt template.");
+      const promptTemplateTextFetched = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!promptTemplateTextFetched) throw new Error("Failed to fetch prompt template.");
+      setPromptTemplateText(promptTemplateTextFetched); 
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
       if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
@@ -464,10 +465,11 @@ export default function RunDetailsPage() {
         const batchPromises = currentBatchRows.map(async (rawRowFromPreview, indexInBatch) => {
           const overallRowIndex = batchStartIndex + indexInBatch; const inputDataForRow: Record<string, any> = {}; const groundTruthDataForRow: Record<string, string> = {};
           for (const key in rawRowFromPreview) { if (key.startsWith('_gt_')) { groundTruthDataForRow[key.substring('_gt_'.length)] = String(rawRowFromPreview[key]); } else { inputDataForRow[key] = rawRowFromPreview[key]; } }
-          let fullPromptForLLM = promptTemplateText; for (const productParamName in inputDataForRow) { fullPromptForLLM = fullPromptForLLM.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName])); }
+          let fullPromptForLLM = promptTemplateTextFetched; for (const productParamName in inputDataForRow) { fullPromptForLLM = fullPromptForLLM.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName])); }
           let structuredCriteriaText = ""; if (hasEvalParams) { structuredCriteriaText += "\n\n--- EVALUATION CRITERIA (LABELING) ---\n"; evalParamDetailsForLLM.forEach(ep => { structuredCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaText += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaText += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaText += " (No specific labels)\n"; } structuredCriteriaText += "\n"; }); structuredCriteriaText += "--- END EVALUATION CRITERIA ---\n"; }
           if (hasSummarizationDefs) { structuredCriteriaText += "\n\n--- SUMMARIZATION TASKS ---\n"; summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaText += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) structuredCriteriaText += `Example Hint: "${sd.example}"\n`; structuredCriteriaText += "Provide summary.\n\n"; }); structuredCriteriaText += "--- END SUMMARIZATION TASKS ---\n"; }
           fullPromptForLLM += structuredCriteriaText;
+          if (overallRowIndex === 0) { setFirstRowFullPrompt(fullPromptForLLM); }
           const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [], summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [], parameterIdsRequiringRationale: parameterIdsRequiringRationale, modelName: runDetails.modelIdentifierForGenkit || undefined, modelConnectorProvider: runDetails.modelConnectorProvider, modelConnectorConfigString: runDetails.modelConnectorConfigString, };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex }; if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
           try { addLog(`Sending row ${overallRowIndex + 1} to Judge LLM (Provider: ${runDetails.modelConnectorProvider || 'Genkit Default'})...`); const judgeOutput = await judgeLlmEvaluation(genkitInput); addLog(`Row ${overallRowIndex + 1} responded.`); itemResultShell.judgeLlmOutput = judgeOutput;
@@ -557,45 +559,9 @@ export default function RunDetailsPage() {
     });
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
-  // Fetch prompt template text effect
-  useEffect(() => {
-    const fetchText = async () => {
-        if (currentUserId && runDetails?.promptId && runDetails.promptVersionId) {
-            setIsLoadingPromptTemplate(true);
-            try {
-                const text = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
-                setPromptTemplateText(text);
-            } catch (error) {
-                console.error("Error fetching prompt template text:", error);
-                setPromptTemplateText(null);
-            } finally {
-                setIsLoadingPromptTemplate(false);
-            }
-        } else {
-            setPromptTemplateText(null);
-        }
-    };
-    fetchText();
-  }, [currentUserId, runDetails?.promptId, runDetails?.promptVersionId]);
+  // Fetch prompt template text effect is now part of simulateRunExecution's try block
 
-  // Construct the full prompt for the first row effect
-  const constructAndSetFirstRowPrompt = useCallback(() => {
-    if (!runDetails || !promptTemplateText || (!evalParamDetailsForLLM && !summarizationDefDetailsForLLM) || !runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) {
-        setFirstRowFullPrompt(null); return;
-    }
-    const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0; const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
-    if (!hasEvalParams && !hasSummarizationDefs) { setFirstRowFullPrompt(null); return; }
-    const firstRowData = runDetails.previewedDatasetSample[0]; const inputDataForRow: Record<string, any> = {};
-    for (const key in firstRowData) { if (!key.startsWith('_gt_')) { inputDataForRow[key] = firstRowData[key]; } }
-    let fullPrompt = promptTemplateText;
-    for (const productParamName in inputDataForRow) { fullPrompt = fullPrompt.replace( new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName]) ); }
-    let structuredCriteriaText = "";
-    if (hasEvalParams) { structuredCriteriaText += "\n\n--- EVALUATION CRITERIA (LABELING) ---\n"; evalParamDetailsForLLM.forEach(ep => { structuredCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) { structuredCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; } if (ep.labels && ep.labels.length > 0) { structuredCriteriaText += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaText += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaText += " (No specific labels)\n"; } structuredCriteriaText += "\n"; }); structuredCriteriaText += "--- END EVALUATION CRITERIA ---\n"; }
-    if (hasSummarizationDefs) { structuredCriteriaText += "\n\n--- SUMMARIZATION TASKS ---\n"; summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaText += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) { structuredCriteriaText += `Example Hint: "${sd.example}"\n`; } structuredCriteriaText += "Provide summary.\n\n"; }); structuredCriteriaText += "--- END SUMMARIZATION TASKS ---\n"; }
-    fullPrompt += structuredCriteriaText; setFirstRowFullPrompt(fullPrompt);
-  }, [runDetails, promptTemplateText, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
-
-  useEffect(() => { constructAndSetFirstRowPrompt(); }, [constructAndSetFirstRowPrompt]);
+  // Construct the full prompt for the first row effect is now part of simulateRunExecution's try block
 
 
   const displayedPreviewData: Array<Record<string, any>> = runDetails?.previewedDatasetSample || [];
