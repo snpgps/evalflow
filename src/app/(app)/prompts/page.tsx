@@ -256,7 +256,11 @@ export default function PromptsPage() {
     }
   }, [promptsData, selectedPromptId, selectedVersionId]);
 
-const defaultInitialPromptTemplate = `You are an AI assistant. Your task is to analyze the provided input data and then perform two types of tasks:
+const defaultInitialPromptTemplate = `You are a judge for Meesho's [Product Name & Description].
+Example: (Remove this example from your prompt)
+'You're a judge for Meesho's Customer Support Voice Bot. This bot helps Meesho App Users answer their question around order status, refund status, and any other questions that the user might have about the Meesho App or Ecosystem.'
+
+Your task is to analyze the provided input data and then perform two types of tasks:
 1.  **Evaluation Labeling**: For each specified Evaluation Parameter, choose the most appropriate label based on its definition and the input data.
 2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.
 
@@ -266,7 +270,7 @@ Your input data and definition goes here. Insert the input data here with a defi
 --- END PRODUCT INPUT DATA ---
 
 --- DETAILED INSTRUCTIONS & CRITERIA ---
-(This is where the system will append the structured details for Evaluation Parameters and Summarization Definitions based on your selections in the 'Eval Run' setup. The LLM will use these definitions to make its judgments and generate summaries. You do not need to specify JSON output structure here; the system handles that.)
+The prompt will be automatically modified to add the eval & summarisation parameters which you selected for your eval run here. You don't need to add any definition here.
 `;
 
   const addPromptTemplateMutation = useMutation<string, Error, { name: string; description: string }>({
@@ -702,7 +706,7 @@ Your input data and definition goes here. Insert the input data here with a defi
                               <li className="break-words">Your prompt template should simply have a placeholder or a general instruction for the AI to pay attention to this system-appended section. The default template includes:
                                   <pre className="bg-muted p-2 rounded-md text-xs my-1 whitespace-pre-wrap overflow-x-auto">
 {`--- DETAILED INSTRUCTIONS & CRITERIA ---
-(This is where the system will append the structured details for Evaluation Parameters and Summarization Definitions based on your selections in the 'Eval Run' setup. The LLM will use these definitions to make its judgments and generate summaries. You do not need to specify JSON output structure here; the system handles that.)`}
+The prompt will be automatically modified to add the eval & summarisation parameters which you selected for your eval run here. You don't need to add any definition here.`}
                                   </pre>
                               </li>
                               <li className="break-words">The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (in the `judge-llm-evaluation-flow.ts`) to output a JSON array. You do not need to repeat JSON formatting instructions in your template.</li>
