@@ -261,14 +261,8 @@ const defaultInitialPromptTemplate = `You are an AI assistant. Your task is to a
 2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.
 
 --- PRODUCT INPUT DATA ---
-{{#if productParameters.length}}
-{{#each productParameters}}
-- {{this.name}}: {{{this.name}}}
-{{/each}}
-{{else}}
-(No product parameters seem to be defined in the system. Please define them in Schema Definition and then reference them here using {{ParameterName}} syntax.)
-{{/if}}
-(Note: If you have product parameters, replace '{{this.name}}' above with the actual variable names you defined in Schema Definition, e.g., {{UserQuery}}, {{ProductDescription}})
+Your input data and definition goes here. Insert the input data here with a definition here. For example, if you're analysing a chatbot, the user chat and metadata that your bot used for the conversation with go here.
+(Use the "Product Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.)
 --- END PRODUCT INPUT DATA ---
 
 --- DETAILED INSTRUCTIONS & CRITERIA ---
@@ -695,31 +689,31 @@ const defaultInitialPromptTemplate = `You are an AI assistant. Your task is to a
                           
                           <h3 className="font-semibold mt-2">1. Using Product Parameters (Your Inputs):</h3>
                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li>In the "Product Input Data" section of your template, reference parameters you defined in "Schema Definition" using Handlebars-like syntax: <code>{`{{ParameterName}}`}</code>.</li>
-                              <li>Example: <code>User Query: {`{{UserQuery}}`}</code></li>
-                              <li>The system replaces these with actual data from your dataset during evaluation runs.</li>
+                              <li className="break-words">In the "Product Input Data" section of your template, reference parameters you defined in "Schema Definition" using Handlebars-like syntax: <code>{`{{ParameterName}}`}</code>.</li>
+                              <li className="break-words">Example: <code>User Query: {`{{UserQuery}}`}</code></li>
+                              <li className="break-words">The system replaces these with actual data from your dataset during evaluation runs.</li>
                           </ul>
 
                           <h3 className="font-semibold mt-2">2. Evaluation Parameters & Summarization Definitions (System-Provided Criteria):</h3>
                            <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li>You do <strong className="text-primary">not</strong> need to manually write out the full definitions for these in your prompt template.</li>
-                              <li>When you create an "Eval Run", you will select which Evaluation Parameters and Summarization Definitions to include.</li>
-                              <li>The system will then take your prompt (with product data filled in) and <strong className="text-primary">append</strong> a section containing the full details (ID, Name, Definition, Labels, Examples, Rationale requirement) for each selected Evaluation Parameter and Summarization Definition.</li>
-                              <li>Your prompt template should simply have a placeholder or a general instruction for the AI to pay attention to this system-appended section. The default template includes:
+                              <li className="break-words">You do <strong className="text-primary">not</strong> need to manually write out the full definitions for these in your prompt template.</li>
+                              <li className="break-words">When you create an "Eval Run", you will select which Evaluation Parameters and Summarization Definitions to include.</li>
+                              <li className="break-words">The system will then take your prompt (with product data filled in) and <strong className="text-primary">append</strong> a section containing the full details (ID, Name, Definition, Labels, Examples, Rationale requirement) for each selected Evaluation Parameter and Summarization Definition.</li>
+                              <li className="break-words">Your prompt template should simply have a placeholder or a general instruction for the AI to pay attention to this system-appended section. The default template includes:
                                   <pre className="bg-muted p-2 rounded-md text-xs my-1 whitespace-pre-wrap overflow-x-auto">
 {`--- DETAILED INSTRUCTIONS & CRITERIA ---
 (This is where the system will append the structured details for Evaluation Parameters and Summarization Definitions based on your selections in the 'Eval Run' setup. The LLM will use these definitions to make its judgments and generate summaries. You do not need to specify JSON output structure here; the system handles that.)`}
                                   </pre>
                               </li>
-                              <li>The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (in the `judge-llm-evaluation-flow.ts`) to output a JSON array. You do not need to repeat JSON formatting instructions in your template.</li>
+                              <li className="break-words">The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (in the `judge-llm-evaluation-flow.ts`) to output a JSON array. You do not need to repeat JSON formatting instructions in your template.</li>
                           </ul>
                           
                           <h3 className="font-semibold mt-2">3. Best Practices for Your Template:</h3>
                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li><strong>Be Clear and Specific:</strong> Avoid ambiguity in your instructions.</li>
-                              <li><strong>Provide Context:</strong> Briefly explain the overall task if it helps the AI understand the product inputs.</li>
-                              <li><strong>Role-Playing:</strong> You can assign a role (e.g., "You are an expert customer service analyst...").</li>
-                              <li><strong>Iterate:</strong> Use the "AI Insights" page for suggestions to improve your prompt based on evaluation results.</li>
+                              <li className="break-words"><strong>Be Clear and Specific:</strong> Avoid ambiguity in your instructions.</li>
+                              <li className="break-words"><strong>Provide Context:</strong> Briefly explain the overall task if it helps the AI understand the product inputs.</li>
+                              <li className="break-words"><strong>Role-Playing:</strong> You can assign a role (e.g., "You are an expert customer service analyst...").</li>
+                              <li className="break-words"><strong>Iterate:</strong> Use the "AI Insights" page for suggestions to improve your prompt based on evaluation results.</li>
                           </ul>
                       </div>
                     </ScrollArea>
