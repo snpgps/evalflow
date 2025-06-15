@@ -745,126 +745,129 @@ export default function DatasetsPage() {
       </Dialog>
 
       <Dialog open={isMappingDialogOpen} onOpenChange={(isOpen) => {setIsMappingDialogOpen(isOpen); if(!isOpen) resetMappingDialogState();}}>
-        <DialogContent className="sm:max-w-2xl"> {/* Increased width for more space */}
-          <DialogHeader>
+        <DialogContent className="sm:max-w-2xl flex flex-col max-h-[85vh] p-0">
+          <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
             <DialogTitle>Configure Mapping for {versionBeingMapped?.version.fileName} (v{versionBeingMapped?.version.versionNumber})</DialogTitle>
             <DialogDescription>Select a sheet (for Excel) and map Product Parameters to columns, and optionally Evaluation Parameters to Ground Truth columns.</DialogDescription>
           </DialogHeader>
           {isLoadingMappingData ? (
-            <div className="flex items-center justify-center h-40">
+             <div className="flex-grow flex items-center justify-center p-6">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <p className="ml-3">Loading file data for mapping...</p>
             </div>
           ) : (
-            <form onSubmit={handleSaveMappingSubmit} className="space-y-4 py-4">
-              <ScrollArea className="max-h-[60vh] sm:max-h-[70vh] p-1">
-              <div className="space-y-6 pr-4"> {/* Increased space-y */}
-                {mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSheetNames.length > 0 && (
-                  <div className="space-y-2 pt-2 border-t">
-                     <Label htmlFor="mapping-sheet-select" className="flex items-center"><SheetIcon className="mr-2 h-4 w-4 text-green-600"/>Select Sheet</Label>
-                    <Select value={mappingDialogSelectedSheet} onValueChange={handleMappingDialogSheetSelect} required={mappingDialogSheetNames.length > 0}>
-                      <SelectTrigger id="mapping-sheet-select"><SelectValue placeholder="Select a sheet" /></SelectTrigger>
-                      <SelectContent>
-                        {mappingDialogSheetNames
-                          .filter(name => name && String(name).trim() !== '')
-                          .map((name, idx) => <SelectItem key={`map-sheet-${idx}`} value={name}>{name}</SelectItem>)
-                        }
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                {mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSheetNames.length === 0 && mappingDialogFileData.blob.size > 0 && (
-                  <p className="text-sm text-amber-700 pt-2 border-t">No sheets found in the Excel file. Check file.</p>
-                )}
-
-                { showProductParamMappingUI && (
-                  <div className="space-y-3 pt-3 border-t">
-                    <Label className="flex items-center"><LinkIcon className="mr-2 h-4 w-4 text-blue-600"/>Map Product Parameters to File Columns</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Map parameters to columns in '{mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') ? mappingDialogSelectedSheet : 'your CSV file'}'. These are inputs to your model.
-                    </p>
-                    <Card className="p-4 bg-muted/30 max-h-60 overflow-y-auto">
-                       <div className="space-y-3">
-                        {productParametersForMapping.map(param => (
-                          <div key={param.id} className="grid grid-cols-2 gap-2 items-center">
-                            <Label htmlFor={`map-dialog-${param.id}`} className="text-sm font-medium truncate" title={param.name}>{param.name}:</Label>
-                            <Select
-                              value={mappingDialogCurrentColumnMapping[param.name]}
-                              onValueChange={(value) => handleMappingDialogColumnMappingChange(param.name, value === '' ? undefined : value)}
-                            >
-                              <SelectTrigger id={`map-dialog-${param.id}`} className="h-9 text-xs">
-                                <SelectValue placeholder="Select column" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {mappingDialogSheetColumnHeaders
-                                  .filter(col => col && String(col).trim() !== '')
-                                  .map((col, index) => <SelectItem key={`map-col-header-${index}`} value={col}>{col}</SelectItem>)
-                                }
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ))}
+            <>
+              <div className="flex-grow overflow-y-auto p-6">
+                <form id="mapping-dialog-form" onSubmit={handleSaveMappingSubmit} className="space-y-4">
+                  <div className="space-y-6">
+                    {mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSheetNames.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t">
+                         <Label htmlFor="mapping-sheet-select" className="flex items-center"><SheetIcon className="mr-2 h-4 w-4 text-green-600"/>Select Sheet</Label>
+                        <Select value={mappingDialogSelectedSheet} onValueChange={handleMappingDialogSheetSelect} required={mappingDialogSheetNames.length > 0}>
+                          <SelectTrigger id="mapping-sheet-select"><SelectValue placeholder="Select a sheet" /></SelectTrigger>
+                          <SelectContent>
+                            {mappingDialogSheetNames
+                              .filter(name => name && String(name).trim() !== '')
+                              .map((name, idx) => <SelectItem key={`map-sheet-${idx}`} value={name}>{name}</SelectItem>)
+                            }
+                          </SelectContent>
+                        </Select>
                       </div>
-                    </Card>
-                  </div>
-                )}
-                 {((mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet) || (mappingDialogFileData?.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)) && productParametersForMapping.length === 0 && !isLoadingProdParams && (
-                   <p className="text-sm text-amber-700 pt-2 border-t">No product parameters found for mapping. Please define them in Schema Definition.</p>
-                 )}
+                    )}
+                    {mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSheetNames.length === 0 && mappingDialogFileData.blob.size > 0 && (
+                      <p className="text-sm text-amber-700 pt-2 border-t">No sheets found in the Excel file. Check file.</p>
+                    )}
 
-                {/* Ground Truth Mapping Section */}
-                { showGtParamMappingUI && (
-                  <div className="space-y-3 pt-3 border-t">
-                    <Label className="flex items-center"><CheckSquare className="mr-2 h-4 w-4 text-green-600"/>Map Evaluation Parameters to Ground Truth Columns (Optional)</Label>
-                     <p className="text-xs text-muted-foreground">
-                      For "Ground Truth Runs", map Evaluation Parameters to columns in your file that contain the correct/expected labels.
-                    </p>
-                    <Card className="p-4 bg-muted/30 max-h-60 overflow-y-auto">
-                       <div className="space-y-3">
-                        {evaluationParametersForGtMapping.map(evalParam => (
-                          <div key={`gt-${evalParam.id}`} className="grid grid-cols-2 gap-2 items-center">
-                            <Label htmlFor={`gt-map-dialog-${evalParam.id}`} className="text-sm font-medium truncate" title={evalParam.name}>{evalParam.name}:</Label>
-                            <Select
-                              value={mappingDialogCurrentGtMapping[evalParam.id]}
-                              onValueChange={(value) => handleMappingDialogGtMappingChange(evalParam.id, value === '' ? undefined : value)}
-                            >
-                              <SelectTrigger id={`gt-map-dialog-${evalParam.id}`} className="h-9 text-xs">
-                                <SelectValue placeholder="Select GT column" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {mappingDialogSheetColumnHeaders
-                                  .filter(col => col && String(col).trim() !== '')
-                                  .map((col, index) => <SelectItem key={`gt-map-col-header-${index}`} value={col}>{col}</SelectItem>)
-                                }
-                              </SelectContent>
-                            </Select>
+                    { showProductParamMappingUI && (
+                      <div className="space-y-3 pt-3 border-t">
+                        <Label className="flex items-center"><LinkIcon className="mr-2 h-4 w-4 text-blue-600"/>Map Product Parameters to File Columns</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Map parameters to columns in '{mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') ? mappingDialogSelectedSheet : 'your CSV file'}'. These are inputs to your model.
+                        </p>
+                        <Card className="p-4 bg-muted/30 max-h-60 overflow-y-auto">
+                           <div className="space-y-3">
+                            {productParametersForMapping.map(param => (
+                              <div key={param.id} className="grid grid-cols-2 gap-2 items-center">
+                                <Label htmlFor={`map-dialog-${param.id}`} className="text-sm font-medium truncate" title={param.name}>{param.name}:</Label>
+                                <Select
+                                  value={mappingDialogCurrentColumnMapping[param.name]}
+                                  onValueChange={(value) => handleMappingDialogColumnMappingChange(param.name, value === '' ? undefined : value)}
+                                >
+                                  <SelectTrigger id={`map-dialog-${param.id}`} className="h-9 text-xs">
+                                    <SelectValue placeholder="Select column" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {mappingDialogSheetColumnHeaders
+                                      .filter(col => col && String(col).trim() !== '')
+                                      .map((col, index) => <SelectItem key={`map-col-header-${index}`} value={col}>{col}</SelectItem>)
+                                    }
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        </Card>
                       </div>
-                    </Card>
+                    )}
+                     {((mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet) || (mappingDialogFileData?.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)) && productParametersForMapping.length === 0 && !isLoadingProdParams && (
+                       <p className="text-sm text-amber-700 pt-2 border-t">No product parameters found for mapping. Please define them in Schema Definition.</p>
+                     )}
+
+                    {/* Ground Truth Mapping Section */}
+                    { showGtParamMappingUI && (
+                      <div className="space-y-3 pt-3 border-t">
+                        <Label className="flex items-center"><CheckSquare className="mr-2 h-4 w-4 text-green-600"/>Map Evaluation Parameters to Ground Truth Columns (Optional)</Label>
+                         <p className="text-xs text-muted-foreground">
+                          For "Ground Truth Runs", map Evaluation Parameters to columns in your file that contain the correct/expected labels.
+                        </p>
+                        <Card className="p-4 bg-muted/30 max-h-60 overflow-y-auto">
+                           <div className="space-y-3">
+                            {evaluationParametersForGtMapping.map(evalParam => (
+                              <div key={`gt-${evalParam.id}`} className="grid grid-cols-2 gap-2 items-center">
+                                <Label htmlFor={`gt-map-dialog-${evalParam.id}`} className="text-sm font-medium truncate" title={evalParam.name}>{evalParam.name}:</Label>
+                                <Select
+                                  value={mappingDialogCurrentGtMapping[evalParam.id]}
+                                  onValueChange={(value) => handleMappingDialogGtMappingChange(evalParam.id, value === '' ? undefined : value)}
+                                >
+                                  <SelectTrigger id={`gt-map-dialog-${evalParam.id}`} className="h-9 text-xs">
+                                    <SelectValue placeholder="Select GT column" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {mappingDialogSheetColumnHeaders
+                                      .filter(col => col && String(col).trim() !== '')
+                                      .map((col, index) => <SelectItem key={`gt-map-col-header-${index}`} value={col}>{col}</SelectItem>)
+                                    }
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            ))}
+                          </div>
+                        </Card>
+                      </div>
+                    )}
+                    {((mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet) || (mappingDialogFileData?.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)) && evaluationParametersForGtMapping.length === 0 && !isLoadingEvalParamsForGt && (
+                       <p className="text-sm text-amber-700 pt-2 border-t">No evaluation parameters found for ground truth mapping. Please define them in Evaluation Parameters.</p>
+                     )}
+
+
+                     {mappingDialogFileData && mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData.blob.size > 0 &&
+                       ((mappingDialogFileData.name.toLowerCase().endsWith('.csv')) || (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet)) && (
+                      <p className="text-sm text-red-600 pt-2 border-t">Could not parse headers from the file/sheet. Ensure a valid header row exists.</p>
+                     )}
                   </div>
-                )}
-                {((mappingDialogFileData?.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet) || (mappingDialogFileData?.name.toLowerCase().endsWith('.csv') && mappingDialogSheetColumnHeaders.length > 0)) && evaluationParametersForGtMapping.length === 0 && !isLoadingEvalParamsForGt && (
-                   <p className="text-sm text-amber-700 pt-2 border-t">No evaluation parameters found for ground truth mapping. Please define them in Evaluation Parameters.</p>
-                 )}
-
-
-                 {mappingDialogFileData && mappingDialogSheetColumnHeaders.length === 0 && mappingDialogFileData.blob.size > 0 &&
-                   ((mappingDialogFileData.name.toLowerCase().endsWith('.csv')) || (mappingDialogFileData.name.toLowerCase().endsWith('.xlsx') && mappingDialogSelectedSheet)) && (
-                  <p className="text-sm text-red-600 pt-2 border-t">Could not parse headers from the file/sheet. Ensure a valid header row exists.</p>
-                 )}
+                </form>
               </div>
-              </ScrollArea>
-              <DialogFooter className="pt-4 border-t">
+              <DialogFooter className="p-6 pt-4 border-t flex-shrink-0">
                 <Button type="button" variant="outline" onClick={() => {setIsMappingDialogOpen(false); resetMappingDialogState();}}>Cancel</Button>
-                <Button type="submit" disabled={isSaveMappingButtonDisabled}>
+                <Button type="submit" form="mapping-dialog-form" disabled={isSaveMappingButtonDisabled}>
                   {updateVersionMappingMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving Mapping...</> : 'Save Mapping'}
                 </Button>
               </DialogFooter>
-            </form>
+            </>
           )}
         </DialogContent>
       </Dialog>
     </div>
   );
 }
+
