@@ -32,8 +32,16 @@ import { RunConfigTab } from '@/components/run-details/RunConfigTab';
 import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
 import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
 import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
-import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab';
 // ... (rest of the interfaces and functions from the original file)
+
+// Constants for prompt construction, mirroring those in prompts/page.tsx
+const FIXED_CRITERIA_HEADER = "--- DETAILED INSTRUCTIONS & CRITERIA ---";
+const FIXED_CRITERIA_INSTRUCTIONS_PART = `
+Your task is to analyze the provided input data and then perform two types of tasks:
+1.  **Evaluation Labeling**: For each specified Evaluation Parameter, choose the most appropriate label based on its definition and the input data.
+2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.
+`;
+
 
 export interface EvalRunResultItem {
   inputData: Record<string, any>;
@@ -483,9 +491,9 @@ export default function RunDetailsPage() {
     setSimulationLog([]); addLog("LLM task init."); let collectedResults: EvalRunResultItem[] = [];
     try {
       setIsLoadingPromptTemplate(true); 
-      const fetchedPromptTemplateString = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
+      const fetchedUserPromptContent = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
       setIsLoadingPromptTemplate(false); 
-      if (!fetchedPromptTemplateString) throw new Error("Failed to fetch prompt template.");
+      if (!fetchedUserPromptContent) throw new Error("Failed to fetch prompt template.");
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
       if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
@@ -499,14 +507,14 @@ export default function RunDetailsPage() {
           const overallRowIndex = batchStartIndex + indexInBatch; const inputDataForRow: Record<string, any> = {}; const groundTruthDataForRow: Record<string, string> = {};
           for (const key in rawRowFromPreview) { if (key.startsWith('_gt_')) { groundTruthDataForRow[key.substring('_gt_'.length)] = String(rawRowFromPreview[key]); } else { inputDataForRow[key] = rawRowFromPreview[key]; } }
           
-          let basePromptWithFilledPlaceholders = fetchedPromptTemplateString; 
+          let basePromptWithFilledPlaceholders = fetchedUserPromptContent; 
           for (const inputParamName in inputDataForRow) { basePromptWithFilledPlaceholders = basePromptWithFilledPlaceholders.replace(new RegExp(`{{${inputParamName}}}`, 'g'), String(inputDataForRow[inputParamName] === null || inputDataForRow[inputParamName] === undefined ? "" : inputDataForRow[inputParamName])); }
           
-          let structuredCriteriaTextForLLM = ""; 
-          if (hasEvalParams) { structuredCriteriaTextForLLM += "\n"; evalParamDetailsForLLM.forEach(ep => { structuredCriteriaTextForLLM += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaTextForLLM += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaTextForLLM += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaTextForLLM += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaTextForLLM += " (No specific labels)\n"; } structuredCriteriaTextForLLM += "\n"; }); }
-          if (hasSummarizationDefs) { structuredCriteriaTextForLLM += "\n"; summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaTextForLLM += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) structuredCriteriaTextForLLM += `Example Hint: "${sd.example}"\n`; structuredCriteriaTextForLLM += "Provide summary.\n\n"; }); }
+          let dynamicCriteriaTextForLLM = ""; 
+          if (hasEvalParams) { dynamicCriteriaTextForLLM += "\n"; evalParamDetailsForLLM.forEach(ep => { dynamicCriteriaTextForLLM += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) dynamicCriteriaTextForLLM += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { dynamicCriteriaTextForLLM += "Labels:\n"; ep.labels.forEach(label => { dynamicCriteriaTextForLLM += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { dynamicCriteriaTextForLLM += " (No specific labels)\n"; } dynamicCriteriaTextForLLM += "\n"; }); }
+          if (hasSummarizationDefs) { dynamicCriteriaTextForLLM += "\n"; summarizationDefDetailsForLLM.forEach(sd => { dynamicCriteriaTextForLLM += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) dynamicCriteriaTextForLLM += `Example Hint: "${sd.example}"\n`; dynamicCriteriaTextForLLM += "Provide summary.\n\n"; }); }
           
-          const fullPromptForLLM = basePromptWithFilledPlaceholders + structuredCriteriaTextForLLM;
+          const fullPromptForLLM = basePromptWithFilledPlaceholders + "\n\n" + FIXED_CRITERIA_HEADER + FIXED_CRITERIA_INSTRUCTIONS_PART + dynamicCriteriaTextForLLM;
           
           if (overallRowIndex === 0 && !firstRowPromptAlreadySet) {
              updateRunMutation.mutate({ id: runId, firstRowFullPrompt: fullPromptForLLM });
@@ -765,10 +773,9 @@ export default function RunDetailsPage() {
                         including filled input parameters and appended evaluation/summarization criteria.
                     </DialogDescription>
                 </DialogHeader>
-                {/* This div handles the scrolling for the prompt content */}
-                <div className="flex-grow min-h-0 overflow-y-auto px-6 py-4"> 
-                  <div className="border rounded-md bg-muted/10"> {/* Optional: wrapper for border/bg for the pre tag content */}
-                      <pre className="text-xs whitespace-pre-wrap p-4">
+                <div className="flex-grow min-h-0 overflow-y-auto px-6 py-4">
+                  <div className="border rounded-md bg-muted/10 p-4">
+                      <pre className="text-xs whitespace-pre-wrap">
                           {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate && !runDetails.firstRowFullPrompt ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
                       </pre>
                   </div>
@@ -783,4 +790,3 @@ export default function RunDetailsPage() {
   );
   return pageJSX;
 }
-
