@@ -678,7 +678,7 @@ export default function RunDetailsPage() {
         isLoadingSuggestion={isLoadingSuggestion}
         formatTimestamp={formatTimestamp}
         getStatusBadge={getStatusBadge}
-        onShowFullPromptClick={() => setIsFullPromptDialogVisible(true)}
+        onShowFullPromptClick={() => setIsFullPromptDialogVisible(true)} 
         canShowFullPrompt={!!runDetails.firstRowFullPrompt} 
         isLoadingPromptTemplate={isLoadingPromptTemplate}
       />
@@ -710,7 +710,7 @@ export default function RunDetailsPage() {
             summarizationDefDetailsForLLM={summarizationDefDetailsForLLM}
             filterStates={filterStates}
             onFilterChange={handleFilterChange}
-            onOpenQuestionDialog={onOpenQuestionDialog}
+            onOpenQuestionDialog={handleOpenQuestionDialog}
             onDownloadResults={handleDownloadResults}
             canDownloadResults={canDownloadResults}
           />
@@ -764,7 +764,7 @@ export default function RunDetailsPage() {
                 <div className="flex-grow min-h-0 px-6 py-4">
                   <ScrollArea className="h-full w-full border rounded-md bg-muted/10">
                       <pre className="text-xs whitespace-pre-wrap p-4">
-                          {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
+                          {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate && !runDetails.firstRowFullPrompt ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
                       </pre>
                   </ScrollArea>
                 </div>
