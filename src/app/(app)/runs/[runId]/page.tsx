@@ -32,6 +32,7 @@ import { RunConfigTab } from '@/components/run-details/RunConfigTab';
 import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
 import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
 import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
+import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab'; // Added this import
 // ... (rest of the interfaces and functions from the original file)
 
 // Constants for prompt construction, mirroring those in prompts/page.tsx
@@ -211,6 +212,9 @@ const fetchPromptVersionText = async (userId: string | null, promptId: string, v
         const parsedTemplate = JSON.parse(templateData);
         // New JSON structure: { system: "...", input: "..." }
         if (parsedTemplate && typeof parsedTemplate.system === 'string' && typeof parsedTemplate.input === 'string') {
+          // This part is used for display/analysis, but the core prompt sent to LLM
+          // in simulateRunExecution already has the structured appending.
+          // For display/analysis, we can just return the concatenated user content.
           return `${parsedTemplate.system}\n\n${parsedTemplate.input}`;
         } else { // Fallback for old plain text templates or if parsing fails but it's a string
           return templateData; 
@@ -491,9 +495,9 @@ export default function RunDetailsPage() {
     setSimulationLog([]); addLog("LLM task init."); let collectedResults: EvalRunResultItem[] = [];
     try {
       setIsLoadingPromptTemplate(true); 
-      const fetchedUserPromptContent = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
+      const fetchedPromptTemplateString = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
       setIsLoadingPromptTemplate(false); 
-      if (!fetchedUserPromptContent) throw new Error("Failed to fetch prompt template.");
+      if (!fetchedPromptTemplateString) throw new Error("Failed to fetch prompt template.");
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
       if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
@@ -507,14 +511,14 @@ export default function RunDetailsPage() {
           const overallRowIndex = batchStartIndex + indexInBatch; const inputDataForRow: Record<string, any> = {}; const groundTruthDataForRow: Record<string, string> = {};
           for (const key in rawRowFromPreview) { if (key.startsWith('_gt_')) { groundTruthDataForRow[key.substring('_gt_'.length)] = String(rawRowFromPreview[key]); } else { inputDataForRow[key] = rawRowFromPreview[key]; } }
           
-          let basePromptWithFilledPlaceholders = fetchedUserPromptContent; 
-          for (const inputParamName in inputDataForRow) { basePromptWithFilledPlaceholders = basePromptWithFilledPlaceholders.replace(new RegExp(`{{${inputParamName}}}`, 'g'), String(inputDataForRow[inputParamName] === null || inputDataForRow[inputParamName] === undefined ? "" : inputDataForRow[inputParamName])); }
+          let userEditablePromptPart = fetchedPromptTemplateString; 
+          for (const inputParamName in inputDataForRow) { userEditablePromptPart = userEditablePromptPart.replace(new RegExp(`{{${inputParamName}}}`, 'g'), String(inputDataForRow[inputParamName] === null || inputDataForRow[inputParamName] === undefined ? "" : inputDataForRow[inputParamName])); }
           
-          let dynamicCriteriaTextForLLM = ""; 
-          if (hasEvalParams) { dynamicCriteriaTextForLLM += "\n"; evalParamDetailsForLLM.forEach(ep => { dynamicCriteriaTextForLLM += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) dynamicCriteriaTextForLLM += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { dynamicCriteriaTextForLLM += "Labels:\n"; ep.labels.forEach(label => { dynamicCriteriaTextForLLM += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { dynamicCriteriaTextForLLM += " (No specific labels)\n"; } dynamicCriteriaTextForLLM += "\n"; }); }
-          if (hasSummarizationDefs) { dynamicCriteriaTextForLLM += "\n"; summarizationDefDetailsForLLM.forEach(sd => { dynamicCriteriaTextForLLM += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) dynamicCriteriaTextForLLM += `Example Hint: "${sd.example}"\n`; dynamicCriteriaTextForLLM += "Provide summary.\n\n"; }); }
+          let structuredCriteriaTextForLLM = ""; 
+          if (hasEvalParams) { structuredCriteriaTextForLLM += "\n"; evalParamDetailsForLLM.forEach(ep => { structuredCriteriaTextForLLM += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaTextForLLM += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaTextForLLM += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaTextForLLM += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaTextForLLM += " (No specific labels)\n"; } structuredCriteriaTextForLLM += "\n"; }); }
+          if (hasSummarizationDefs) { structuredCriteriaTextForLLM += "\n"; summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaTextForLLM += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) structuredCriteriaTextForLLM += `Example Hint: "${sd.example}"\n`; structuredCriteriaTextForLLM += "Provide summary.\n\n"; }); }
           
-          const fullPromptForLLM = basePromptWithFilledPlaceholders + "\n\n" + FIXED_CRITERIA_HEADER + FIXED_CRITERIA_INSTRUCTIONS_PART + dynamicCriteriaTextForLLM;
+          const fullPromptForLLM = userEditablePromptPart + "\n\n" + FIXED_CRITERIA_HEADER + "\n" + FIXED_CRITERIA_INSTRUCTIONS_PART + "\n" + structuredCriteriaTextForLLM;
           
           if (overallRowIndex === 0 && !firstRowPromptAlreadySet) {
              updateRunMutation.mutate({ id: runId, firstRowFullPrompt: fullPromptForLLM });
