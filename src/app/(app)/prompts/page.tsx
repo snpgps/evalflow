@@ -72,8 +72,6 @@ export interface PromptTemplate {
   updatedAt?: string; 
 }
 
-const FIXED_INPUT_DATA_HEADER = `--- INPUT DATA ---`;
-const FIXED_INPUT_DATA_FOOTER = `--- END INPUT DATA ---`;
 const FIXED_CRITERIA_HEADER = `--- DETAILED INSTRUCTIONS & CRITERIA ---`;
 const FIXED_CRITERIA_INSTRUCTIONS_PART = `
 Your task is to analyze the provided input data and then perform two types of tasks:
@@ -82,7 +80,7 @@ Your task is to analyze the provided input data and then perform two types of ta
 `;
 
 const defaultSystemPromptContent = `You are an impartial and rigorous evaluator of AI-generated outputs. Your task is to judge the quality of responses to a given input based on objective criteria. You must not add new content, speculate, or favor any model. Score only based on how well the response meets the criteria.`;
-const defaultInputDataSectionContent = `Your input data and definition goes here. Use the "Input Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.\nExample:\n"Below is the full conversation transcript between the shopper and the voicebot : "{{conv_full_conversation}}"\nUser Selected Language: {{User Language}}\n"`;
+const defaultInputDataSectionContent = `Your input data definition goes here. Use the "Input Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.\nExample:\n"Below is the full conversation transcript between the shopper and the voicebot : "{{conv_full_conversation}}"\nUser Selected Language: {{User Language}}\n"`;
 
 
 const fetchInputParametersForPrompts = async (userId: string | null): Promise<InputParameterForPrompts[]> => {
@@ -201,34 +199,47 @@ export default function PromptsPage() {
       const currentVersionObj = currentPromptObj.versions.find(v => v.id === selectedVersionId);
       setSelectedVersion(currentVersionObj || null);
       if (currentVersionObj) {
-        const fullTemplate = currentVersionObj.template;
+        const storedTemplate = currentVersionObj.template;
         let sysPrompt = defaultSystemPromptContent;
         let inputDataSect = defaultInputDataSectionContent;
 
-        const inputDataHeaderIndex = fullTemplate.indexOf(FIXED_INPUT_DATA_HEADER);
-        const inputDataFooterIndex = fullTemplate.indexOf(FIXED_INPUT_DATA_FOOTER);
-        
-        if (inputDataHeaderIndex !== -1) {
-            sysPrompt = fullTemplate.substring(0, inputDataHeaderIndex).trim();
-            if (inputDataFooterIndex !== -1 && inputDataFooterIndex > inputDataHeaderIndex) {
-                inputDataSect = fullTemplate.substring(inputDataHeaderIndex + FIXED_INPUT_DATA_HEADER.length, inputDataFooterIndex).trim();
+        try {
+            const parsedTemplate = JSON.parse(storedTemplate);
+            if (parsedTemplate && typeof parsedTemplate.system === 'string' && typeof parsedTemplate.input === 'string') {
+                sysPrompt = parsedTemplate.system;
+                inputDataSect = parsedTemplate.input;
             } else {
-                // If footer is missing, assume input data section is everything after header until criteria
-                const criteriaHeaderIndex = fullTemplate.indexOf(FIXED_CRITERIA_HEADER);
-                if (criteriaHeaderIndex !== -1 && criteriaHeaderIndex > inputDataHeaderIndex) {
-                    inputDataSect = fullTemplate.substring(inputDataHeaderIndex + FIXED_INPUT_DATA_HEADER.length, criteriaHeaderIndex).trim();
+                 // Malformed JSON, attempt to parse as old format
+                console.warn("Prompt version has invalid JSON, attempting legacy parse:", currentVersionObj.id);
+                throw new Error("Malformed JSON"); // Trigger legacy parse
+            }
+        } catch (e) {
+            // Legacy parsing attempt (if template is not JSON or JSON parse failed)
+            const oldInputDataHeader = "--- INPUT DATA ---";
+            const oldInputDataFooter = "--- END INPUT DATA ---";
+            const criteriaHeader = FIXED_CRITERIA_HEADER;
+            
+            const inputDataHeaderIndex = storedTemplate.indexOf(oldInputDataHeader);
+            const criteriaHeaderIndex = storedTemplate.indexOf(criteriaHeader);
+
+            if (inputDataHeaderIndex !== -1) {
+                sysPrompt = storedTemplate.substring(0, inputDataHeaderIndex).trim();
+                const inputDataFooterIndex = storedTemplate.indexOf(oldInputDataFooter, inputDataHeaderIndex);
+                if (inputDataFooterIndex !== -1 && inputDataFooterIndex > inputDataHeaderIndex) {
+                    inputDataSect = storedTemplate.substring(inputDataHeaderIndex + oldInputDataHeader.length, inputDataFooterIndex).trim();
+                } else if (criteriaHeaderIndex !== -1 && criteriaHeaderIndex > inputDataHeaderIndex) {
+                    inputDataSect = storedTemplate.substring(inputDataHeaderIndex + oldInputDataHeader.length, criteriaHeaderIndex).trim();
                 } else {
-                    inputDataSect = fullTemplate.substring(inputDataHeaderIndex + FIXED_INPUT_DATA_HEADER.length).trim();
+                    inputDataSect = storedTemplate.substring(inputDataHeaderIndex + oldInputDataHeader.length).trim();
                 }
-            }
-        } else {
-            // No input data header found, try to guess based on criteria header
-            const criteriaHeaderIndex = fullTemplate.indexOf(FIXED_CRITERIA_HEADER);
-            if (criteriaHeaderIndex !== -1) {
-                sysPrompt = fullTemplate.substring(0, criteriaHeaderIndex).trim();
+            } else if (criteriaHeaderIndex !== -1) {
+                 sysPrompt = storedTemplate.substring(0, criteriaHeaderIndex).trim();
+                 inputDataSect = defaultInputDataSectionContent; // No clear input data section found
             } else {
-                sysPrompt = fullTemplate; // Assume entire template is system prompt if no markers
+                sysPrompt = storedTemplate; // Assume entire old template is system prompt
+                inputDataSect = defaultInputDataSectionContent;
             }
+            toast({title: "Prompt Format Note", description: "This prompt version uses an older format. Saving it will update it to the new structure.", variant: "default", duration: 7000});
         }
         
         setSystemPromptContent(sysPrompt);
@@ -252,7 +263,10 @@ export default function PromptsPage() {
     mutationFn: async ({ name, description }) => {
       if (!currentUserId) throw new Error("Project not selected.");
 
-      const fullInitialTemplate = `${defaultSystemPromptContent.trim()}\n${FIXED_INPUT_DATA_HEADER}\n${defaultInputDataSectionContent.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
+      const initialTemplateJson = JSON.stringify({
+        system: defaultSystemPromptContent,
+        input: defaultInputDataSectionContent
+      });
 
       const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
         name,
@@ -264,7 +278,7 @@ export default function PromptsPage() {
 
       const initialVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', newPromptRef.id, 'versions'), {
         versionNumber: 1,
-        template: fullInitialTemplate, 
+        template: initialTemplateJson, 
         notes: 'Initial version',
         createdAt: serverTimestamp(),
       });
@@ -330,12 +344,15 @@ export default function PromptsPage() {
     mutationFn: async ({ promptId, systemContent, inputDataContent, notes }) => {
       if (!currentUserId || !selectedPrompt) throw new Error("Project or prompt not identified.");
 
-      const fullTemplateToSave = `${systemContent.trim()}\n${FIXED_INPUT_DATA_HEADER}\n${inputDataContent.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
+      const templateToSave = JSON.stringify({
+        system: systemContent.trim(),
+        input: inputDataContent.trim()
+      });
       const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
 
       const newVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions'), {
         versionNumber: latestVersionNum + 1,
-        template: fullTemplateToSave,
+        template: templateToSave,
         notes: notes || `New version based on v${selectedVersion?.versionNumber || latestVersionNum}`,
         createdAt: serverTimestamp(),
       });
@@ -358,9 +375,12 @@ export default function PromptsPage() {
   const updatePromptVersionMutation = useMutation<void, Error, { promptId: string; versionId: string; systemContent: string; inputDataContent: string; notes: string }>({
     mutationFn: async ({ promptId, versionId, systemContent, inputDataContent, notes }) => {
       if (!currentUserId) throw new Error("Project not selected.");
-      const fullTemplateToSave = `${systemContent.trim()}\n${FIXED_INPUT_DATA_HEADER}\n${inputDataContent.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
+      const templateToSave = JSON.stringify({
+        system: systemContent.trim(),
+        input: inputDataContent.trim()
+      });
       const versionRef = doc(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions', versionId);
-      await updateDoc(versionRef, { template: fullTemplateToSave, notes });
+      await updateDoc(versionRef, { template: templateToSave, notes });
       await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), { updatedAt: serverTimestamp() });
     },
     onSuccess: () => {
@@ -634,13 +654,13 @@ User's Question: {{UserQuestion}}`
                                         </li>
                                     </ul>
                                 </li>
-                                <li><strong className="font-medium">Fixed Markers & Criteria:</strong> The system automatically inserts <code>{FIXED_INPUT_DATA_HEADER}</code> and <code>{FIXED_INPUT_DATA_FOOTER}</code> around your "Input Data Section". It also appends <code>{FIXED_CRITERIA_HEADER}</code> and <code>{FIXED_CRITERIA_INSTRUCTIONS_PART.trim().substring(0,70)}...</code>. During an eval run, the specific definitions of your selected Evaluation Parameters and Summarization Tasks are appended below the criteria instructions. These fixed parts are shown read-only.</li>
+                                <li><strong className="font-medium">Fixed Criteria:</strong> The system automatically appends <code>{FIXED_CRITERIA_HEADER}</code> and <code>{FIXED_CRITERIA_INSTRUCTIONS_PART.trim().substring(0,70)}...</code> after your content. During an eval run, the specific definitions of your selected Evaluation Parameters and Summarization Tasks are appended below these criteria instructions. These fixed parts are shown read-only in the editor.</li>
                             </ol>
                             
                             <h3 className="font-semibold mt-2">Key Points:</h3>
                             <ul className="list-disc pl-5 space-y-1 text-xs break-words">
                                 <li className="break-words">You edit the "System Prompt" and "Input Data Section" in their respective textareas.</li>
-                                <li className="break-words">The system handles assembling the full prompt for the LLM by combining your editable parts with the fixed markers and the dynamically appended criteria definitions.</li>
+                                <li className="break-words">The system handles assembling the full prompt for the LLM by combining your editable parts with the fixed criteria header and the dynamically appended criteria definitions.</li>
                                 <li className="break-words">The Judge LLM is already instructed by the system (via backend flow logic) to output a JSON array containing its judgments and summaries based on the full constructed prompt.</li>
                             </ul>
                         </div>
@@ -703,13 +723,6 @@ User's Question: {{UserQuestion}}`
                   disabled={!selectedVersion || updatePromptVersionMutation.isPending}
                 />
               </div>
-
-              <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
-                {FIXED_INPUT_DATA_HEADER}
-              </div>
-              <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
-                {FIXED_INPUT_DATA_FOOTER}
-              </div>
               
               <div className="space-y-2 pt-4 border-t mt-4">
                 <Label className="font-medium text-base text-muted-foreground">System-Appended Instructions & Criteria (Read-Only)</Label>
@@ -768,7 +781,14 @@ User's Question: {{UserQuestion}}`
           </div>
         </CardContent>
         <CardFooter className="border-t pt-4 flex flex-col sm:flex-row justify-end gap-2">
-          <Button variant="outline" onClick={() => { if(systemPromptContent || inputDataSectionContent) navigator.clipboard.writeText(`${systemPromptContent}\n${FIXED_INPUT_DATA_HEADER}\n${inputDataSectionContent}\n${FIXED_INPUT_DATA_FOOTER}`); toast({title:"Full user-editable prompt content copied!"})}} disabled={!selectedVersion || (!systemPromptContent && !inputDataSectionContent)} className="w-full sm:w-auto">
+          <Button variant="outline" onClick={() => { 
+              const contentToCopy = `${systemPromptContent}\n\n${inputDataSectionContent}`;
+              navigator.clipboard.writeText(contentToCopy); 
+              toast({title:"User-editable prompt content copied!"})
+            }} 
+            disabled={!selectedVersion || (!systemPromptContent && !inputDataSectionContent)} 
+            className="w-full sm:w-auto"
+          >
             <Copy className="mr-2 h-4 w-4" /> Copy User Content
           </Button>
           <Button onClick={handleSaveVersion} disabled={!selectedVersion || updatePromptVersionMutation.isPending} className="w-full sm:w-auto">
@@ -892,3 +912,4 @@ User's Question: {{UserQuestion}}`
     </div>
   );
 }
+
