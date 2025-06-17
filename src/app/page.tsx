@@ -7,7 +7,7 @@ import { auth } from '@/lib/firebase';
 import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, type User } from 'firebase/auth';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChromeIcon, Loader2 } from 'lucide-react'; // Using ChromeIcon as a generic browser/Google icon
+import { ChromeIcon, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 export default function LoginPage() {
@@ -18,15 +18,17 @@ export default function LoginPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
+        console.log("LoginPage: User authenticated, UID:", user.uid);
         localStorage.setItem('authenticatedUserUID', user.uid);
         if (user.email) {
             localStorage.setItem('authenticatedUserEmail', user.email);
         }
-        router.push('/select-project'); // Redirect to project selection after login
+        router.push('/select-project'); 
       } else {
+        console.log("LoginPage: No user authenticated.");
         localStorage.removeItem('authenticatedUserUID');
         localStorage.removeItem('authenticatedUserEmail');
-        localStorage.removeItem('currentUserId'); // Also clear project context on logout
+        localStorage.removeItem('currentUserId');
         setIsLoading(false);
       }
     });
@@ -42,7 +44,12 @@ export default function LoginPage() {
       toast({ title: "Signed In", description: `Welcome ${result.user.displayName || result.user.email}!` });
     } catch (error: any) {
       console.error("Google Sign-In Error:", error);
-      toast({ title: "Sign-In Failed", description: error.message || "Could not sign in with Google.", variant: "destructive" });
+      // Log the specific Firebase error code and message for easier debugging by the user
+      let detailedErrorMessage = error.message || "Could not sign in with Google.";
+      if (error.code) {
+        detailedErrorMessage = `Error (${error.code}): ${error.message}`;
+      }
+      toast({ title: "Sign-In Failed", description: detailedErrorMessage, variant: "destructive" });
       setIsSigningIn(false);
     }
   };
@@ -71,7 +78,7 @@ export default function LoginPage() {
             {isSigningIn ? (
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
             ) : (
-              <ChromeIcon className="mr-2 h-5 w-5" /> // Using ChromeIcon as a placeholder
+              <ChromeIcon className="mr-2 h-5 w-5" />
             )}
             Sign in with Google
           </Button>
