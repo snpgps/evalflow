@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog, InfoIcon as InfoIconLucide, FileText as FileTextIcon } from "lucide-react"; 
+import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog, FileText as FileTextIcon } from "lucide-react"; 
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 // ScrollArea import is no longer strictly needed for this specific dialog fix, but kept for other potential uses.
@@ -212,11 +212,8 @@ const fetchPromptVersionText = async (userId: string | null, promptId: string, v
         const parsedTemplate = JSON.parse(templateData);
         // New JSON structure: { system: "...", input: "..." }
         if (parsedTemplate && typeof parsedTemplate.system === 'string' && typeof parsedTemplate.input === 'string') {
-          // This part is used for display/analysis, but the core prompt sent to LLM
-          // in simulateRunExecution already has the structured appending.
-          // For display/analysis, we can just return the concatenated user content.
           return `${parsedTemplate.system}\n\n${parsedTemplate.input}`;
-        } else { // Fallback for old plain text templates or if parsing fails but it's a string
+        } else { 
           return templateData; 
         }
       } catch (e) {
@@ -335,7 +332,6 @@ export default function RunDetailsPage() {
 
   const [filterStates, setFilterStates] = useState<AllFilterStates>({});
 
-  const [isLoadingPromptTemplate, setIsLoadingPromptTemplate] = useState<boolean>(false);
   const [isFullPromptDialogVisible, setIsFullPromptDialogVisible] = useState<boolean>(false);
 
 
@@ -375,6 +371,17 @@ export default function RunDetailsPage() {
     enabled: !!currentUserId && !!runId && !isLoadingUserId,
     refetchInterval: (query) => { const data = query.state.data as EvalRun | null; return (data?.status === 'Running' || data?.status === 'Processing') ? 5000 : false; },
   });
+
+  const { data: promptTemplateTextForRun, isLoading: isLoadingPromptTemplate } = useQuery<string | null, Error>({
+    queryKey: ['promptTemplateTextForRun', currentUserId, runDetails?.promptId, runDetails?.promptVersionId],
+    queryFn: () => {
+      if (!currentUserId || !runDetails?.promptId || !runDetails?.promptVersionId) return null;
+      return fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
+    },
+    enabled: !!currentUserId && !!runDetails?.promptId && !!runDetails?.promptVersionId,
+    staleTime: Infinity,
+  });
+
 
   const { data: evalParamDetailsForLLM = [], isLoading: isLoadingEvalParamsForLLMHook } = useQuery<EvalParamDetailForPrompt[], Error>({
     queryKey: ['evalParamDetailsForLLM', currentUserId, runDetails?.selectedEvalParamIds?.join(',')],
@@ -494,9 +501,7 @@ export default function RunDetailsPage() {
     updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [], firstRowFullPrompt: runDetails.firstRowFullPrompt || '' }); 
     setSimulationLog([]); addLog("LLM task init."); let collectedResults: EvalRunResultItem[] = [];
     try {
-      setIsLoadingPromptTemplate(true); 
       const fetchedPromptTemplateString = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
-      setIsLoadingPromptTemplate(false); 
       if (!fetchedPromptTemplateString) throw new Error("Failed to fetch prompt template.");
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
       if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
@@ -518,7 +523,7 @@ export default function RunDetailsPage() {
           if (hasEvalParams) { structuredCriteriaTextForLLM += "\n"; evalParamDetailsForLLM.forEach(ep => { structuredCriteriaTextForLLM += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaTextForLLM += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaTextForLLM += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaTextForLLM += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaTextForLLM += " (No specific labels)\n"; } structuredCriteriaTextForLLM += "\n"; }); }
           if (hasSummarizationDefs) { structuredCriteriaTextForLLM += "\n"; summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaTextForLLM += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) structuredCriteriaTextForLLM += `Example Hint: "${sd.example}"\n`; structuredCriteriaTextForLLM += "Provide summary.\n\n"; }); }
           
-          const fullPromptForLLM = userEditablePromptPart + "\n\n" + FIXED_CRITERIA_HEADER + "\n" + FIXED_CRITERIA_INSTRUCTIONS_PART + "\n" + structuredCriteriaTextForLLM;
+          const fullPromptForLLM = userEditablePromptPart + "\n\n" + FIXED_CRITERIA_HEADER + FIXED_CRITERIA_INSTRUCTIONS_PART + structuredCriteriaTextForLLM;
           
           if (overallRowIndex === 0 && !firstRowPromptAlreadySet) {
              updateRunMutation.mutate({ id: runId, firstRowFullPrompt: fullPromptForLLM });
@@ -729,6 +734,7 @@ export default function RunDetailsPage() {
             onOpenQuestionDialog={handleOpenQuestionDialog}
             onDownloadResults={handleDownloadResults}
             canDownloadResults={canDownloadResults}
+            promptTemplateText={promptTemplateTextForRun}
           />
         </TabsContent>
         <TabsContent value="metrics">
@@ -778,11 +784,11 @@ export default function RunDetailsPage() {
                     </DialogDescription>
                 </DialogHeader>
                 <div className="flex-grow min-h-0 overflow-y-auto px-6 py-4">
-                  <div className="border rounded-md bg-muted/10 p-4">
-                      <pre className="text-xs whitespace-pre-wrap">
-                          {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate && !runDetails.firstRowFullPrompt ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
-                      </pre>
-                  </div>
+                   <div className="border rounded-md bg-muted/10 p-4">
+                       <pre className="text-xs whitespace-pre-wrap">
+                           {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate && !runDetails.firstRowFullPrompt ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
+                       </pre>
+                   </div>
                 </div>
                 <DialogFooter className="p-6 pt-4 border-t mt-auto flex-shrink-0">
                     <Button onClick={() => setIsFullPromptDialogVisible(false)}>Close</Button>
@@ -794,3 +800,4 @@ export default function RunDetailsPage() {
   );
   return pageJSX;
 }
+
