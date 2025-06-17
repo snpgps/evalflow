@@ -86,8 +86,12 @@ const FIXED_PRODUCT_INPUT_HEADER = `--- PRODUCT INPUT DATA ---`;
 const FIXED_PRODUCT_INPUT_FOOTER = `--- END PRODUCT INPUT DATA ---`;
 const FIXED_CRITERIA_HEADER = `--- DETAILED INSTRUCTIONS & CRITERIA ---`;
 
-const defaultInitialUserEditablePromptTemplate = `Your input data and definition goes here. Insert the input data here with a definition here. For example, if you're analysing a chatbot, the user chat and metadata that your bot used for the conversation with go here.
-(Use the "Product Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.)`;
+const defaultInitialUserEditablePromptTemplate = `Your input data and definition goes here. Insert the input data here with a definition here.
+(Use the "Product Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.)
+Example:
+"Below is the full conversation transcript between the shopper and the voicebot : "{{conv_full_conversation}}"
+User Selected Language: {{User Language}}
+"`;
 
 
 // Fetch Product Parameters
@@ -207,37 +211,30 @@ export default function PromptsPage() {
         const fullTemplate = currentVersionObj.template;
         let editablePart = defaultInitialUserEditablePromptTemplate; 
 
-        // Define markers for parsing
-        const sysPromptEndMarker = FIXED_SYSTEM_PROMPT + '\n\n';
-        const productInputStartMarker = FIXED_PRODUCT_INPUT_HEADER + '\n';
-        const productInputEndMarker = '\n' + FIXED_PRODUCT_INPUT_FOOTER;
-        // const criteriaStartMarker = '\n\n' + FIXED_CRITERIA_HEADER; // Not strictly needed for extraction if footer is reliable
+        const productInputStartMarkerWithNewline = FIXED_PRODUCT_INPUT_HEADER + '\n';
+        const newlineAndProductInputFooterMarker = '\n' + FIXED_PRODUCT_INPUT_FOOTER;
 
-        const startIndex = fullTemplate.indexOf(productInputStartMarker);
-        const endIndex = fullTemplate.indexOf(productInputEndMarker);
-
-        if (startIndex !== -1 && endIndex !== -1 && (startIndex + productInputStartMarker.length) <= endIndex) {
-            // Check if the system prompt is correctly placed before the product input header
-            const expectedStartOfProductSection = fullTemplate.indexOf(sysPromptEndMarker);
-            if (expectedStartOfProductSection !== -1 && (expectedStartOfProductSection + sysPromptEndMarker.length) === startIndex) {
-                editablePart = fullTemplate.substring(startIndex + productInputStartMarker.length, endIndex).trim();
-            } else {
-                // Fallback for older structures or if sys prompt not directly before header
-                const contentAfterSys = fullTemplate.substring(sysPromptEndMarker.length).trim();
-                const potentialProductStart = contentAfterSys.indexOf(productInputStartMarker);
-                const potentialProductEnd = contentAfterSys.indexOf(productInputEndMarker);
-                if (potentialProductStart !== -1 && potentialProductEnd !== -1 && (potentialProductStart + productInputStartMarker.length) <= potentialProductEnd) {
-                    editablePart = contentAfterSys.substring(potentialProductStart + productInputStartMarker.length, potentialProductEnd).trim();
-                } else {
-                    editablePart = defaultInitialUserEditablePromptTemplate; // Or attempt a more general extraction
-                }
-            }
-        } else if (!fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) || !fullTemplate.includes(FIXED_CRITERIA_HEADER) || !fullTemplate.includes(FIXED_PRODUCT_INPUT_HEADER)) {
-             // Very old prompt, or user manually edited everything: load as is into editable area
-             editablePart = fullTemplate;
+        const startIndex = fullTemplate.indexOf(productInputStartMarkerWithNewline);
+        const endIndex = fullTemplate.indexOf(newlineAndProductInputFooterMarker);
+        
+        if (startIndex !== -1 && endIndex !== -1 && (startIndex + productInputStartMarkerWithNewline.length) <= endIndex) {
+             editablePart = fullTemplate.substring(startIndex + productInputStartMarkerWithNewline.length, endIndex).trim();
+        } else if (fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) && fullTemplate.includes(FIXED_CRITERIA_HEADER)) {
+             // If system prompt and criteria header are there, but not the product markers,
+             // it's likely an older prompt or one where product markers were implicitly expected.
+             // Extract content between system prompt and criteria header.
+             const afterSystemPrompt = fullTemplate.substring(FIXED_SYSTEM_PROMPT.length).trim();
+             const criteriaStartIndex = afterSystemPrompt.lastIndexOf(FIXED_CRITERIA_HEADER);
+             if (criteriaStartIndex !== -1) {
+                 editablePart = afterSystemPrompt.substring(0, criteriaStartIndex).trim();
+             } else {
+                // Fallback if only system prompt is found
+                editablePart = afterSystemPrompt;
+             }
+        } else if (!fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) || !fullTemplate.includes(FIXED_CRITERIA_HEADER)) {
+            // Very old prompt, or user manually edited everything: load as is into editable area
+            editablePart = fullTemplate;
         }
-        // else: if markers not found but system prompt and criteria header exist, it implies empty user content, so defaultInitialUserEditablePromptTemplate is fine.
-
 
         setPromptTemplateContent(editablePart);
         setVersionNotes(currentVersionObj.notes);
@@ -626,15 +623,15 @@ export default function PromptsPage() {
                         <div className="space-y-3 text-sm py-2">
                             <p>Your prompt template is structured into several parts:</p>
                             <ol className="list-decimal pl-5 space-y-1 text-xs">
-                                <li><strong className="font-medium">System Prompt:</strong> (Displayed above) Tells the AI its role. This part is fixed by the system and shown for your reference.</li>
-                                <li><strong className="font-medium">Your Product Input Data Section:</strong> (Editable by you below) This is where you define the structure of the specific data the AI will analyze.
+                                <li><strong className="font-medium">System Prompt:</strong> Tells the AI its role. This part is fixed by the system and shown for your reference.</li>
+                                <li><strong className="font-medium">Your Product Input Data Section:</strong> This is where you define the structure of the specific data the AI will analyze.
                                     <ul className="list-disc pl-5 space-y-0.5 mt-1">
                                         <li>The markers <code>{FIXED_PRODUCT_INPUT_HEADER}</code> and <code>{FIXED_PRODUCT_INPUT_FOOTER}</code> will be automatically wrapped around this section by the system during evaluation runs. They are shown as uneditable labels in the UI for clarity.</li>
                                         <li>Use the "Product Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> into the editable textarea.</li>
                                         <li>Example: <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap break-words">User Query: {`{{UserQuery}}`}{`\n`}Previous Turn: {`{{BotResponse}}`}</pre></li>
                                     </ul>
                                 </li>
-                                <li><strong className="font-medium">Detailed Instructions & Criteria:</strong> (Header displayed below) This section's header (<code>{FIXED_CRITERIA_HEADER}</code>) is fixed. During an eval run, the system appends the detailed definitions of your selected Evaluation Parameters and Summarization Tasks here.</li>
+                                <li><strong className="font-medium">Detailed Instructions & Criteria:</strong> This section's header (<code>{FIXED_CRITERIA_HEADER}</code>) is fixed. During an eval run, the system appends the detailed definitions of your selected Evaluation Parameters and Summarization Tasks here.</li>
                             </ol>
                             
                             <h3 className="font-semibold mt-2">Key Points:</h3>
@@ -716,7 +713,7 @@ export default function PromptsPage() {
               <div className="mb-4">
                  <Label htmlFor="version-notes" className="text-md font-semibold mb-2 flex items-center">
                     <MessageSquareText className="h-4 w-4 mr-2 text-primary"/>
-                    Version Notes 
+                    Version Notes
                     <span className="text-xs text-muted-foreground ml-1">(v{selectedVersion?.versionNumber || 'N/A'})</span>
                  </Label>
                 <Input
