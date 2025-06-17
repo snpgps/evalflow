@@ -42,7 +42,7 @@ export interface EvalRunResultItem {
 export interface EvalRun {
   id: string;
   name: string;
-  runType: 'Product' | 'GroundTruth'; // "Product" terminology to be reviewed
+  runType: 'Product' | 'GroundTruth'; 
   status: 'Completed' | 'Running' | 'Pending' | 'Failed' | 'Processing' | 'DataPreviewed';
   createdAt: Timestamp;
   updatedAt?: Timestamp;
@@ -142,8 +142,6 @@ export interface ParamFilterState {
 }
 export type AllFilterStates = Record<string, ParamFilterState>;
 
-
-const MAX_ROWS_FOR_PROCESSING: number = 200;
 
 const sanitizeDataForFirestore = (data: any): any => {
   if (Array.isArray(data)) {
@@ -279,7 +277,7 @@ const fetchContextDocumentDetailsForRun = async (userId: string | null, docIds: 
 export default function RunDetailsPage() {
   const reactParams = useParams();
   const runId = reactParams.runId as string;
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); 
   const [isLoadingUserId, setIsLoadingUserId] = useState<boolean>(true);
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -328,7 +326,7 @@ export default function RunDetailsPage() {
   };
 
   useEffect(() => {
-    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    const storedProjectId = localStorage.getItem('currentUserId'); 
     setCurrentUserId(storedProjectId || null);
     setIsLoadingUserId(false);
   }, []);
@@ -431,10 +429,20 @@ export default function RunDetailsPage() {
         } else if (fileName.endsWith('.csv')) { const text = await blob.text(); const lines = text.split(/\r\n|\n|\r/).filter(line => line.trim() !== ''); if (lines.length < 1) throw new Error("CSV file empty or no header."); const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim()); for (let i = 1; i < lines.length; i++) { const values = lines[i].split(',').map(v => v.replace(/^"|"$/g, '').trim()); const rowObject: Record<string, any> = {}; headers.forEach((header, index) => { rowObject[header] = values[index] || ""; }); parsedRows.push(rowObject); } addLog(`Data Preview: Parsed ${parsedRows.length} rows from CSV.`);
         } else { throw new Error("Unsupported file type for preview."); }
         if (parsedRows.length === 0) { addLog("Data Preview: No data rows found."); updateRunMutation.mutate({ id: runId, previewedDatasetSample: [], status: 'DataPreviewed', results: [] }); toast({ title: "No Data", description: "Parsed file contained no data rows." }); setIsPreviewDataLoading(false); return; }
-        let rowsToAttemptFromConfig: number; if (runDetails.runOnNRows > 0) { rowsToAttemptFromConfig = Math.min(runDetails.runOnNRows, parsedRows.length); } else { rowsToAttemptFromConfig = parsedRows.length; }
-        const actualRowsToProcessAndStore = Math.min(rowsToAttemptFromConfig, MAX_ROWS_FOR_PROCESSING); const dataSliceForStorage = parsedRows.slice(0, actualRowsToProcessAndStore);
-        if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows !== 0) { addLog(`Data Preview: Requested ${rowsToAttemptFromConfig}, capped at ${MAX_ROWS_FOR_PROCESSING}.`); } else if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows === 0) { addLog(`Data Preview: "All rows" (${rowsToAttemptFromConfig}), capped at ${MAX_ROWS_FOR_PROCESSING}.`); }
-        addLog(`Data Preview: Preparing ${dataSliceForStorage.length} rows for processing.`); const sampleForStorage: Array<Record<string, any>> = []; const inputParamToOriginalColMap = versionConfig.columnMapping; const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
+        
+        let actualRowsToProcessAndStore: number;
+        if (runDetails.runOnNRows > 0) {
+            actualRowsToProcessAndStore = Math.min(runDetails.runOnNRows, parsedRows.length);
+            addLog(`Data Preview: Configured to run on first ${runDetails.runOnNRows} rows. Will process ${actualRowsToProcessAndStore} from available ${parsedRows.length}.`);
+        } else {
+            actualRowsToProcessAndStore = parsedRows.length;
+            addLog(`Data Preview: Configured to run on all rows. Will process ${actualRowsToProcessAndStore} from available ${parsedRows.length}.`);
+        }
+        
+        const dataSliceForStorage = parsedRows.slice(0, actualRowsToProcessAndStore);
+        addLog(`Data Preview: Preparing ${dataSliceForStorage.length} rows for processing and storage.`); 
+        
+        const sampleForStorage: Array<Record<string, any>> = []; const inputParamToOriginalColMap = versionConfig.columnMapping; const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
         dataSliceForStorage.forEach((originalRow, index) => { const mappedRowForStorage: Record<string, any> = {}; let rowHasAnyMappedData = false; const normalizedOriginalRowKeys: Record<string, string> = {}; Object.keys(originalRow).forEach(key => { normalizedOriginalRowKeys[String(key).trim().toLowerCase()] = key; });
             for (const inputParamName in inputParamToOriginalColMap) { const mappedOriginalColName = inputParamToOriginalColMap[inputParamName]; const normalizedMappedOriginalColName = String(mappedOriginalColName).trim().toLowerCase(); const actualKeyInOriginalRow = normalizedOriginalRowKeys[normalizedMappedOriginalColName]; if (actualKeyInOriginalRow !== undefined) { mappedRowForStorage[inputParamName] = originalRow[actualKeyInOriginalRow]; rowHasAnyMappedData = true; } else { mappedRowForStorage[inputParamName] = undefined; addLog(`Data Preview: Warn: Row ${index + 1} missing INPUT col "${mappedOriginalColName}" for "${inputParamName}".`); } }
             if (runDetails.runType === 'GroundTruth') { for (const evalParamId in evalParamIdToGtColMap) { const mappedGtColName = evalParamIdToGtColMap[evalParamId]; const normalizedMappedGtColName = String(mappedGtColName).trim().toLowerCase(); const actualKeyInOriginalRowForGt = normalizedOriginalRowKeys[normalizedMappedGtColName]; if (actualKeyInOriginalRowForGt !== undefined) { mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[actualKeyInOriginalRowForGt]; rowHasAnyMappedData = true; } else { mappedRowForStorage[`_gt_${evalParamId}`] = undefined; addLog(`Data Preview: Warn: Row ${index + 1} missing GT col "${mappedGtColName}" for EVAL ID "${evalParamId}".`); } } }

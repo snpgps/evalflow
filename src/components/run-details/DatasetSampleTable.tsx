@@ -1,12 +1,11 @@
 
 'use client';
 
-import React, { type FC } from 'react'; // Imported React
+import React, { type FC } from 'react'; 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { EvalRun } from '@/app/(app)/runs/[runId]/page';
 
-const MAX_ROWS_FOR_PROCESSING_DISPLAY_ONLY: number = 200; // Should match the one in page.tsx
 const MAX_ROWS_FOR_UI_PREVIEW: number = 10;
 
 export interface DatasetSampleTableProps {
@@ -26,7 +25,7 @@ const OriginalDatasetSampleTable: FC<DatasetSampleTableProps> = ({ displayedPrev
         <CardTitle>Dataset Sample Preview (Input Data Only)</CardTitle>
         <CardDescription>
           Showing {rowsForUITable.length === displayedPreviewData.length ? displayedPreviewData.length : `top ${rowsForUITable.length} of ${displayedPreviewData.length}`} rows for preview.
-          The run is configured to process {runDetails.runOnNRows === 0 ? `all ${displayedPreviewData.length}` : `${Math.min(runDetails.runOnNRows, displayedPreviewData.length)}`} rows (system processing limit: {MAX_ROWS_FOR_PROCESSING_DISPLAY_ONLY} rows).
+          The run is configured to process {runDetails.runOnNRows === 0 ? `all ${displayedPreviewData.length}` : `${Math.min(runDetails.runOnNRows, displayedPreviewData.length)}`} rows from the dataset.
           Ground truth data (if any) is used internally.
         </CardDescription>
       </CardHeader>
