@@ -1,9 +1,18 @@
 
+'use client';
+
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Rocket, Building } from "lucide-react"; // Changed LogIn to Building
+import { Rocket, Building } from "lucide-react";
+import { useState, useEffect } from 'react';
 
 export default function LandingPage() {
+  const [currentYear, setCurrentYear] = useState<number | null>(null);
+
+  useEffect(() => {
+    setCurrentYear(new Date().getFullYear());
+  }, []);
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-background to-secondary p-4 sm:p-8 text-center">
       <div className="mb-8">
@@ -24,7 +33,7 @@ export default function LandingPage() {
         </Link>
       </div>
       <footer className="absolute bottom-4 sm:bottom-8 text-muted-foreground text-xs sm:text-sm">
-        © {new Date().getFullYear()} EvalFlow. Built with Firebase Studio.
+        {currentYear !== null ? `© ${currentYear} EvalFlow. Built with Firebase Studio.` : '© EvalFlow. Built with Firebase Studio.'}
       </footer>
     </div>
   );
