@@ -1,32 +1,55 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building } from 'lucide-react'; // Icon for project selection
+import { Building, Loader2, AlertTriangle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
+import { collection, getDocs } from 'firebase/firestore';
+import { useQuery, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-// These "projects" map to backend "userIds"
-const availableProjects = [
-  { name: "Default Project", id: "default_user_main" },
-  { name: "Analytics Team Project", id: "analytics_team_project" },
-  { name: "Chatbot Development", id: "chatbot_dev_project" },
-  { name: "Research Initiative Alpha", id: "research_alpha_project" },
-  { name: "General Testing Space", id: "test_space_001" }
-];
+interface Project {
+  id: string;
+  name: string;
+}
 
-export default function SelectProjectPage() {
+const fetchProjects = async (): Promise<Project[]> => {
+  if (!db) {
+    // This case should ideally not happen if Firebase initializes correctly,
+    // but it's a safeguard.
+    console.error("Firestore DB is not initialized in fetchProjects.");
+    throw new Error("Database not available.");
+  }
+  const usersCollectionRef = collection(db, 'users');
+  const usersSnapshot = await getDocs(usersCollectionRef);
+  if (usersSnapshot.empty) {
+    return [];
+  }
+  return usersSnapshot.docs.map(doc => ({
+    id: doc.id,
+    name: `Project: ${doc.id}` // Display name for the project
+  }));
+};
+
+function SelectProjectPageComponent() {
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const router = useRouter();
+
+  const { data: availableProjects = [], isLoading, error } = useQuery<Project[], Error>({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedProjectId) {
-      localStorage.setItem('currentUserId', selectedProjectId); // Still storing as 'currentUserId'
+      localStorage.setItem('currentUserId', selectedProjectId);
       router.push('/dashboard');
     } else {
       toast({ title: "Selection Required", description: "Please select a project to continue.", variant: "destructive" });
@@ -47,20 +70,37 @@ export default function SelectProjectPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="project-select" className="text-base">Project</Label>
-              <Select value={selectedProjectId} onValueChange={setSelectedProjectId} required>
-                <SelectTrigger id="project-select" className="h-12 text-base px-4">
-                  <SelectValue placeholder="Select a project..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableProjects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name} (ID: {project.id})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isLoading && (
+                <div className="flex items-center justify-center h-12 border rounded-md bg-muted/50">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-muted-foreground">Loading projects...</span>
+                </div>
+              )}
+              {error && !isLoading && (
+                <div className="flex items-center justify-center h-12 border border-destructive/50 rounded-md bg-destructive/10 text-destructive p-2">
+                  <AlertTriangle className="h-5 w-5 mr-2" />
+                  <span className="text-sm">Error: {error.message}</span>
+                </div>
+              )}
+              {!isLoading && !error && (
+                <Select value={selectedProjectId} onValueChange={setSelectedProjectId} required disabled={availableProjects.length === 0}>
+                  <SelectTrigger id="project-select" className="h-12 text-base px-4">
+                    <SelectValue placeholder={availableProjects.length === 0 ? "No projects found" : "Select a project..."} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableProjects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+               {!isLoading && !error && availableProjects.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center pt-1">No projects (user documents) found in Firestore 'users' collection.</p>
+              )}
             </div>
-            <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={!selectedProjectId}>
+            <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={!selectedProjectId || isLoading || !!error}>
               <Building className="mr-2 h-5 w-5" />
               Proceed to Project
             </Button>
@@ -71,5 +111,16 @@ export default function SelectProjectPage() {
         Each project maps to a distinct data space in the backend.
       </p>
     </div>
+  );
+}
+
+// Create a QueryClient instance
+const queryClient = new QueryClient();
+
+export default function SelectProjectPage() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <SelectProjectPageComponent />
+    </QueryClientProvider>
   );
 }
