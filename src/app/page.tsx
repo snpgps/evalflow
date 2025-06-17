@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/firebase';
-import { GoogleAuthProvider, signInWithRedirect, onAuthStateChanged, getRedirectResult, type User } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, onAuthStateChanged, type User } from 'firebase/auth'; // Changed to signInWithPopup
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, Rocket } from 'lucide-react';
@@ -29,15 +29,15 @@ export default function LoginPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        console.log("LoginPage: User authenticated, UID:", user.uid);
+        console.log("LoginPage (popup flow): User authenticated, UID:", user.uid);
         localStorage.setItem('authenticatedUserUID', user.uid);
         if (user.email) {
             localStorage.setItem('authenticatedUserEmail', user.email);
         }
-        setIsLoading(false); 
-        router.push('/select-project'); 
+        setIsLoading(false);
+        router.push('/select-project');
       } else {
-        console.log("LoginPage: No user authenticated.");
+        console.log("LoginPage (popup flow): No user authenticated.");
         localStorage.removeItem('authenticatedUserUID');
         localStorage.removeItem('authenticatedUserEmail');
         localStorage.removeItem('currentUserId');
@@ -47,57 +47,37 @@ export default function LoginPage() {
     return () => unsubscribe();
   }, [router]);
 
-  // Handle redirect result
-  useEffect(() => {
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result && result.user) {
-          // User is signed in.
-          // onAuthStateChanged will handle storing UID and redirecting.
-          console.log("LoginPage: Google Sign-In Redirect Result - User:", result.user.uid);
-          toast({ title: "Signed In", description: `Welcome ${result.user.displayName || result.user.email}!` });
-        } else {
-          // No redirect result or user is null
-          console.log("LoginPage: No redirect result or user is null.");
-        }
-      })
-      .catch((error) => {
-        // Handle Errors here.
-        console.error("LoginPage: Google Sign-In Error Object (from getRedirectResult):", error);
-        let detailedErrorMessage = `Code: ${error.code || 'N/A'}. Message: ${error.message || "Could not process sign-in redirect."}`;
-        if (error.customData) { detailedErrorMessage += ` CustomData: ${JSON.stringify(error.customData)}`; }
-        toast({ 
-          title: "Sign-In Failed", 
-          description: `${detailedErrorMessage}. Try disabling browser extensions or using incognito mode.`,
-          variant: "destructive",
-          duration: 9000
-        });
-      })
-      .finally(() => {
-        setIsLoading(false); // Ensure loading is stopped after redirect processing
-        setIsSigningIn(false); // Also reset signingIn state
-      });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // useEffect for getRedirectResult is removed as we switch back to signInWithPopup
 
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
     setIsLoading(true); // Show loading state immediately
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithRedirect(auth, provider);
-      // Redirect will happen, getRedirectResult will handle the response
+      const result = await signInWithPopup(auth, provider);
+      // User is signed in.
+      // onAuthStateChanged will handle storing UID and redirecting.
+      console.log("LoginPage (popup flow): Google Sign-In with Popup Result - User:", result.user.uid);
+      toast({ title: "Signed In", description: `Welcome ${result.user.displayName || result.user.email}!` });
     } catch (error: any) {
-      console.error("LoginPage: Google Sign-In Error Object (from signInWithRedirect):", error);
-      let detailedErrorMessage = `Code: ${error.code || 'N/A'}. Message: ${error.message || "Could not start Google Sign-In."}`;
+      console.error("LoginPage (popup flow): Google Sign-In Error Object:", error);
+      let detailedErrorMessage = `Code: ${error.code || 'N/A'}. Message: ${error.message || "Could not complete Google Sign-In."}`;
       if (error.customData) { detailedErrorMessage += ` CustomData: ${JSON.stringify(error.customData)}`; }
-      toast({ 
-        title: "Sign-In Failed", 
-        description: `${detailedErrorMessage}. Try disabling browser extensions or using incognito mode.`,
+      
+      // Specific handling for popup-closed-by-user if needed
+      if (error.code === 'auth/popup-closed-by-user') {
+        detailedErrorMessage = "The sign-in popup was closed before completion. Please try again.";
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        detailedErrorMessage = "Multiple sign-in popups were opened. Please close other popups and try again.";
+      }
+
+      toast({
+        title: "Sign-In Failed",
+        description: `${detailedErrorMessage} If issues persist, try disabling browser extensions or using incognito mode.`,
         variant: "destructive",
         duration: 9000
       });
+    } finally {
       setIsSigningIn(false);
       setIsLoading(false);
     }
