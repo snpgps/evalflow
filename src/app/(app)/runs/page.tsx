@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PlusCircle, PlayCircle, Eye, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, Loader2, TestTube2, CheckCheck, Zap, FileText as FileTextIcon, AlignLeft, Info, Briefcase, Cog, Layers, FileSearch } from "lucide-react";
+import { PlusCircle, PlayCircle, Eye, Trash2, Filter, Settings, BarChart3, Clock, CheckCircle, XCircle, Loader2, TestTube2, CheckCheck, Zap, FileText as FileTextIcon, AlignLeft, Info, Briefcase, Cog, Layers, FileSearch, Copy } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -361,7 +361,7 @@ export default function EvalRunsPage() {
     if (selEvalParams.length === 0 && selSummarizationDefs.length === 0) { toast({ title: "Configuration Incomplete", description: "Please select at least one Evaluation Parameter or one Summarization Definition.", variant: "destructive"}); return; }
     if (runOnNRows < 0) { toast({ title: "Validation Error", description: "Number of rows to test cannot be negative.", variant: "destructive" }); return; }
     if (newRunConcurrencyLimit < 1) { toast({ title: "Validation Error", description: "Concurrency limit must be at least 1.", variant: "destructive" }); return; }
-    if (!datasetVersion.columnMapping || Object.keys(datasetVersion.columnMapping).length === 0) { toast({ title: "Dataset Version Not Ready", description: "The selected dataset version must have product parameters mapped. Please configure it on the Datasets page.", variant: "destructive" }); return; }
+    if (!datasetVersion.columnMapping || Object.keys(datasetVersion.columnMapping).length === 0) { toast({ title: "Dataset Version Not Ready", description: "The selected dataset version must have input parameters mapped. Please configure it on the Datasets page.", variant: "destructive" }); return; }
     if (newRunType === 'GroundTruth' && (!datasetVersion.groundTruthMapping || Object.keys(datasetVersion.groundTruthMapping).length === 0) && selEvalParams.length > 0) { toast({ title: "Configuration Warning", description: "For Ground Truth runs with Evaluation Parameters, the selected dataset version should ideally have Ground Truth columns mapped for accurate label comparison. The run will proceed but accuracy may be 0% for labels.", variant: "default" }); }
 
     let modelIdentifierForGenkit: string | undefined = undefined;
@@ -404,6 +404,79 @@ export default function EvalRunsPage() {
   };
 
   const handleDeleteRun = (runId: string) => { if (!currentUserId) return; if (confirm('Are you sure you want to delete this evaluation run and all its associated analyses? This action cannot be undone.')) deleteEvalRunMutation.mutate(runId); };
+  
+  const handleDuplicateRun = (runToDuplicate: EvalRun) => {
+    if (!currentUserId || !datasets || !modelConnectors || !promptTemplates) {
+      toast({ title: "Error", description: "Required data not loaded for duplication.", variant: "destructive" });
+      return;
+    }
+    resetNewRunForm(); 
+
+    setNewRunName(`${runToDuplicate.name} - Copy`);
+    setNewRunType(runToDuplicate.runType);
+
+    // Dataset and Version
+    if (datasets.find(d => d.id === runToDuplicate.datasetId)) {
+      setSelectedDatasetId(runToDuplicate.datasetId);
+      const dataset = datasets.find(d => d.id === runToDuplicate.datasetId);
+      if (dataset && runToDuplicate.datasetVersionId && dataset.versions.find(v => v.id === runToDuplicate.datasetVersionId)) {
+        setSelectedDatasetVersionId(runToDuplicate.datasetVersionId);
+      } else {
+        setSelectedDatasetVersionId(''); 
+      }
+    } else {
+      setSelectedDatasetId('');
+      setSelectedDatasetVersionId('');
+    }
+    
+    // Model Connector
+    if (modelConnectors.find(c => c.id === runToDuplicate.modelConnectorId)) {
+      setSelectedConnectorId(runToDuplicate.modelConnectorId);
+    } else {
+      setSelectedConnectorId('');
+    }
+
+    // Prompt and Version
+    if (promptTemplates.find(p => p.id === runToDuplicate.promptId)) {
+      setSelectedPromptId(runToDuplicate.promptId);
+      const prompt = promptTemplates.find(p => p.id === runToDuplicate.promptId);
+      if (prompt && runToDuplicate.promptVersionId && prompt.versions.find(v => v.id === runToDuplicate.promptVersionId)) {
+        setSelectedPromptVersionId(runToDuplicate.promptVersionId);
+      } else {
+        setSelectedPromptVersionId('');
+      }
+    } else {
+      setSelectedPromptId('');
+      setSelectedPromptVersionId('');
+    }
+    
+    setSelectedEvalParamIds([...runToDuplicate.selectedEvalParamIds]);
+    setSelectedSummarizationDefIds([...(runToDuplicate.selectedSummarizationDefIds || [])]);
+    setSelectedContextDocIds([...(runToDuplicate.selectedContextDocumentIds || [])]);
+    setRunOnNRows(runToDuplicate.runOnNRows);
+    setNewRunConcurrencyLimit(runToDuplicate.concurrencyLimit);
+    
+    // Trigger showContextDocSelector update based on duplicated connector
+    const duplicatedConnector = modelConnectors.find(c => c.id === runToDuplicate.modelConnectorId);
+    let shouldShowSelectorForDuplicated = false;
+    if (duplicatedConnector && duplicatedConnector.provider === 'Vertex AI' && duplicatedConnector.config) {
+        try {
+            const configJson = JSON.parse(duplicatedConnector.config);
+            if (configJson.model && GEMINI_CONTEXT_CACHING_MODELS.includes(configJson.model)) {
+                shouldShowSelectorForDuplicated = true;
+            }
+        } catch (e) { console.warn("Could not parse duplicated connector config for context docs check:", e); }
+    }
+    setShowContextDocSelector(shouldShowSelectorForDuplicated);
+    if (!shouldShowSelectorForDuplicated) {
+      setSelectedContextDocIds([]); 
+    }
+
+
+    setIsNewRunDialogOpen(true);
+  };
+
+
   const getStatusBadge = (status: EvalRun['status']) => {
     switch (status) {
       case 'Completed': return <Badge variant="default" className="bg-green-500 hover:bg-green-600"><CheckCircle className="mr-1 h-3 w-3" />Completed</Badge>;
@@ -436,6 +509,24 @@ export default function EvalRunsPage() {
     !selectedPromptVersionId || 
     !newRunName.trim();
 
+  const toggleSelectAllEvalParams = () => {
+    if (!evaluationParameters) return;
+    if (selectedEvalParamIds.length === evaluationParameters.length) {
+      setSelectedEvalParamIds([]);
+    } else {
+      setSelectedEvalParamIds(evaluationParameters.map(ep => ep.id));
+    }
+  };
+
+  const toggleSelectAllSummarizationDefs = () => {
+    if (!summarizationDefinitions) return;
+    if (selectedSummarizationDefIds.length === summarizationDefinitions.length) {
+      setSelectedSummarizationDefIds([]);
+    } else {
+      setSelectedSummarizationDefIds(summarizationDefinitions.map(sd => sd.id));
+    }
+  };
+
 
   return (
     <div className="space-y-6 p-4 md:p-0">
@@ -453,13 +544,13 @@ export default function EvalRunsPage() {
               <Button 
                 onClick={() => {resetNewRunForm(); setIsNewRunDialogOpen(true);}} 
                 disabled={addEvalRunMutation.isPending || !currentUserId} 
-                className="w-full sm:w-auto shrink-0" // Added shrink-0
+                className="w-full sm:w-auto shrink-0" 
               >
                 <PlusCircle className="mr-2 h-5 w-5" />New Evaluation Run
               </Button>
             </DialogTrigger>
             <DialogContent 
-              className="sm:max-w-2xl flex flex-col max-h-[90vh] p-0" // Increased width, max height, no padding
+              className="sm:max-w-2xl flex flex-col max-h-[90vh] p-0" 
             >
               <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
                 <DialogTitle>Configure New Evaluation Run</DialogTitle>
@@ -472,7 +563,7 @@ export default function EvalRunsPage() {
               ) : (
                 <>
                   <div className="flex-grow min-h-0 overflow-y-auto">
-                    <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-0"> {/* No padding on form itself */}
+                    <form id="new-eval-run-form" onSubmit={handleNewRunSubmit} className="p-0"> 
                       <Tabs defaultValue="general" className="w-full">
                         <TabsList className="grid w-full grid-cols-4 rounded-none border-b sticky top-0 bg-background z-10 px-6 pt-4">
                           <TabsTrigger value="general"><Info className="mr-1 h-4 w-4 hidden sm:inline"/>General</TabsTrigger>
@@ -481,7 +572,7 @@ export default function EvalRunsPage() {
                           <TabsTrigger value="execution"><Cog className="mr-1 h-4 w-4 hidden sm:inline"/>Execution</TabsTrigger>
                         </TabsList>
                         
-                        <div className="p-6 space-y-4"> {/* Padding applied here for content of tabs */}
+                        <div className="p-6 space-y-4"> 
                           <TabsContent value="general" className="mt-0">
                             <div className="space-y-4">
                               <div><Label htmlFor="run-name">Run Name</Label><Input id="run-name" value={newRunName} onChange={(e) => setNewRunName(e.target.value)} placeholder="e.g., My Chatbot Eval - July" required/></div>
@@ -492,7 +583,7 @@ export default function EvalRunsPage() {
                           <TabsContent value="data_model" className="mt-0">
                             <div className="space-y-4">
                               <div> <Label htmlFor="run-dataset">Dataset</Label> <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required> <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger> <SelectContent>{datasets?.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent> </Select> </div>
-                              {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length > 0 && ( <div> <Label htmlFor="run-dataset-version">Dataset Version</Label> <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required> <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger> <SelectContent>{selectedDatasetForVersions.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent> </Select> {selectedDatasetVersionForWarnings && (!selectedDatasetVersionForWarnings.columnMapping || Object.keys(selectedDatasetVersionForWarnings.columnMapping).length === 0) && ( <p className="text-xs text-destructive mt-1">Warning: No Product Parameters mapped.</p> )} {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings && !(selectedDatasetVersionForWarnings.groundTruthMapping && Object.keys(selectedDatasetVersionForWarnings.groundTruthMapping).length > 0) && selectedEvalParamIds.length > 0 && ( <p className="text-xs text-amber-600 mt-1">Warning: GT run with Eval Params, but no GT columns mapped.</p> )} </div> )}
+                              {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length > 0 && ( <div> <Label htmlFor="run-dataset-version">Dataset Version</Label> <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required> <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger> <SelectContent>{selectedDatasetForVersions.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent> </Select> {selectedDatasetVersionForWarnings && (!selectedDatasetVersionForWarnings.columnMapping || Object.keys(selectedDatasetVersionForWarnings.columnMapping).length === 0) && ( <p className="text-xs text-destructive mt-1">Warning: No Input Parameters mapped.</p> )} {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings && !(selectedDatasetVersionForWarnings.groundTruthMapping && Object.keys(selectedDatasetVersionForWarnings.groundTruthMapping).length > 0) && selectedEvalParamIds.length > 0 && ( <p className="text-xs text-amber-600 mt-1">Warning: GT run with Eval Params, but no GT columns mapped.</p> )} </div> )}
                               {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length === 0 && ( <p className="text-xs text-muted-foreground mt-1">This dataset has no versions.</p> )}
                               <div><Label htmlFor="run-connector">Model Connector (Judge LLM)</Label> <Select value={selectedConnectorId} onValueChange={setSelectedConnectorId} required> <SelectTrigger id="run-connector"><SelectValue placeholder="Select model connector" /></SelectTrigger> <SelectContent>{modelConnectors?.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name} ({mc.provider})</SelectItem>)}</SelectContent> </Select> </div>
                             </div>
@@ -514,8 +605,28 @@ export default function EvalRunsPage() {
                                     </Select>
                                   </div>
                                 )}
-                                <div><Label>Evaluation Parameters (for labeling)</Label> <ScrollArea className="h-32 rounded-md border bg-muted/30 p-2"> <div className="space-y-2"> {evaluationParameters && evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>} {evaluationParameters?.map(ep => ( <div key={ep.id} className="flex items-center space-x-2"> <Checkbox id={`ep-${ep.id}`} checked={selectedEvalParamIds.includes(ep.id)} onCheckedChange={(checked) => { setSelectedEvalParamIds(prev => checked ? [...prev, ep.id] : prev.filter(id => id !== ep.id) ); }} /> <Label htmlFor={`ep-${ep.id}`} className="font-normal">{ep.name}</Label> </div> ))} </div></ScrollArea> </div>
-                                <div><Label>Summarization Definitions (for summary generation)</Label> <ScrollArea className="h-32 rounded-md border bg-muted/30 p-2"> <div className="space-y-2"> {summarizationDefinitions && summarizationDefinitions.length === 0 && <p className="text-xs text-muted-foreground">No summarization definitions available.</p>} {summarizationDefinitions?.map(sd => ( <div key={sd.id} className="flex items-center space-x-2"> <Checkbox id={`sd-${sd.id}`} checked={selectedSummarizationDefIds.includes(sd.id)} onCheckedChange={(checked) => { setSelectedSummarizationDefIds(prev => checked ? [...prev, sd.id] : prev.filter(id => id !== sd.id) ); }} /> <Label htmlFor={`sd-${sd.id}`} className="font-normal">{sd.name}</Label> </div> ))} </div></ScrollArea> </div>
+                                <div className="space-y-1">
+                                  <div className="flex justify-between items-center">
+                                    <Label>Evaluation Parameters (for labeling)</Label>
+                                    {evaluationParameters && evaluationParameters.length > 0 && (
+                                      <Button type="button" variant="link" size="sm" onClick={toggleSelectAllEvalParams} className="p-0 h-auto text-xs">
+                                        {selectedEvalParamIds.length === evaluationParameters.length ? 'Deselect All' : 'Select All'}
+                                      </Button>
+                                    )}
+                                  </div>
+                                  <ScrollArea className="h-32 rounded-md border bg-muted/30 p-2"> <div className="space-y-2"> {evaluationParameters && evaluationParameters.length === 0 && <p className="text-xs text-muted-foreground">No evaluation parameters defined.</p>} {evaluationParameters?.map(ep => ( <div key={ep.id} className="flex items-center space-x-2"> <Checkbox id={`ep-${ep.id}`} checked={selectedEvalParamIds.includes(ep.id)} onCheckedChange={(checked) => { setSelectedEvalParamIds(prev => checked ? [...prev, ep.id] : prev.filter(id => id !== ep.id) ); }} /> <Label htmlFor={`ep-${ep.id}`} className="font-normal">{ep.name}</Label> </div> ))} </div></ScrollArea> 
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="flex justify-between items-center">
+                                    <Label>Summarization Definitions (for summary generation)</Label>
+                                    {summarizationDefinitions && summarizationDefinitions.length > 0 && (
+                                      <Button type="button" variant="link" size="sm" onClick={toggleSelectAllSummarizationDefs} className="p-0 h-auto text-xs">
+                                        {selectedSummarizationDefIds.length === summarizationDefinitions.length ? 'Deselect All' : 'Select All'}
+                                      </Button>
+                                    )}
+                                  </div>
+                                  <ScrollArea className="h-32 rounded-md border bg-muted/30 p-2"> <div className="space-y-2"> {summarizationDefinitions && summarizationDefinitions.length === 0 && <p className="text-xs text-muted-foreground">No summarization definitions available.</p>} {summarizationDefinitions?.map(sd => ( <div key={sd.id} className="flex items-center space-x-2"> <Checkbox id={`sd-${sd.id}`} checked={selectedSummarizationDefIds.includes(sd.id)} onCheckedChange={(checked) => { setSelectedSummarizationDefIds(prev => checked ? [...prev, sd.id] : prev.filter(id => id !== sd.id) ); }} /> <Label htmlFor={`sd-${sd.id}`} className="font-normal">{sd.name}</Label> </div> ))} </div></ScrollArea> 
+                                </div>
                                 {showContextDocSelector && (
                                   <div><Label>Context Documents (Optional, for compatible Gemini models)</Label>
                                     <ScrollArea className="h-32 rounded-md border bg-muted/30 p-2">
@@ -576,7 +687,7 @@ export default function EvalRunsPage() {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[60px]">View</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
                   <TableHead className="w-[120px] sm:w-auto">Name</TableHead>
                   <TableHead className="w-[120px]">Status</TableHead>
                   <TableHead className="hidden md:table-cell w-[100px]">Type</TableHead>
@@ -584,18 +695,25 @@ export default function EvalRunsPage() {
                   <TableHead className="hidden lg:table-cell w-auto">Model</TableHead>
                   <TableHead className="hidden lg:table-cell w-auto">Prompt</TableHead>
                   <TableHead className="hidden sm:table-cell w-[100px]">Created At</TableHead>
-                  <TableHead className="text-right w-[50px]">Delete</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {evalRuns.map((run) => (
                   <TableRow key={run.id} className="hover:bg-muted/50">
                     <TableCell>
-                        <Link href={`/runs/${run.id}`} passHref>
-                            <Button variant="ghost" size="icon" title="View Details">
-                                <FileSearch className="h-5 w-5 text-primary" />
+                        <div className="flex items-center gap-0.5">
+                            <Link href={`/runs/${run.id}`} passHref>
+                                <Button variant="ghost" size="icon" title="View Details" className="h-8 w-8">
+                                    <FileSearch className="h-4 w-4 text-primary" />
+                                </Button>
+                            </Link>
+                            <Button variant="ghost" size="icon" title="Duplicate Run" className="h-8 w-8" onClick={() => handleDuplicateRun(run)}>
+                                <Copy className="h-4 w-4" />
                             </Button>
-                        </Link>
+                            <Button variant="ghost" size="icon" title="Delete Run" className="text-destructive hover:text-destructive/90 h-8 w-8" onClick={() => handleDeleteRun(run.id)} disabled={deleteEvalRunMutation.isPending && deleteEvalRunMutation.variables === run.id}>
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </TableCell>
                     <TableCell className="font-medium max-w-[100px] sm:max-w-xs truncate">
                         <Link href={`/runs/${run.id}`} className="hover:underline" title={run.name}>{run.name}</Link>
@@ -606,11 +724,6 @@ export default function EvalRunsPage() {
                     <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.modelConnectorName || run.modelConnectorId}>{run.modelConnectorName || run.modelConnectorId}</TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden lg:table-cell max-w-[100px] truncate" title={run.promptName || run.promptId}>{run.promptName || run.promptId}{run.promptVersionNumber ? ` (v${run.promptVersionNumber})` : ''}</TableCell>
                     <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{formatTimestamp(run.createdAt)}</TableCell>
-                    <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" title="Delete Run" className="text-destructive hover:text-destructive/90" onClick={() => handleDeleteRun(run.id)} disabled={deleteEvalRunMutation.isPending && deleteEvalRunMutation.variables === run.id}>
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
-                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
