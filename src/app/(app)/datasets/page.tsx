@@ -511,7 +511,6 @@ export default function DatasetsPage() {
             
             if (sheetNameToLoadHeadersFor && filteredSheetNames.includes(sheetNameToLoadHeadersFor)) {
                 setMappingDialogSelectedSheet(sheetNameToLoadHeadersFor);
-                // Directly pass blob and name for initial Excel parse
                 await handleMappingDialogSheetSelect(sheetNameToLoadHeadersFor, localFileData.blob, localFileData.name);
             } else if (filteredSheetNames.length > 0 && version.selectedSheetName && !filteredSheetNames.includes(version.selectedSheetName)) {
                 console.warn(`Previously selected sheet "${version.selectedSheetName}" not found in the file. Clearing selection.`);
@@ -523,14 +522,12 @@ export default function DatasetsPage() {
                 setMappingDialogSheetColumnHeaders([]);
             }
         } else if (localFileData.name.toLowerCase().endsWith('.csv')) {
-            // Direct CSV Parsing here
             const text = await localFileData.blob.text();
             const lines = text.split(/\r\n|\n|\r/);
             if (lines.length > 0 && lines[0].trim() !== '') {
                 const csvHeaders = lines[0].split(',').map(h => String(h.replace(/^"|"$/g, '').trim())).filter(h => h !== '');
                 setMappingDialogSheetColumnHeaders(csvHeaders);
                  if (csvHeaders.length === 0) { toast({ title: "CSV Parsing", description: "CSV file has a header row, but no valid column names could be extracted or all are empty.", variant: "warning" }); }
-                // setMappingDialogSelectedSheet(localFileData.name); // Not strictly needed for CSV as there's no sheet selection
 
                 const currentVersionMapping = version.columnMapping || {};
                 const currentVersionGtMapping = version.groundTruthMapping || {};
@@ -681,7 +678,7 @@ export default function DatasetsPage() {
                         <TableCell>
                           {(version.columnMapping && Object.keys(version.columnMapping).length > 0) || (version.groundTruthMapping && Object.keys(version.groundTruthMapping).length > 0)
                             ? <Badge variant="default" className="bg-green-500 hover:bg-green-600">Configured</Badge>
-                            : <Badge variant="outline">Pending</Badge>}
+                            : <Badge variant="destructive">Pending</Badge>}
                         </TableCell>
                         <TableCell className="text-right">
                             <div className="flex flex-col sm:flex-row justify-end items-end sm:items-center gap-1">
@@ -858,3 +855,4 @@ export default function DatasetsPage() {
     </div>
   );
 }
+
