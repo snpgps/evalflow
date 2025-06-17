@@ -73,7 +73,7 @@ export interface EvalRun {
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
   userId?: string;
-  firstRowFullPrompt?: string; // Added field
+  firstRowFullPrompt?: string; 
 }
 
 export interface DatasetVersionConfig {
@@ -200,18 +200,15 @@ const fetchPromptVersionText = async (userId: string | null, promptId: string, v
       try {
         const parsedTemplate = JSON.parse(templateData);
         if (parsedTemplate && typeof parsedTemplate.system === 'string' && typeof parsedTemplate.input === 'string') {
-          // This is the new JSON format, combine system and input for the base prompt text
           return `${parsedTemplate.system}\n\n${parsedTemplate.input}`;
         } else {
-          // Not the new JSON format, assume it's the old plain string format
           return templateData;
         }
       } catch (e) {
-        // If JSON.parse fails, it's definitely the old plain string format
         return templateData;
       }
     }
-    return null; // Should ideally always be a string or null
+    return null; 
   }
   return null;
 };
@@ -322,7 +319,7 @@ export default function RunDetailsPage() {
 
   const [filterStates, setFilterStates] = useState<AllFilterStates>({});
 
-  const [promptTemplateText, setPromptTemplateText] = useState<string | null>(null); 
+  // const [promptTemplateText, setPromptTemplateText] = useState<string | null>(null); // This local state is no longer needed as runDetails.firstRowFullPrompt will be used
   const [isLoadingPromptTemplate, setIsLoadingPromptTemplate] = useState<boolean>(false);
   const [isFullPromptDialogVisible, setIsFullPromptDialogVisible] = useState<boolean>(false);
 
@@ -479,19 +476,21 @@ export default function RunDetailsPage() {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0; const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) { const errorMsg = "Missing config or no eval/summarization params."; toast({ title: "Cannot start", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return; }
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start", description: "No dataset sample.", variant: "destructive"}); addLog("Error: No previewed data.", "error"); return; }
-    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [], firstRowFullPrompt: '' }); // Clear previous firstRowFullPrompt
+    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [], firstRowFullPrompt: '' }); 
     setSimulationLog([]); addLog("LLM task init."); let collectedResults: EvalRunResultItem[] = [];
     try {
       setIsLoadingPromptTemplate(true); 
       const fetchedPromptTemplateString = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
       setIsLoadingPromptTemplate(false); 
       if (!fetchedPromptTemplateString) throw new Error("Failed to fetch prompt template.");
-      setPromptTemplateText(fetchedPromptTemplateString); 
+      // setPromptTemplateText(fetchedPromptTemplateString); // No longer need local state, it's for firstRowFullPrompt
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
       if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
       const parameterIdsRequiringRationale = hasEvalParams ? evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id) : [];
       
+      let storedFirstRowPrompt = false;
+
       for (let batchStartIndex = 0; batchStartIndex < rowsToProcess; batchStartIndex += effectiveConcurrencyLimit) {
         const batchEndIndex = Math.min(batchStartIndex + effectiveConcurrencyLimit, rowsToProcess); const currentBatchRows = datasetToProcess.slice(batchStartIndex, batchEndIndex); addLog(`Batch: Rows ${batchStartIndex + 1}-${batchEndIndex}. Size: ${currentBatchRows.length}.`);
         const batchPromises = currentBatchRows.map(async (rawRowFromPreview, indexInBatch) => {
@@ -507,8 +506,9 @@ export default function RunDetailsPage() {
           
           const fullPromptForLLM = basePromptWithFilledPlaceholders + structuredCriteriaTextForLLM;
           
-          if (overallRowIndex === 0) {
+          if (overallRowIndex === 0 && !storedFirstRowPrompt) {
              updateRunMutation.mutate({ id: runId, firstRowFullPrompt: fullPromptForLLM });
+             storedFirstRowPrompt = true;
           }
           const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [], summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [], parameterIdsRequiringRationale: parameterIdsRequiringRationale, modelName: runDetails.modelIdentifierForGenkit || undefined, modelConnectorProvider: runDetails.modelConnectorProvider, modelConnectorConfigString: runDetails.modelConnectorConfigString, };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex }; if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
@@ -519,15 +519,7 @@ export default function RunDetailsPage() {
         const settledBatchResults = await Promise.all(batchPromises); settledBatchResults.forEach(itemWithIndex => { const { originalIndex, ...resultItem } = itemWithIndex; collectedResults.push(resultItem as EvalRunResultItem); });
         addLog(`Batch ${batchStartIndex + 1}-${batchEndIndex} processed. ${settledBatchResults.length} results.`); const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
         const updateData: Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; } = { id: runId, progress: currentProgress, results: sanitizeDataForFirestore(collectedResults), status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing' };
-        if (batchStartIndex === 0 && currentBatchRows.length > 0) { // Ensure we have the first row's prompt if it's the first batch
-            const firstRowDataForPrompt = currentBatchRows[0];
-            let firstBasePrompt = fetchedPromptTemplateString;
-            for (const inputParamName in firstRowDataForPrompt) { if(!inputParamName.startsWith('_gt_')) firstBasePrompt = firstBasePrompt.replace(new RegExp(`{{${inputParamName}}}`, 'g'), String(firstRowDataForPrompt[inputParamName] ?? "")); }
-            let firstStructuredCriteria = "";
-            if (hasEvalParams) { /* ... append eval param details ... */ }
-            if (hasSummarizationDefs) { /* ... append summarization def details ... */ }
-            // updateData.firstRowFullPrompt = firstBasePrompt + firstStructuredCriteria; // This was already handled by overallRowIndex === 0 check earlier
-        }
+        
         updateRunMutation.mutate(updateData);
       }
       addLog("LLM tasks complete."); updateRunMutation.mutate({ id: runId, status: 'Completed', results: sanitizeDataForFirestore(collectedResults), progress: 100, completedAt: serverTimestamp() }); toast({ title: "LLM Tasks Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
@@ -771,13 +763,11 @@ export default function RunDetailsPage() {
                         including filled input parameters and appended evaluation/summarization criteria.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="flex-grow min-h-0 my-4 mx-6 border rounded-md">
-                    <ScrollArea className="h-full w-full">
-                        <pre className="text-xs whitespace-pre-wrap p-4">
-                            {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
-                        </pre>
-                    </ScrollArea>
-                </div>
+                <ScrollArea className="flex-grow min-h-0 mx-6 my-4 border rounded-md">
+                    <pre className="text-xs whitespace-pre-wrap p-4">
+                        {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
+                    </pre>
+                </ScrollArea>
                 <DialogFooter className="p-6 pt-4 border-t mt-auto flex-shrink-0">
                     <Button onClick={() => setIsFullPromptDialogVisible(false)}>Close</Button>
                 </DialogFooter>
