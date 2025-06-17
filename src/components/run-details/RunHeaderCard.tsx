@@ -4,7 +4,7 @@
 import React, { type FC } from 'react'; 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Play, Loader2, DatabaseZap, Wand2, Download, FileSearch, Tags, ClockIcon, CheckCheckIcon, CalendarDaysIcon, InfoIcon } from "lucide-react";
+import { Play, Loader2, DatabaseZap, Wand2, Download, FileSearch, Tags, ClockIcon, CheckCheckIcon, CalendarDaysIcon, FileText as FileTextIcon } from "lucide-react"; // Changed InfoIcon to FileTextIcon
 import type { Timestamp } from 'firebase/firestore';
 import type { EvalRun } from '@/app/(app)/runs/[runId]/page';
 import { Badge } from '@/components/ui/badge';
@@ -50,9 +50,10 @@ const OriginalRunHeaderCard: FC<RunHeaderCardProps> = ({
               <CardTitle className="text-xl md:text-2xl font-headline">{runDetails.name}</CardTitle>
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1.5 items-center ml-0 md:ml-10 text-xs text-muted-foreground">
-              <Badge variant="outline" className="text-xs"><InfoIcon className="mr-1.5 h-3 w-3"/>ID: {runDetails.id}</Badge>
+              <Badge variant="outline" className="text-xs">
+                <FileTextIcon className="mr-1.5 h-3 w-3"/>ID: {runDetails.id}
+              </Badge>
               <Badge variant="outline" className="text-xs">{runDetails.runType === 'GroundTruth' ? <CheckCheckIcon className="mr-1.5 h-3 w-3 text-green-600"/> : <Tags className="mr-1.5 h-3 w-3"/>}{runDetails.runType === 'GroundTruth' ? 'Ground Truth' : 'Product'}</Badge>
-              <div className="flex items-center">{getStatusBadge(runDetails.status)}</div>
               <Badge variant="outline" className="text-xs"><CalendarDaysIcon className="mr-1.5 h-3 w-3"/>Created: {formatTimestamp(runDetails.createdAt, true)}</Badge>
               {runDetails.status === 'Completed' && runDetails.completedAt && (
                 <Badge variant="outline" className="text-xs"><CalendarDaysIcon className="mr-1.5 h-3 w-3"/>Completed: {formatTimestamp(runDetails.completedAt, true)}</Badge>
@@ -64,10 +65,11 @@ const OriginalRunHeaderCard: FC<RunHeaderCardProps> = ({
                   onClick={onShowFullPromptClick} 
                   disabled={!canShowFullPrompt || (isLoadingPromptTemplate && !runDetails.firstRowFullPrompt)} 
                   title="View Full Prompt for First Row"
-                  className="h-7 w-7 ml-1" 
+                  className="h-7 w-7" 
                 >
-                  {(isLoadingPromptTemplate && !runDetails.firstRowFullPrompt) ? <Loader2 className="h-4 w-4 animate-spin" /> : <InfoIcon className="h-4 w-4 text-blue-500" />}
+                  {(isLoadingPromptTemplate && !runDetails.firstRowFullPrompt) ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileTextIcon className="h-4 w-4 text-blue-500" />}
                </Button>
+               <div className="flex items-center">{getStatusBadge(runDetails.status)}</div>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto self-start md:self-center shrink-0">
