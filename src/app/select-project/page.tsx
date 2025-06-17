@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'; // Added explicit React import
 import { useRouter } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -20,21 +20,29 @@ interface Project {
 
 const fetchProjects = async (): Promise<Project[]> => {
   if (!db) {
-    // This case should ideally not happen if Firebase initializes correctly,
-    // but it's a safeguard.
     console.error("Firestore DB is not initialized in fetchProjects.");
-    throw new Error("Database not available.");
+    throw new Error("Database not available. Check Firebase initialization (src/lib/firebase.ts).");
   }
+  // console.log("fetchProjects: Attempting to fetch from 'users' collection.");
   const usersCollectionRef = collection(db, 'users');
-  const usersSnapshot = await getDocs(usersCollectionRef);
-  if (usersSnapshot.empty) {
-    return [];
+  try {
+    const usersSnapshot = await getDocs(usersCollectionRef);
+    if (usersSnapshot.empty) {
+      console.warn("fetchProjects: Firestore 'users' collection is empty or not accessible. Check Firestore data and security rules.");
+      return [];
+    }
+    // console.log(`fetchProjects: Found ${usersSnapshot.size} documents in 'users' collection.`);
+    return usersSnapshot.docs.map(doc => ({
+      id: doc.id,
+      name: `Project: ${doc.id}` // Display name for the project
+    }));
+  } catch (e: any) {
+    console.error("fetchProjects: Error fetching documents from 'users' collection:", e);
+    throw new Error(`Failed to fetch projects: ${e.message}. Check console and Firestore security rules.`);
   }
-  return usersSnapshot.docs.map(doc => ({
-    id: doc.id,
-    name: `Project: ${doc.id}` // Display name for the project
-  }));
 };
+
+const queryClient = new QueryClient();
 
 function SelectProjectPageComponent() {
   const [selectedProjectId, setSelectedProjectId] = useState('');
@@ -55,6 +63,8 @@ function SelectProjectPageComponent() {
       toast({ title: "Selection Required", description: "Please select a project to continue.", variant: "destructive" });
     }
   };
+
+  // console.log("Rendering SelectProjectPageComponent. isLoading:", isLoading, "Error object:", error);
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
@@ -77,9 +87,12 @@ function SelectProjectPageComponent() {
                 </div>
               )}
               {error && !isLoading && (
-                <div className="flex items-center justify-center h-12 border border-destructive/50 rounded-md bg-destructive/10 text-destructive p-2">
-                  <AlertTriangle className="h-5 w-5 mr-2" />
-                  <span className="text-sm">Error: {error.message}</span>
+                <div className="flex items-center justify-center h-auto border border-destructive/50 rounded-md bg-destructive/10 text-destructive p-3 text-sm">
+                  <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
+                  <div>
+                    <p className="font-semibold">Error loading projects:</p>
+                    <p>{error.message}</p>
+                  </div>
                 </div>
               )}
               {!isLoading && !error && (
@@ -97,7 +110,17 @@ function SelectProjectPageComponent() {
                 </Select>
               )}
                {!isLoading && !error && availableProjects.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center pt-1">No projects (user documents) found in Firestore 'users' collection.</p>
+                <div className="text-xs text-muted-foreground text-left pt-2 px-1 space-y-1">
+                  <p className="font-medium">No projects found. This could be due to:</p>
+                  <ul className="list-disc list-inside pl-4">
+                    <li>No project/user documents currently exist in the Firestore 'users' collection.</li>
+                    <li>Firestore security rules are preventing access to list documents in the 'users' collection.
+                        Ensure your rules allow read access (e.g., <code>match /users/{'{userId}'} {'{'} allow read: if true; {'}'}</code> for open access, or a more specific rule).
+                    </li>
+                    <li>An incorrect Firebase project configuration in your application's environment variables.</li>
+                  </ul>
+                  <p className="mt-1">Please check your Firebase project setup, data, and security rules. You might need to refresh this page after making changes.</p>
+                </div>
               )}
             </div>
             <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={!selectedProjectId || isLoading || !!error}>
@@ -113,9 +136,6 @@ function SelectProjectPageComponent() {
     </div>
   );
 }
-
-// Create a QueryClient instance
-const queryClient = new QueryClient();
 
 export default function SelectProjectPage() {
   return (
