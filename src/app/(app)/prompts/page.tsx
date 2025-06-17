@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { PlusCircle, Edit2, Trash2, FileText, GitBranchPlus, Save, Copy, Tag, Loader2, Target, AlertTriangle, AlignLeft, PanelLeftClose, PanelRightOpen, HelpCircle } from "lucide-react";
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -126,6 +127,9 @@ export default function PromptsPage() {
 
   const [isPromptListCollapsed, setIsPromptListCollapsed] = useState(false);
   const [isInstructionsDialogOpen, setIsInstructionsDialogOpen] = useState(false);
+  
+  const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
+  const [promptIdPendingDelete, setPromptIdPendingDelete] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -456,11 +460,18 @@ export default function PromptsPage() {
     setIsPromptDialogOpen(true);
   };
 
-  const handleDeletePrompt = (promptId: string) => {
+  const handleDeletePromptInitiate = (promptId: string) => {
     if (!currentUserId) return;
-    if (confirm('Are you sure you want to delete this prompt template and all its versions? This action cannot be undone.')) {
-      deletePromptTemplateMutation.mutate(promptId);
+    setPromptIdPendingDelete(promptId);
+    setIsConfirmDeleteDialogOpen(true);
+  };
+
+  const confirmDeletePrompt = () => {
+    if (promptIdPendingDelete) {
+      deletePromptTemplateMutation.mutate(promptIdPendingDelete);
     }
+    // setIsConfirmDeleteDialogOpen(false); // This will be handled by onOpenChange
+    // setPromptIdPendingDelete(null); // This will be handled by onOpenChange
   };
 
   const formatDate = (isoString?: string) => {
@@ -510,7 +521,7 @@ export default function PromptsPage() {
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); openEditPromptDialog(p);}} disabled={updatePromptTemplateMutation.isPending || deletePromptTemplateMutation.isPending}>
                     <Edit2 className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/90" onClick={(e) => {e.stopPropagation(); handleDeletePrompt(p.id)}} disabled={deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === p.id }>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/90" onClick={(e) => {e.stopPropagation(); handleDeletePromptInitiate(p.id)}} disabled={deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === p.id }>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -597,32 +608,30 @@ export default function PromptsPage() {
                       <div className="space-y-3 text-sm py-2">
                           <p>Your prompt template is structured into three main parts:</p>
                           <ol className="list-decimal pl-5 space-y-1 text-xs">
-                            <li><strong className="font-medium">System Prompt (Uneditable):</strong> This part tells the AI its role (e.g., an impartial evaluator) and outlines its core tasks (Evaluation Labeling and Summarization).</li>
+                            <li><strong className="font-medium">System Prompt (Uneditable):</strong> This part (shown above your editable section) tells the AI its role as an impartial evaluator and outlines its core tasks (Evaluation Labeling and Summarization).</li>
                             <li><strong className="font-medium">Your Product Input Data Section (Editable):</strong> This is where you define the structure of the specific data the AI will analyze for each row from your dataset.</li>
-                            <li><strong className="font-medium">Detailed Instructions & Criteria (System-Appended, Uneditable):</strong> This section will be automatically populated by the system during an evaluation run. It will contain the detailed definitions of any Evaluation Parameters and Summarization Tasks you select for that run.</li>
+                            <li><strong className="font-medium">Detailed Instructions & Criteria (System-Appended, Uneditable):</strong> This section (shown below your editable section) will be automatically populated by the system during an evaluation run. It will contain the detailed definitions of any Evaluation Parameters and Summarization Tasks you select for that run.</li>
                           </ol>
                           
                           <h3 className="font-semibold mt-2">1. Filling "Your Product Input Data Section":</h3>
                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
                               <li>This is the primary section you will edit.</li>
                               <li>Clearly describe the input fields your product (or the system you're evaluating) would receive. For example, if evaluating a chatbot, you might include user queries, conversation history, etc.</li>
-                              <li>Use the "Product Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> for data that will be dynamically filled from your dataset.</li>
+                              <li>Use the "Product Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> for data that will be dynamically filled from your dataset. Ensure the placeholders match the names defined in your "Schema Definition" page.</li>
                               <li>Example: <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap overflow-x-auto">User Query: {`{{UserQuery}}`}{`\n`}Previous Turn: {`{{BotResponse}}`}</pre></li>
                           </ul>
 
                           <h3 className="font-semibold mt-2">2. Understanding System-Appended Criteria:</h3>
                            <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li>You do <strong className="text-primary">not</strong> need to manually write out the full definitions for Evaluation Parameters or Summarization Tasks in your template.</li>
+                              <li>You do <strong className="text-primary">not</strong> need to manually write out the full definitions for Evaluation Parameters or Summarization Tasks in your editable template section.</li>
                               <li>When you create an "Eval Run", you will select which Evaluation Parameters and Summarization Definitions to include.</li>
                               <li>The system will then take your prompt (with product data filled in from the dataset) and <strong className="text-primary">append</strong> the detailed definitions, labels, examples, etc., for each selected criterion into the "Detailed Instructions & Criteria" section of the final prompt sent to the Judge LLM.</li>
-                              <li>Ensure your editable section generally instructs the AI to refer to the criteria that will be provided in that appended section.</li>
-                              <li>The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (via the fixed "System Prompt" and backend flow logic) to output a JSON array. You do not need to repeat JSON formatting instructions in your editable template section.</li>
+                              <li>The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (via the fixed "System Prompt" and backend flow logic) to output a JSON array containing its judgments and summaries.</li>
                           </ul>
 
                           <h3 className="font-semibold mt-2">3. Best Practices:</h3>
                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
                               <li><strong>Be Clear and Specific:</strong> Avoid ambiguity in how you describe your product inputs.</li>
-                              <li><strong>Use Placeholders Correctly:</strong> Ensure your <code>{`{{ParameterName}}`}</code> placeholders match the names defined in your "Schema Definition" page.</li>
                               <li><strong>Iterate:</strong> Use the "AI Insights" page for suggestions to improve your prompt based on evaluation results.</li>
                           </ul>
                       </div>
@@ -725,7 +734,6 @@ export default function PromptsPage() {
                   </div>
                 )}
               </div>
-
             </ScrollArea>
           </div>
         </CardContent>
@@ -820,6 +828,38 @@ export default function PromptsPage() {
       <div className="flex-1 flex flex-col min-w-0"> 
          {renderEditorArea()}
       </div>
+
+      <AlertDialog
+        open={isConfirmDeleteDialogOpen}
+        onOpenChange={(open) => {
+          setIsConfirmDeleteDialogOpen(open);
+          if (!open) {
+            setPromptIdPendingDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the prompt template and all its versions.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {setIsConfirmDeleteDialogOpen(false); setPromptIdPendingDelete(null);}}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeletePrompt}
+              disabled={deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === promptIdPendingDelete}
+              className={deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === promptIdPendingDelete ? "bg-destructive/70" : ""}
+            >
+              {(deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === promptIdPendingDelete) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirm Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
+
