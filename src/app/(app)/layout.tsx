@@ -6,7 +6,7 @@ import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { Header } from '@/components/layout/header';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation'; // Import usePathname
 import { Skeleton } from '@/components/ui/skeleton';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
@@ -18,6 +18,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isLoadingAuthState, setIsLoadingAuthState] = useState(true);
   const router = useRouter();
+  const pathname = usePathname(); // Get current pathname
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -31,7 +32,10 @@ function AppContent({ children }: { children: React.ReactNode }) {
         if (storedProjectId) {
           setSelectedProjectId(storedProjectId);
         } else {
-          router.push('/select-project'); // Authenticated, but no project selected
+          // Only redirect to /select-project if not already there
+          if (pathname !== '/') { // Check against the new homepage path for project selection
+            router.push('/'); 
+          }
         }
       } else {
         setAuthUid(null);
@@ -39,12 +43,15 @@ function AppContent({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('authenticatedUserUID');
         localStorage.removeItem('authenticatedUserEmail');
         localStorage.removeItem('currentUserId');
-        router.push('/'); // Not authenticated, go to login
+        // Only redirect to login if not already on the login page
+        if (pathname !== '/') { 
+          router.push('/'); 
+        }
       }
       setIsLoadingAuthState(false);
     });
     return () => unsubscribe();
-  }, [router]);
+  }, [router, pathname]); // Add pathname to dependencies
 
 
   if (isLoadingAuthState) {
@@ -62,29 +69,22 @@ function AppContent({ children }: { children: React.ReactNode }) {
     );
   }
   
-  // If authUid is set, but selectedProjectId is not, redirect to select-project
-  // This can happen if user logs in, then clears `currentUserId` manually or an error occurs
-  if (authUid && !selectedProjectId && router.pathname !== '/select-project') {
-     // This check is now mostly handled by onAuthStateChanged, but good for safety
-     // Or if they land directly on an app page without selecting project first
-     router.push('/select-project');
+  // If authUid is set, but selectedProjectId is not, redirect to project selection (which is now '/')
+  if (authUid && !selectedProjectId && pathname !== '/') {
+     router.push('/');
      return <div className="flex flex-col flex-1 min-h-screen items-center justify-center bg-background"><p>Redirecting to project selection...</p></div>;
   }
 
 
   // If selectedProjectId is not set (which means user is not logged in or hasn't selected a project)
   // and we are not already on a public page, redirect.
-  // The onAuthStateChanged above handles the main auth check and redirect to login.
-  // This secondary check handles cases where user is auth'd but hasn't selected a project.
-  if (!selectedProjectId && authUid) { 
-      // We are here if user is authenticated but hasn't selected a project.
-      // The router.push('/select-project') in onAuthStateChanged should handle this.
-      // This block might not be strictly necessary if onAuthStateChanged always fires and redirects.
-      // However, keeping it ensures that if they somehow land on an app page without project selection, they are redirected.
-      // router.push('/select-project');
+  if (!authUid && pathname !== '/') { 
+      // This is now primarily handled by onAuthStateChanged. 
+      // If user is not authenticated and not on login page, they'll be redirected by the effect.
+      // This block acts as an additional safeguard during initial render before effect runs.
       return (
          <div className="flex flex-col flex-1 min-h-screen items-center justify-center bg-background">
-            <p>Loading project context or redirecting...</p>
+            <p>Loading session or redirecting to login...</p>
          </div>
       );
   }
@@ -121,4 +121,3 @@ export default function AppLayout({
     </QueryClientProvider>
   );
 }
-
