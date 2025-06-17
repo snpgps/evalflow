@@ -7,7 +7,7 @@ import { auth } from '@/lib/firebase';
 import { GoogleAuthProvider, signInWithRedirect, onAuthStateChanged, getRedirectResult, type User } from 'firebase/auth';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Rocket } from 'lucide-react'; // Rocket imported
+import { Loader2, Rocket } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 // Google Logo SVG
@@ -117,7 +117,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center space-y-2">
            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Rocket className="h-8 w-8" /> {/* Replaced SVG with Rocket icon */}
+            <Rocket className="h-8 w-8" />
            </div>
           <CardTitle className="text-3xl font-headline">Welcome to EvalFlow</CardTitle>
           <CardDescription>Please sign in to continue to your projects.</CardDescription>
@@ -133,10 +133,6 @@ export default function LoginPage() {
           </Button>
         </CardContent>
       </Card>
-      <p className="mt-8 text-center text-xs text-muted-foreground">
-        By signing in, you agree to our (placeholder) Terms of Service and Privacy Policy.
-      </p>
     </div>
   );
 }
-
