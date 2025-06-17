@@ -384,7 +384,7 @@ export default function RunDetailsPage() {
         return filtersChanged ? nextFiltersState : prevFilters;
       });
     } else if ((!evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) && Object.keys(filterStates).length > 0) { setFilterStates({}); }
-  }, [evalParamDetailsForLLM]);
+  }, [evalParamDetailsForLLM, filterStates]);
 
 
   const { data: selectedContextDocDetails = [], isLoading: isLoadingSelectedContextDocs } = useQuery<ContextDocumentDisplayDetail[], Error>({
@@ -454,24 +454,31 @@ export default function RunDetailsPage() {
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start", description: "No dataset sample.", variant: "destructive"}); addLog("Error: No previewed data.", "error"); return; }
     updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [] }); setSimulationLog([]); addLog("LLM task init."); let collectedResults: EvalRunResultItem[] = [];
     try {
-      setIsLoadingPromptTemplate(true); // Start loading prompt
-      const promptTemplateTextFetched = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
-      setIsLoadingPromptTemplate(false); // Finish loading prompt
-      if (!promptTemplateTextFetched) throw new Error("Failed to fetch prompt template.");
-      setPromptTemplateText(promptTemplateTextFetched); 
+      setIsLoadingPromptTemplate(true); 
+      const fetchedPromptTemplateText = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
+      setIsLoadingPromptTemplate(false); 
+      if (!fetchedPromptTemplateText) throw new Error("Failed to fetch prompt template.");
+      setPromptTemplateText(fetchedPromptTemplateText); 
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
       if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
       const parameterIdsRequiringRationale = hasEvalParams ? evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id) : [];
+      
       for (let batchStartIndex = 0; batchStartIndex < rowsToProcess; batchStartIndex += effectiveConcurrencyLimit) {
         const batchEndIndex = Math.min(batchStartIndex + effectiveConcurrencyLimit, rowsToProcess); const currentBatchRows = datasetToProcess.slice(batchStartIndex, batchEndIndex); addLog(`Batch: Rows ${batchStartIndex + 1}-${batchEndIndex}. Size: ${currentBatchRows.length}.`);
         const batchPromises = currentBatchRows.map(async (rawRowFromPreview, indexInBatch) => {
           const overallRowIndex = batchStartIndex + indexInBatch; const inputDataForRow: Record<string, any> = {}; const groundTruthDataForRow: Record<string, string> = {};
           for (const key in rawRowFromPreview) { if (key.startsWith('_gt_')) { groundTruthDataForRow[key.substring('_gt_'.length)] = String(rawRowFromPreview[key]); } else { inputDataForRow[key] = rawRowFromPreview[key]; } }
-          let fullPromptForLLM = promptTemplateTextFetched; for (const productParamName in inputDataForRow) { fullPromptForLLM = fullPromptForLLM.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName])); }
-          let structuredCriteriaText = ""; if (hasEvalParams) { structuredCriteriaText += "\n\n--- EVALUATION CRITERIA (LABELING) ---\n"; evalParamDetailsForLLM.forEach(ep => { structuredCriteriaText += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaText += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaText += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaText += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaText += " (No specific labels)\n"; } structuredCriteriaText += "\n"; }); structuredCriteriaText += "--- END EVALUATION CRITERIA ---\n"; }
-          if (hasSummarizationDefs) { structuredCriteriaText += "\n\n--- SUMMARIZATION TASKS ---\n"; summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaText += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) structuredCriteriaText += `Example Hint: "${sd.example}"\n`; structuredCriteriaText += "Provide summary.\n\n"; }); structuredCriteriaText += "--- END SUMMARIZATION TASKS ---\n"; }
-          fullPromptForLLM += structuredCriteriaText;
+          
+          let basePromptWithFilledPlaceholders = fetchedPromptTemplateText; 
+          for (const productParamName in inputDataForRow) { basePromptWithFilledPlaceholders = basePromptWithFilledPlaceholders.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName])); }
+          
+          let structuredCriteriaTextForLLM = ""; 
+          if (hasEvalParams) { structuredCriteriaTextForLLM += "\n"; evalParamDetailsForLLM.forEach(ep => { structuredCriteriaTextForLLM += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaTextForLLM += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaTextForLLM += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaTextForLLM += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaTextForLLM += " (No specific labels)\n"; } structuredCriteriaTextForLLM += "\n"; }); }
+          if (hasSummarizationDefs) { structuredCriteriaTextForLLM += "\n"; summarizationDefDetailsForLLM.forEach(sd => { structuredCriteriaTextForLLM += `Summarization Task ID: ${sd.id}\nTask Name: ${sd.name}\nDefinition: ${sd.definition}\n`; if (sd.example) structuredCriteriaTextForLLM += `Example Hint: "${sd.example}"\n`; structuredCriteriaTextForLLM += "Provide summary.\n\n"; }); }
+          
+          const fullPromptForLLM = basePromptWithFilledPlaceholders + structuredCriteriaTextForLLM;
+          
           if (overallRowIndex === 0) { setFirstRowFullPrompt(fullPromptForLLM); }
           const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [], summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [], parameterIdsRequiringRationale: parameterIdsRequiringRationale, modelName: runDetails.modelIdentifierForGenkit || undefined, modelConnectorProvider: runDetails.modelConnectorProvider, modelConnectorConfigString: runDetails.modelConnectorConfigString, };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex }; if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
@@ -569,31 +576,38 @@ export default function RunDetailsPage() {
         const llmOutput = item.judgeLlmOutput?.[paramId];
 
         // Ground Truth Match/Mismatch Filter
+        let passesGtFilter = true;
         if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') {
           const gtDbValue = item.groundTruth?.[paramId];
           const hasValidLlmOutputForComparison = llmOutput && typeof llmOutput.chosenLabel === 'string' && !llmOutput.error;
           const hasValidGtForComparison = gtDbValue !== undefined && gtDbValue !== null && String(gtDbValue).trim() !== '';
 
           if (!hasValidLlmOutputForComparison || !hasValidGtForComparison) {
-             // If either LLM output or GT is not suitable for comparison, this row doesn't satisfy a specific match/mismatch filter.
-            return false;
+            passesGtFilter = false; // Cannot satisfy specific match/mismatch if data is incomplete
+          } else {
+            const isMatch = String(llmOutput!.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
+            if ((currentParamFilters.matchMismatch === 'match' && !isMatch) || (currentParamFilters.matchMismatch === 'mismatch' && isMatch)) {
+              passesGtFilter = false;
+            }
           }
-          const isMatch = String(llmOutput!.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
-          if (currentParamFilters.matchMismatch === 'match' && !isMatch) return false;
-          if (currentParamFilters.matchMismatch === 'mismatch' && isMatch) return false;
         }
+        if (!passesGtFilter) return false;
+
 
         // LLM Chosen Label Filter
+        let passesLabelFilter = true;
         if (currentParamFilters.selectedLabel !== 'all') {
           const hasValidLlmOutputForLabelFilter = llmOutput && typeof llmOutput.chosenLabel === 'string' && !llmOutput.error;
           if (!hasValidLlmOutputForLabelFilter) {
-            return false; // If no valid label from LLM, it can't match a specific label filter.
-          }
-          const labelMatches = String(llmOutput!.chosenLabel).trim().toLowerCase() === String(currentParamFilters.selectedLabel).toLowerCase();
-          if (!labelMatches) {
-            return false;
+            passesLabelFilter = false; 
+          } else {
+            const labelMatches = String(llmOutput!.chosenLabel).trim().toLowerCase() === String(currentParamFilters.selectedLabel).toLowerCase();
+            if (!labelMatches) {
+              passesLabelFilter = false;
+            }
           }
         }
+        if (!passesLabelFilter) return false;
       }
       return true; // Row passes all active filters for all relevant parameters
     });

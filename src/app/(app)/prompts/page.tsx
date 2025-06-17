@@ -82,13 +82,12 @@ Your task is to analyze the provided input data and then perform two types of ta
 1.  **Evaluation Labeling**: For each specified Evaluation Parameter, choose the most appropriate label based on its definition and the input data.
 2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.`;
 
-const FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER = `--- DETAILED INSTRUCTIONS & CRITERIA ---
-The prompt will be automatically modified to add the eval & summarisation parameters which you selected for your eval run here. You don't need to add any definition here.`;
+const FIXED_PRODUCT_INPUT_HEADER = `--- PRODUCT INPUT DATA ---`;
+const FIXED_PRODUCT_INPUT_FOOTER = `--- END PRODUCT INPUT DATA ---`;
+const FIXED_CRITERIA_HEADER = `--- DETAILED INSTRUCTIONS & CRITERIA ---`;
 
-const defaultInitialUserEditablePromptTemplate = `--- PRODUCT INPUT DATA ---
-Your input data and definition goes here. Insert the input data here with a definition here. For example, if you're analysing a chatbot, the user chat and metadata that your bot used for the conversation with go here.
-(Use the "Product Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.)
---- END PRODUCT INPUT DATA ---`;
+const defaultInitialUserEditablePromptTemplate = `Your input data and definition goes here. Insert the input data here with a definition here. For example, if you're analysing a chatbot, the user chat and metadata that your bot used for the conversation with go here.
+(Use the "Product Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.)`;
 
 
 // Fetch Product Parameters
@@ -194,7 +193,7 @@ export default function PromptsPage() {
     if (!promptsData) {
         setSelectedPrompt(null);
         setSelectedVersion(null);
-        setPromptTemplateContent(defaultInitialUserEditablePromptTemplate); // Default for empty state
+        setPromptTemplateContent(defaultInitialUserEditablePromptTemplate); 
         setVersionNotes('');
         return;
     }
@@ -208,28 +207,36 @@ export default function PromptsPage() {
         const fullTemplate = currentVersionObj.template;
         let editablePart = defaultInitialUserEditablePromptTemplate; 
 
-        if (fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) && fullTemplate.endsWith(FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER)) {
-            const startIndex = FIXED_SYSTEM_PROMPT.length;
-            const endIndex = fullTemplate.length - FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER.length;
-            
-            if (startIndex < endIndex) {
-                editablePart = fullTemplate.substring(startIndex, endIndex).trim();
-            } else { 
-                 editablePart = ""; 
-            }
+        const sysPromptEndMarker = FIXED_SYSTEM_PROMPT + '\n\n' + FIXED_PRODUCT_INPUT_HEADER + '\n';
+        const productInputEndMarker = '\n' + FIXED_PRODUCT_INPUT_FOOTER + '\n\n' + FIXED_CRITERIA_HEADER;
+
+        const startIndex = fullTemplate.indexOf(sysPromptEndMarker);
+        const endIndex = fullTemplate.lastIndexOf(productInputEndMarker);
+
+        if (startIndex !== -1 && endIndex !== -1 && (startIndex + sysPromptEndMarker.length) <= endIndex) { // Allow empty user content
+            editablePart = fullTemplate.substring(startIndex + sysPromptEndMarker.length, endIndex).trim();
         } else {
-            // Fallback for older prompts not matching the new structure
-            editablePart = fullTemplate; 
+            // Fallback for older or malformed prompts
+            const simplerStartIndex = fullTemplate.indexOf(FIXED_SYSTEM_PROMPT + '\n\n');
+            const simplerEndIndex = fullTemplate.lastIndexOf('\n\n' + FIXED_CRITERIA_HEADER);
+            if (simplerStartIndex !== -1 && simplerEndIndex !== -1 && (simplerStartIndex + (FIXED_SYSTEM_PROMPT + '\n\n').length) <= simplerEndIndex) {
+                let extracted = fullTemplate.substring(simplerStartIndex + (FIXED_SYSTEM_PROMPT + '\n\n').length, simplerEndIndex).trim();
+                // If old markers are present in this fallback, remove them for the editable area
+                if (extracted.startsWith(FIXED_PRODUCT_INPUT_HEADER) && extracted.endsWith(FIXED_PRODUCT_INPUT_FOOTER)) {
+                    extracted = extracted.substring(FIXED_PRODUCT_INPUT_HEADER.length, extracted.length - FIXED_PRODUCT_INPUT_FOOTER.length).trim();
+                }
+                editablePart = extracted;
+            } else if (!fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) || !fullTemplate.endsWith(FIXED_CRITERIA_HEADER)) {
+                editablePart = fullTemplate; // Very old prompt, load as is
+            }
         }
         setPromptTemplateContent(editablePart);
         setVersionNotes(currentVersionObj.notes);
       } else {
-        // No specific version selected or found, use default template for editable part
         setPromptTemplateContent(defaultInitialUserEditablePromptTemplate);
         setVersionNotes('Initial version notes');
       }
     } else {
-      // No prompt selected
       setSelectedVersion(null);
       setPromptTemplateContent(defaultInitialUserEditablePromptTemplate);
       setVersionNotes('');
@@ -241,8 +248,7 @@ export default function PromptsPage() {
     mutationFn: async ({ name, description }) => {
       if (!currentUserId) throw new Error("User not identified.");
 
-      // New prompt template starts with the default user-editable part
-      const fullInitialTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${defaultInitialUserEditablePromptTemplate}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
+      const fullInitialTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_PRODUCT_INPUT_HEADER}\n${defaultInitialUserEditablePromptTemplate.trim()}\n${FIXED_PRODUCT_INPUT_FOOTER}\n\n${FIXED_CRITERIA_HEADER}`;
 
       const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
         name,
@@ -254,7 +260,7 @@ export default function PromptsPage() {
 
       const initialVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', newPromptRef.id, 'versions'), {
         versionNumber: 1,
-        template: fullInitialTemplate, // Save the full template including fixed parts
+        template: fullInitialTemplate, 
         notes: 'Initial version',
         createdAt: serverTimestamp(),
       });
@@ -320,12 +326,12 @@ export default function PromptsPage() {
     mutationFn: async ({ promptId, userEditableTemplate, notes }) => {
       if (!currentUserId || !selectedPrompt) throw new Error("User or prompt not identified.");
 
-      const fullTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${userEditableTemplate.trim()}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
+      const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_PRODUCT_INPUT_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_PRODUCT_INPUT_FOOTER}\n\n${FIXED_CRITERIA_HEADER}`;
       const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
 
       const newVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions'), {
         versionNumber: latestVersionNum + 1,
-        template: fullTemplate,
+        template: fullTemplateToSave,
         notes: notes || `New version based on v${selectedVersion?.versionNumber || latestVersionNum}`,
         createdAt: serverTimestamp(),
       });
@@ -348,9 +354,9 @@ export default function PromptsPage() {
   const updatePromptVersionMutation = useMutation<void, Error, { promptId: string; versionId: string; userEditableTemplate: string; notes: string }>({
     mutationFn: async ({ promptId, versionId, userEditableTemplate, notes }) => {
       if (!currentUserId) throw new Error("User not identified.");
-      const fullTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${userEditableTemplate.trim()}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
+      const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_PRODUCT_INPUT_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_PRODUCT_INPUT_FOOTER}\n\n${FIXED_CRITERIA_HEADER}`;
       const versionRef = doc(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions', versionId);
-      await updateDoc(versionRef, { template: fullTemplate, notes });
+      await updateDoc(versionRef, { template: fullTemplateToSave, notes });
       await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), { updatedAt: serverTimestamp() });
     },
     onSuccess: () => {
@@ -474,8 +480,8 @@ export default function PromptsPage() {
     if (promptIdPendingDelete) {
       deletePromptTemplateMutation.mutate(promptIdPendingDelete);
     }
-    setIsConfirmDeleteDialogOpen(false); 
     setPromptIdPendingDelete(null); 
+    setIsConfirmDeleteDialogOpen(false);
   };
 
   const formatDate = (isoString?: string) => {
@@ -598,53 +604,49 @@ export default function PromptsPage() {
               <CardDescription className="truncate">{selectedPrompt.description || "No description."}</CardDescription>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-               <Dialog open={isInstructionsDialogOpen} onOpenChange={setIsInstructionsDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="outline" className="w-full sm:w-auto" title="Prompting Instructions">
-                    <HelpCircle className="mr-2 h-4 w-4" /> Instructions
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2"><HelpCircle className="text-primary"/>Prompt Engineering Instructions for EvalFlow</DialogTitle>
-                    </DialogHeader>
-                    <ScrollArea className="flex-1 pr-2 -mr-2">
-                      <div className="space-y-3 text-sm py-2">
-                          <p>Your prompt template is structured into three main parts:</p>
-                          <ol className="list-decimal pl-5 space-y-1 text-xs">
-                            <li><strong className="font-medium">System Prompt:</strong> This part (shown above your editable section) tells the AI its role as an impartial evaluator and outlines its core tasks (Evaluation Labeling and Summarization).</li>
-                            <li><strong className="font-medium">Your Product Input Data Section (Editable):</strong> This is where you define the structure of the specific data the AI will analyze for each row from your dataset.</li>
-                            <li><strong className="font-medium">Detailed Instructions & Criteria (System-Appended):</strong> This section (shown below your editable section) will be automatically populated by the system during an evaluation run. It will contain the detailed definitions of any Evaluation Parameters and Summarization Tasks you select for that run.</li>
-                          </ol>
-                          
-                          <h3 className="font-semibold mt-2">1. Filling "Your Product Input Data Section":</h3>
-                          <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li className="break-words">This is the primary section you will edit.</li>
-                              <li className="break-words">Clearly describe the input fields your product (or the system you're evaluating) would receive. For example, if evaluating a chatbot, you might include user queries, conversation history, etc.</li>
-                              <li className="break-words">Use the "Product Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> for data that will be dynamically filled from your dataset. Ensure the placeholders match the names defined in your "Schema Definition" page.</li>
-                              <li className="break-words">Example: <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap overflow-x-auto">User Query: {`{{UserQuery}}`}{`\n`}Previous Turn: {`{{BotResponse}}`}</pre></li>
-                          </ul>
-
-                          <h3 className="font-semibold mt-2">2. Understanding System-Appended Criteria:</h3>
-                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li className="break-words">You do <strong className="text-primary">not</strong> need to manually write out the full definitions for Evaluation Parameters or Summarization Tasks in your editable template section.</li>
-                              <li className="break-words">When you create an "Eval Run", you will select which Evaluation Parameters and Summarization Definitions to include.</li>
-                              <li className="break-words">The system will then take your prompt (with product data filled in from the dataset) and <strong className="text-primary">append</strong> the detailed definitions, labels, examples, etc., for each selected criterion into the "Detailed Instructions & Criteria" section of the final prompt sent to the Judge LLM.</li>
-                              <li className="break-words">The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (via the fixed "System Prompt" and backend flow logic) to output a JSON array containing its judgments and summaries.</li>
-                          </ul>
-
-                          <h3 className="font-semibold mt-2">3. Best Practices:</h3>
-                          <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li className="break-words"><strong>Be Clear and Specific:</strong> Avoid ambiguity in how you describe your product inputs.</li>
-                              <li className="break-words"><strong>Iterate:</strong> Use the "AI Insights" page for suggestions to improve your prompt based on evaluation results.</li>
-                          </ul>
-                      </div>
-                    </ScrollArea>
-                    <DialogFooter className="mt-auto pt-4 border-t">
-                        <Button onClick={() => setIsInstructionsDialogOpen(false)}>Close</Button>
-                    </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                <Dialog open={isInstructionsDialogOpen} onOpenChange={setIsInstructionsDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="outline" className="w-full sm:w-auto" title="Prompting Instructions">
+                        <HelpCircle className="mr-2 h-4 w-4" /> Instructions
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2"><HelpCircle className="text-primary"/>Prompt Engineering Instructions for EvalFlow</DialogTitle>
+                        </DialogHeader>
+                        <ScrollArea className="flex-1 pr-2 -mr-2">
+                        <div className="space-y-3 text-sm py-2">
+                            <p>Your prompt template is structured into several parts, some fixed by the system and one main section you edit:</p>
+                            <ol className="list-decimal pl-5 space-y-1 text-xs">
+                                <li><strong className="font-medium">System Prompt:</strong> (Fixed, shown above) Tells the AI its role as an impartial evaluator.</li>
+                                <li><strong className="font-medium">Product Input Data Section:</strong> (Editable by you) This is where you define the structure of the specific data the AI will analyze from your dataset.
+                                    <ul className="list-disc pl-5 space-y-0.5 mt-1">
+                                        <li>The markers <code>{FIXED_PRODUCT_INPUT_HEADER}</code> and <code>{FIXED_PRODUCT_INPUT_FOOTER}</code> will be automatically wrapped around this section by the system during evaluation runs. You do not need to type them in the editable area.</li>
+                                        <li>Use the "Product Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code>.</li>
+                                        <li>Example: <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap break-words">User Query: {`{{UserQuery}}`}{`\n`}Previous Turn: {`{{BotResponse}}`}</pre></li>
+                                    </ul>
+                                </li>
+                                <li><strong className="font-medium">Detailed Instructions & Criteria:</strong> (Fixed header shown below, content system-appended) This section's header (<code>{FIXED_CRITERIA_HEADER}</code>) is fixed. During an eval run, the system appends the detailed definitions of your selected Evaluation Parameters and Summarization Tasks here.</li>
+                            </ol>
+                            
+                            <h3 className="font-semibold mt-2">Key Points:</h3>
+                            <ul className="list-disc pl-5 space-y-1 text-xs break-words">
+                                <li className="break-words">You <strong className="text-primary">only edit the content for your Product Input Data</strong> in the main textarea.</li>
+                                <li className="break-words">The system handles the overall structure (System Prompt, data markers, criteria header) and dynamically adds the specific criteria definitions during evaluation runs.</li>
+                                <li className="break-words">The Judge LLM is already instructed by the system (via the fixed System Prompt and backend flow logic) to output a JSON array containing its judgments and summaries.</li>
+                            </ul>
+                            <h3 className="font-semibold mt-2">Best Practices:</h3>
+                            <ul className="list-disc pl-5 space-y-1 text-xs break-words">
+                                <li className="break-words"><strong>Be Clear and Specific:</strong> Avoid ambiguity in how you describe your product inputs.</li>
+                                <li className="break-words"><strong>Iterate:</strong> Use the "AI Insights" page for suggestions to improve your prompt based on evaluation results.</li>
+                            </ul>
+                        </div>
+                        </ScrollArea>
+                        <DialogFooter className="mt-auto pt-4 border-t">
+                            <Button onClick={() => setIsInstructionsDialogOpen(false)}>Close</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
               <Select
                   value={selectedVersionId || ''}
                   onValueChange={(versionId) => handleSelectVersion(versionId)}
@@ -681,19 +683,19 @@ export default function PromptsPage() {
               <div>
                 <Label htmlFor="version-notes" className="mt-2 mb-1 font-medium text-base">Version Notes (Version {selectedVersion?.versionNumber || 'N/A'})</Label>
                 <Input
-                id="version-notes"
-                value={versionNotes}
-                onChange={(e) => setVersionNotes(e.target.value)}
-                placeholder="Notes for this version (e.g., 'Improved clarity on instructions')"
-                disabled={!selectedVersion || updatePromptVersionMutation.isPending}
+                  id="version-notes"
+                  value={versionNotes}
+                  onChange={(e) => setVersionNotes(e.target.value)}
+                  placeholder="Notes for this version (e.g., 'Improved clarity on instructions')"
+                  disabled={!selectedVersion || updatePromptVersionMutation.isPending}
                 />
               </div>
-
+              
               <div>
-                <Label htmlFor="prompt-template-area" className="font-medium text-base">
-                  Your Product Input Data Section (Editable)
-                  {selectedPrompt.currentVersionId === selectedVersionId && <Badge variant="outline" className="ml-2 border-green-500 text-green-600">Active</Badge>}
-                </Label>
+                <Label className="font-medium text-base">Product Input Definition</Label>
+                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
+                  {FIXED_PRODUCT_INPUT_HEADER}
+                </div>
                 <Textarea
                   ref={promptTextareaRef}
                   id="prompt-template-area"
@@ -703,12 +705,16 @@ export default function PromptsPage() {
                   className="flex-1 resize-none font-mono text-sm min-h-[150px] md:min-h-[200px] mt-1"
                   disabled={!selectedVersion || updatePromptVersionMutation.isPending}
                 />
+                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
+                  {FIXED_PRODUCT_INPUT_FOOTER}
+                </div>
               </div>
 
               <div>
-                <Label className="font-medium text-base">Detailed Instructions & Criteria</Label>
+                <Label className="font-medium text-base">Detailed Instructions & Criteria (System-Appended)</Label>
                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
-                  {FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}
+                  {FIXED_CRITERIA_HEADER}
+                  <p className="text-xs italic mt-1">(The system will append selected evaluation parameter and summarization definitions here during a run.)</p>
                 </div>
               </div>
             </div>
@@ -730,7 +736,7 @@ export default function PromptsPage() {
                           <span className="text-sm font-medium truncate min-w-0" title={param.name}>{param.name}</span>
                         </div>
                         <Button onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
-                          Insert into Your Section
+                          Insert Placeholder
                         </Button>
                         <p className="text-xs text-muted-foreground truncate min-w-0" title={param.description}>{param.description}</p>
                       </Card>
@@ -743,7 +749,7 @@ export default function PromptsPage() {
         </CardContent>
         <CardFooter className="border-t pt-4 flex flex-col sm:flex-row justify-end gap-2">
           <Button variant="outline" onClick={() => { if(promptTemplateContent) navigator.clipboard.writeText(promptTemplateContent); toast({title:"User section copied!"})}} disabled={!selectedVersion || !promptTemplateContent} className="w-full sm:w-auto">
-            <Copy className="mr-2 h-4 w-4" /> Copy User Section
+            <Copy className="mr-2 h-4 w-4" /> Copy Product Input Section
           </Button>
           <Button onClick={handleSaveVersion} disabled={!selectedVersion || updatePromptVersionMutation.isPending} className="w-full sm:w-auto">
             {updatePromptVersionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Current Version
@@ -866,4 +872,3 @@ export default function PromptsPage() {
     </div>
   );
 }
-
