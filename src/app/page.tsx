@@ -43,13 +43,19 @@ export default function LoginPage() {
       // Auth state change will handle redirect via useEffect
       toast({ title: "Signed In", description: `Welcome ${result.user.displayName || result.user.email}!` });
     } catch (error: any) {
-      console.error("Google Sign-In Error:", error);
-      // Log the specific Firebase error code and message for easier debugging by the user
-      let detailedErrorMessage = error.message || "Could not sign in with Google.";
-      if (error.code) {
-        detailedErrorMessage = `Error (${error.code}): ${error.message}`;
+      console.error("Google Sign-In Error Object:", error); // Log the full error object
+      let detailedErrorMessage = `Code: ${error.code || 'N/A'}. Message: ${error.message || "Could not sign in with Google."}`;
+      
+      if (error.customData) {
+        detailedErrorMessage += ` CustomData: ${JSON.stringify(error.customData)}`;
       }
-      toast({ title: "Sign-In Failed", description: detailedErrorMessage, variant: "destructive" });
+      
+      toast({ 
+        title: "Sign-In Failed", 
+        description: `${detailedErrorMessage}. Try disabling browser extensions or using incognito mode.`,
+        variant: "destructive",
+        duration: 9000 // Longer duration for error messages
+      });
       setIsSigningIn(false);
     }
   };
@@ -68,6 +74,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center space-y-2">
            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+            {/* EvalFlow Logo SVG */}
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 16.5a2.5 2.5 0 1 1-5 0c0 .83.26 1.93.72 2.78.42.77.98 1.52 1.78 2.22a2.5 2.5 0 0 0 3.54 0c.8-.7 1.36-1.45 1.78-2.22.46-.85.72-1.95.72-2.78Z"/><path d="M18 11c.94-.09 1.46-1.24.87-1.99L17 7c-1.6-1.71-4.23-2.02-6.28-.79a5.5 5.5 0 0 0-3.17 3.17c-1.23 2.05-.92 4.68.79 6.28L11 17c.75.59 1.9.07 1.99-.87V11Z"/><path d="M12.15 5.15c1.1-1.18 2.88-1.65 4.35-1.15s2.53 1.88 2.5 3.5c-.02.89-.32 1.75-.85 2.5"/><path d="m12 12.5.47-.51c.4-.43.4-1.11 0-1.54L9 7.5"/></svg>
            </div>
           <CardTitle className="text-3xl font-headline">Welcome to EvalFlow</CardTitle>
