@@ -24,9 +24,9 @@ export interface RunHeaderCardProps {
   isLoadingSuggestion: boolean;
   formatTimestamp: (timestamp?: Timestamp, includeTime?: boolean) => string;
   getStatusBadge: (status?: EvalRun['status']) => JSX.Element;
-  onShowFullPromptClick: () => void; // New prop
-  canShowFullPrompt: boolean; // New prop
-  isLoadingPromptTemplate: boolean; // New prop
+  onShowFullPromptClick: () => void; 
+  canShowFullPrompt: boolean; 
+  isLoadingPromptTemplate: boolean; 
 }
 
 const OriginalRunHeaderCard: FC<RunHeaderCardProps> = ({
@@ -62,11 +62,11 @@ const OriginalRunHeaderCard: FC<RunHeaderCardProps> = ({
                   variant="ghost" 
                   size="icon" 
                   onClick={onShowFullPromptClick} 
-                  disabled={!canShowFullPrompt || isLoadingPromptTemplate} 
+                  disabled={!canShowFullPrompt || (isLoadingPromptTemplate && !runDetails.firstRowFullPrompt)} 
                   title="View Full Prompt for First Row"
                   className="h-7 w-7 ml-1" 
                 >
-                  {isLoadingPromptTemplate ? <Loader2 className="h-4 w-4 animate-spin" /> : <InfoIcon className="h-4 w-4 text-blue-500" />}
+                  {(isLoadingPromptTemplate && !runDetails.firstRowFullPrompt) ? <Loader2 className="h-4 w-4 animate-spin" /> : <InfoIcon className="h-4 w-4 text-blue-500" />}
                </Button>
             </div>
           </div>
@@ -92,3 +92,4 @@ const OriginalRunHeaderCard: FC<RunHeaderCardProps> = ({
 };
 
 export const RunHeaderCard = React.memo(OriginalRunHeaderCard);
+
