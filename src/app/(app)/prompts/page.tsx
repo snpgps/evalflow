@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
-export interface InputParameterForPrompts { // Renamed from ProductParameter
+export interface InputParameterForPrompts {
   id: string;
   name: string;
   description: string;
@@ -72,10 +72,8 @@ export interface PromptTemplate {
   updatedAt?: string; 
 }
 
-const FIXED_SYSTEM_PROMPT = `You are an impartial and rigorous evaluator of AI-generated outputs. Your task is to judge the quality of responses to a given input based on objective criteria. You must not add new content, speculate, or favor any model. Score only based on how well the response meets the criteria.`;
-
-const FIXED_INPUT_DATA_HEADER = `--- INPUT DATA ---`; // Renamed from FIXED_PRODUCT_INPUT_HEADER
-const FIXED_INPUT_DATA_FOOTER = `--- END INPUT DATA ---`; // Renamed from FIXED_PRODUCT_INPUT_FOOTER
+const FIXED_INPUT_DATA_HEADER = `--- INPUT DATA ---`;
+const FIXED_INPUT_DATA_FOOTER = `--- END INPUT DATA ---`;
 const FIXED_CRITERIA_HEADER = `--- DETAILED INSTRUCTIONS & CRITERIA ---`;
 const FIXED_CRITERIA_INSTRUCTIONS_PART = `
 Your task is to analyze the provided input data and then perform two types of tasks:
@@ -83,17 +81,14 @@ Your task is to analyze the provided input data and then perform two types of ta
 2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.
 `;
 
-
-const defaultInitialUserEditablePromptTemplate = `Your input data and definition goes here. Use the "Input Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.
-Example:
-"Below is the full conversation transcript between the shopper and the voicebot : "{{conv_full_conversation}}"
-User Selected Language: {{User Language}}
-"`;
+const defaultSystemPromptText = `You are an impartial and rigorous evaluator of AI-generated outputs. Your task is to judge the quality of responses to a given input based on objective criteria. You must not add new content, speculate, or favor any model. Score only based on how well the response meets the criteria.`;
+const defaultInputDataSectionText = `${FIXED_INPUT_DATA_HEADER}\nYour input data and definition goes here. Use the "Input Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.\nExample:\n"Below is the full conversation transcript between the shopper and the voicebot : "{{conv_full_conversation}}"\nUser Selected Language: {{User Language}}\n"`;
+const defaultInitialUserEditablePromptTemplate = `${defaultSystemPromptText}\n\n${defaultInputDataSectionText}`;
 
 
-const fetchInputParametersForPrompts = async (userId: string | null): Promise<InputParameterForPrompts[]> => { // Renamed
+const fetchInputParametersForPrompts = async (userId: string | null): Promise<InputParameterForPrompts[]> => {
   if (!userId) return [];
-  const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters'); // Renamed
+  const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters');
   const paramsQuery = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(paramsQuery);
   return snapshot.docs.map(docSnap => ({
@@ -105,7 +100,7 @@ const fetchInputParametersForPrompts = async (userId: string | null): Promise<In
 
 
 export default function PromptsPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
 
@@ -132,7 +127,7 @@ export default function PromptsPage() {
 
 
   useEffect(() => {
-    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    const storedProjectId = localStorage.getItem('currentUserId');
     if (storedProjectId && storedProjectId.trim() !== "") {
       setCurrentUserId(storedProjectId.trim());
     } else {
@@ -147,9 +142,9 @@ export default function PromptsPage() {
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
-  const { data: inputParameters = [], isLoading: isLoadingInputParams, error: fetchInputParamsError } = useQuery<InputParameterForPrompts[], Error>({ // Renamed
-    queryKey: ['inputParametersForPrompts', currentUserId], // Renamed
-    queryFn: () => fetchInputParametersForPrompts(currentUserId), // Renamed
+  const { data: inputParameters = [], isLoading: isLoadingInputParams, error: fetchInputParamsError } = useQuery<InputParameterForPrompts[], Error>({
+    queryKey: ['inputParametersForPrompts', currentUserId],
+    queryFn: () => fetchInputParametersForPrompts(currentUserId),
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
@@ -207,47 +202,22 @@ export default function PromptsPage() {
         const fullTemplate = currentVersionObj.template;
         let editablePart = defaultInitialUserEditablePromptTemplate; 
 
-        const inputDataStartMarkerWithNewline = FIXED_INPUT_DATA_HEADER + '\n';
-        const newlineAndInputDataFooterMarker = '\n' + FIXED_INPUT_DATA_FOOTER;
-
-        const startIndex = fullTemplate.indexOf(inputDataStartMarkerWithNewline);
-        const endIndex = fullTemplate.indexOf(newlineAndInputDataFooterMarker);
+        const inputDataFooterWithNewline = "\n" + FIXED_INPUT_DATA_FOOTER;
+        const endIndex = fullTemplate.indexOf(inputDataFooterWithNewline);
         
-        if (startIndex !== -1 && endIndex !== -1 && (startIndex + inputDataStartMarkerWithNewline.length) <= endIndex) {
-             editablePart = fullTemplate.substring(startIndex + inputDataStartMarkerWithNewline.length, endIndex).trim();
-        } else if (fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) && fullTemplate.includes(FIXED_CRITERIA_HEADER)) {
-             // This fallback logic attempts to find the editable part even if markers are slightly off
-             // Primarily, it should rely on the markers for robust extraction.
-             const systemPromptEndIndex = fullTemplate.indexOf(FIXED_SYSTEM_PROMPT) + FIXED_SYSTEM_PROMPT.length;
-             let potentialContent = fullTemplate.substring(systemPromptEndIndex).trim();
-             
-             if (potentialContent.startsWith(FIXED_INPUT_DATA_HEADER)) {
-                 potentialContent = potentialContent.substring(FIXED_INPUT_DATA_HEADER.length).trim();
-             }
-             
-             const criteriaHeaderIndexInPotential = potentialContent.indexOf(FIXED_INPUT_DATA_FOOTER + '\n\n' + FIXED_CRITERIA_HEADER);
-             if (criteriaHeaderIndexInPotential !== -1) {
-                 editablePart = potentialContent.substring(0, criteriaHeaderIndexInPotential).trim();
-             } else {
-                // If the exact sequence is not found, make a best guess or default
-                const criteriaHeaderOnlyIndex = potentialContent.lastIndexOf(FIXED_CRITERIA_HEADER);
-                const inputFooterOnlyIndex = potentialContent.lastIndexOf(FIXED_INPUT_DATA_FOOTER);
-
-                if (inputFooterOnlyIndex !== -1 && criteriaHeaderOnlyIndex !== -1 && inputFooterOnlyIndex < criteriaHeaderOnlyIndex) {
-                     editablePart = potentialContent.substring(0, inputFooterOnlyIndex).trim();
-                } else if (inputFooterOnlyIndex !== -1) {
-                     editablePart = potentialContent.substring(0, inputFooterOnlyIndex).trim();
-                }
-                 else {
-                    editablePart = defaultInitialUserEditablePromptTemplate; 
-                }
-             }
-        } else if (!fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) || !fullTemplate.includes(FIXED_CRITERIA_HEADER)) {
-            // If it's a very old template or completely custom, assume the whole thing is editable
-            editablePart = fullTemplate;
+        if (endIndex !== -1) {
+             editablePart = fullTemplate.substring(0, endIndex).trim();
+        } else {
+            // Fallback if the structure is unexpected (e.g., older template without footer)
+            // This might try to grab everything before the criteria header
+            const criteriaHeaderIndex = fullTemplate.indexOf("\n\n" + FIXED_CRITERIA_HEADER);
+            if (criteriaHeaderIndex !== -1) {
+                editablePart = fullTemplate.substring(0, criteriaHeaderIndex).trim();
+            } else {
+                 // Absolute fallback: assume the whole thing might be editable if no markers found
+                 editablePart = fullTemplate;
+            }
         }
-
-
         setPromptTemplateContent(editablePart);
         setVersionNotes(currentVersionObj.notes);
       } else {
@@ -266,7 +236,7 @@ export default function PromptsPage() {
     mutationFn: async ({ name, description }) => {
       if (!currentUserId) throw new Error("Project not selected.");
 
-      const fullInitialTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${defaultInitialUserEditablePromptTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
+      const fullInitialTemplate = `${defaultInitialUserEditablePromptTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
 
       const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
         name,
@@ -344,7 +314,7 @@ export default function PromptsPage() {
     mutationFn: async ({ promptId, userEditableTemplate, notes }) => {
       if (!currentUserId || !selectedPrompt) throw new Error("Project or prompt not identified.");
 
-      const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
+      const fullTemplateToSave = `${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
       const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
 
       const newVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions'), {
@@ -372,7 +342,7 @@ export default function PromptsPage() {
   const updatePromptVersionMutation = useMutation<void, Error, { promptId: string; versionId: string; userEditableTemplate: string; notes: string }>({
     mutationFn: async ({ promptId, versionId, userEditableTemplate, notes }) => {
       if (!currentUserId) throw new Error("Project not selected.");
-      const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
+      const fullTemplateToSave = `${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
       const versionRef = doc(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions', versionId);
       await updateDoc(versionRef, { template: fullTemplateToSave, notes });
       await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), { updatedAt: serverTimestamp() });
@@ -424,7 +394,7 @@ export default function PromptsPage() {
     }
   };
 
-  const insertInputParameter = (variableName: string) => { // Renamed
+  const insertInputParameter = (variableName: string) => {
     insertIntoTextarea(`{{${variableName}}}`);
   };
 
@@ -634,22 +604,30 @@ export default function PromptsPage() {
                         <div className="space-y-3 text-sm py-2">
                             <p>Your prompt template is structured into several parts:</p>
                             <ol className="list-decimal pl-5 space-y-1 text-xs">
-                                <li><strong className="font-medium">System Prompt:</strong> Tells the AI its role. This part is fixed by the system.</li>
-                                <li><strong className="font-medium">Your Input Data Section:</strong> This is where you define the structure of the specific data the AI will analyze.
+                                <li><strong className="font-medium">Editable Prompt Content:</strong> This is the main area you edit. It should contain your system instructions (how the AI should behave) followed by the structure for the input data.
                                     <ul className="list-disc pl-5 space-y-0.5 mt-1">
-                                        <li>The markers <code>{FIXED_INPUT_DATA_HEADER}</code> and <code>{FIXED_INPUT_DATA_FOOTER}</code> will be automatically wrapped around this section by the system during evaluation runs.</li>
-                                        <li>Use the "Input Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> into the editable textarea.</li>
-                                        <li>Example: <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap break-words">User Query: {`{{UserQuery}}`}{`\n`}Previous Turn: {`{{BotResponse}}`}</pre></li>
+                                        <li>Start with your system-level instructions (e.g., "You are an expert evaluator...").</li>
+                                        <li>Then, include the <code>{FIXED_INPUT_DATA_HEADER}</code> marker, followed by how you want to present the input data using placeholders.</li>
+                                        <li>Use the "Input Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> into the editable textarea. These will be filled dynamically.</li>
+                                        <li>Example:
+                                            <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap break-words">{
+`You are an expert botanist.
+--- INPUT DATA ---
+Plant Photo Description: {{PlantDescription}}
+User's Question: {{UserQuestion}}`
+                                            }</pre>
+                                        </li>
                                     </ul>
                                 </li>
-                                <li><strong className="font-medium">Detailed Instructions & Criteria:</strong> This section's header (<code>{FIXED_CRITERIA_HEADER}</code>) and the general task instructions are fixed. During an eval run, the system appends the specific definitions of your selected Evaluation Parameters and Summarization Tasks here.</li>
+                                <li><strong className="font-medium">Fixed Input Data Footer:</strong> The marker <code>{FIXED_INPUT_DATA_FOOTER}</code> will be automatically appended by the system after your editable content. This is shown as read-only below the textarea.</li>
+                                <li><strong className="font-medium">Fixed Detailed Instructions & Criteria:</strong> The header <code>{FIXED_CRITERIA_HEADER}</code> and the general task instructions (<code>{FIXED_CRITERIA_INSTRUCTIONS_PART.trim().substring(0,70)}...</code>) are also fixed and automatically appended. During an eval run, the system appends the specific definitions of your selected Evaluation Parameters and Summarization Tasks here. These are also shown as read-only.</li>
                             </ol>
                             
                             <h3 className="font-semibold mt-2">Key Points:</h3>
                             <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                                <li className="break-words">You <strong className="text-primary">only edit the content for your Input Data</strong> in the main textarea.</li>
-                                <li className="break-words">The system handles the overall structure (System Prompt, data markers, criteria header, task instructions) and dynamically adds the specific criteria definitions during evaluation runs.</li>
-                                <li className="break-words">The Judge LLM is already instructed by the system (via the fixed System Prompt and backend flow logic) to output a JSON array containing its judgments and summaries.</li>
+                                <li className="break-words">You edit the system instructions and input data structure together in the main "Editable Prompt Content" textarea.</li>
+                                <li className="break-words">The system handles appending the <code>{FIXED_INPUT_DATA_FOOTER}</code> and the entire "Detailed Instructions & Criteria" section (<code>{FIXED_CRITERIA_HEADER}</code> + <code>{FIXED_CRITERIA_INSTRUCTIONS_PART}</code> + dynamic parameter/task definitions) during evaluation runs.</li>
+                                <li className="break-words">The Judge LLM is already instructed by the system (via backend flow logic) to output a JSON array containing its judgments and summaries based on the full constructed prompt.</li>
                             </ul>
                         </div>
                         </ScrollArea>
@@ -685,33 +663,23 @@ export default function PromptsPage() {
           <ScrollArea className="flex-1">
             <div className="p-4 flex flex-col space-y-4">
               <div>
-                <Label className="font-medium text-base">System Prompt</Label>
-                <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
-                  {FIXED_SYSTEM_PROMPT}
-                </div>
-              </div>
-              
-              <div>
-                 <Label className="font-medium text-base">Your Input Data Section</Label>
-                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
-                  {FIXED_INPUT_DATA_HEADER}
-                </div>
+                 <Label htmlFor="prompt-template-area" className="font-medium text-base">Editable Prompt Content (System Instructions and Input Data Structure)</Label>
                 <Textarea
                   ref={promptTextareaRef}
                   id="prompt-template-area"
                   value={promptTemplateContent}
                   onChange={(e) => setPromptTemplateContent(e.target.value)}
-                  placeholder={!selectedVersion && selectedPrompt.versions.length === 0 ? "Create a version to start editing." : "Enter your input data structure here..."}
-                  className="flex-1 resize-none font-mono text-sm min-h-[150px] md:min-h-[200px] mt-1"
+                  placeholder={!selectedVersion && selectedPrompt.versions.length === 0 ? "Create a version to start editing." : "Enter your system instructions and input data structure here..."}
+                  className="flex-1 resize-none font-mono text-sm min-h-[250px] md:min-h-[300px] mt-1"
                   disabled={!selectedVersion || updatePromptVersionMutation.isPending}
                 />
+              </div>
+              
+              <div className="space-y-2">
+                <Label className="font-medium text-base text-muted-foreground">Fixed System-Appended Sections (Read-Only)</Label>
                  <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
                   {FIXED_INPUT_DATA_FOOTER}
                 </div>
-              </div>
-
-              <div>
-                <Label className="font-medium text-base">Detailed Instructions & Criteria</Label>
                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
                   {FIXED_CRITERIA_HEADER}
                 </div>
@@ -748,7 +716,7 @@ export default function PromptsPage() {
                   <p className="text-sm text-muted-foreground">No input parameters defined. Go to Schema Definition.</p>
                 ) : (
                   <div className="space-y-2">
-                    {inputParameters.map(param => ( // Renamed productParameters to inputParameters
+                    {inputParameters.map(param => (
                       <Card key={param.id} className="p-2 shadow-sm bg-background overflow-hidden">
                         <div className="flex items-center gap-2 mb-1">
                           <Tag className="h-4 w-4 text-primary shrink-0" />
@@ -767,8 +735,8 @@ export default function PromptsPage() {
           </div>
         </CardContent>
         <CardFooter className="border-t pt-4 flex flex-col sm:flex-row justify-end gap-2">
-          <Button variant="outline" onClick={() => { if(promptTemplateContent) navigator.clipboard.writeText(promptTemplateContent); toast({title:"Input Data section copied!"})}} disabled={!selectedVersion || !promptTemplateContent} className="w-full sm:w-auto">
-            <Copy className="mr-2 h-4 w-4" /> Copy Input Data Section
+          <Button variant="outline" onClick={() => { if(promptTemplateContent) navigator.clipboard.writeText(promptTemplateContent); toast({title:"Editable prompt content copied!"})}} disabled={!selectedVersion || !promptTemplateContent} className="w-full sm:w-auto">
+            <Copy className="mr-2 h-4 w-4" /> Copy Editable Content
           </Button>
           <Button onClick={handleSaveVersion} disabled={!selectedVersion || updatePromptVersionMutation.isPending} className="w-full sm:w-auto">
             {updatePromptVersionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Current Version
