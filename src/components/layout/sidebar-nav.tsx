@@ -12,10 +12,9 @@ import {
   FileText,
   PlayCircle,
   Lightbulb,
-  Settings,
-  Users,
-  LifeBuoy,
-  // TestTubeDiagonal, // Removed as per new requirement
+  // Settings, // Removed
+  // Users, // Removed
+  // LifeBuoy, // Removed
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -32,18 +31,17 @@ const navItems = [
   { href: '/schema-definition', label: 'Schema Definition', icon: ListChecks },
   { href: '/evaluation-parameters', label: 'Evaluation Parameters', icon: Target },
   { href: '/model-connectors', label: 'Model Connectors', icon: PlugZap },
-  // { href: '/test-connections', label: 'Test Connections', icon: TestTubeDiagonal }, // Removed
   { href: '/datasets', label: 'Datasets', icon: Database },
   { href: '/prompts', label: 'Prompts', icon: FileText },
   { href: '/runs', label: 'Eval Runs', icon: PlayCircle },
   { href: '/insights', label: 'AI Insights', icon: Lightbulb },
 ];
 
-const settingsItems = [
-  { href: '/settings', label: 'Settings', icon: Settings },
-  { href: '/team', label: 'Team', icon: Users },
-  { href: '/help', label: 'Help & Support', icon: LifeBuoy },
-]
+// const settingsItems = [ // Array removed as items are removed
+//   { href: '/settings', label: 'Settings', icon: Settings },
+//   { href: '/team', label: 'Team', icon: Users },
+//   { href: '/help', label: 'Help & Support', icon: LifeBuoy },
+// ]
 
 export function SidebarNav() {
   const pathname = usePathname();
@@ -83,6 +81,8 @@ export function SidebarNav() {
         ))}
       </SidebarMenu>
       
+      {/* Removed settings items section */}
+      {/* 
       <Separator className="my-2" />
       <SidebarMenu className="px-2 pb-2">
          {settingsItems.map((item) => (
@@ -103,7 +103,9 @@ export function SidebarNav() {
             </Link>
           </SidebarMenuItem>
         ))}
-      </SidebarMenu>
+      </SidebarMenu> 
+      */}
     </div>
   );
 }
+

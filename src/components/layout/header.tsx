@@ -12,16 +12,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Bell, LogOut, User, Settings, Sun, Moon, Building, ExternalLink } from 'lucide-react';
+import { LogOut, User, Settings, Sun, Moon, Building, ExternalLink } from 'lucide-react'; // Bell removed
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { auth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
+import { toast } from '@/hooks/use-toast'; // Added missing import
 
 // Helper function to generate title from pathname
 const generateTitle = (pathname: string): string => {
-  if (pathname === '/') return 'Login - EvalFlow'; 
-  if (pathname === '/select-project') return 'Select Project';
+  if (pathname === '/') return 'Select Project'; // Updated for new homepage
+  // if (pathname === '/select-project') return 'Select Project'; // This route is now the root
   if (pathname === '/dashboard') return 'Dashboard';
   
   const segments = pathname.split('/').filter(Boolean);
@@ -64,8 +65,8 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
       await signOut(auth);
       localStorage.removeItem('authenticatedUserUID');
       localStorage.removeItem('authenticatedUserEmail');
-      localStorage.removeItem('currentUserId'); // This key is used for project context
-      router.push('/'); // Redirect to login page
+      localStorage.removeItem('currentUserId');
+      router.push('/'); 
     } catch (error) {
       console.error("Error signing out: ", error);
       toast({title: "Sign Out Error", description: "Could not sign out.", variant: "destructive"});
@@ -73,13 +74,13 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
   };
   
   const getAvatarFallback = (id: string | null) => {
-    if (!id) return 'U'; // User fallback
-    const parts = id.split(/[\s@_.-]/).map(part => part.charAt(0).toUpperCase()); // Split by more delimiters
+    if (!id) return 'U'; 
+    const parts = id.split(/[\s@_.-]/).map(part => part.charAt(0).toUpperCase()); 
     if (parts.length > 1 && parts[0] && parts[1]) return parts[0] + parts[1];
     return id.substring(0, 2).toUpperCase() || 'U';
   }
 
-  const isPublicPage = pathname === '/' || pathname === '/select-project';
+  const isPublicPage = pathname === '/';
 
 
   return (
@@ -95,15 +96,17 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
         
         {!isPublicPage && authUid && (
           <>
+            {/* Bell icon button removed */}
+            {/* 
             <Button variant="ghost" size="icon" aria-label="Notifications">
               <Bell className="h-5 w-5" />
               <span className="sr-only">Notifications</span>
-            </Button>
+            </Button> 
+            */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                   <Avatar className="h-9 w-9">
-                    {/* Using auth user email for avatar text if available */}
                     <AvatarImage src={`https://placehold.co/100x100.png?text=${getAvatarFallback(userEmail || authUid)}`} alt="User Avatar" data-ai-hint="person user" />
                     <AvatarFallback>{getAvatarFallback(userEmail || authUid)}</AvatarFallback>
                   </Avatar>
@@ -115,7 +118,7 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
                   {selectedProjectId && <p className="text-xs text-muted-foreground truncate">Project: {selectedProjectId}</p>}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push('/select-project')}>
+                <DropdownMenuItem onClick={() => router.push('/')}>
                   <ExternalLink className="mr-2 h-4 w-4" /> 
                   <span>Switch Project Context</span>
                 </DropdownMenuItem>
