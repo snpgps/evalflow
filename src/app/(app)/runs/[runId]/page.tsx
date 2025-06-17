@@ -727,20 +727,20 @@ export default function RunDetailsPage() {
       />
        {isFullPromptDialogVisible && (
         <Dialog open={isFullPromptDialogVisible} onOpenChange={setIsFullPromptDialogVisible}>
-            <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
-                <DialogHeader>
+            <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col p-0">
+                <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
                     <DialogTitle className="flex items-center"><FileTextIcon className="mr-2 h-5 w-5 text-primary" />Full Prompt for First Row</DialogTitle>
                     <DialogDescription>
                         This is the complete prompt that would be sent to the Judge LLM for the first row of your dataset,
                         including filled input parameters and appended evaluation/summarization criteria.
                     </DialogDescription>
                 </DialogHeader>
-                <ScrollArea className="flex-1 my-4 border rounded-md">
+                <ScrollArea className="flex-1 min-h-0 my-4 mx-6 border rounded-md">
                     <pre className="text-xs whitespace-pre-wrap p-4">
                         {firstRowFullPrompt || (isLoadingPromptTemplate ? "Loading prompt template..." : "Prompt could not be constructed. Check configuration and data.")}
                     </pre>
                 </ScrollArea>
-                <DialogFooter>
+                <DialogFooter className="p-6 pt-4 border-t mt-auto flex-shrink-0">
                     <Button onClick={() => setIsFullPromptDialogVisible(false)}>Close</Button>
                 </DialogFooter>
             </DialogContent>
@@ -750,3 +750,4 @@ export default function RunDetailsPage() {
   );
   return pageJSX;
 }
+
