@@ -1,6 +1,7 @@
 
 'use client';
 
+// ... (all existing imports)
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -10,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog, InfoIcon as InfoIconLucide, FileText as FileTextIcon } from "lucide-react"; 
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from '@/components/ui/scroll-area';
+// ScrollArea import is no longer strictly needed for this specific dialog fix, but kept for other potential uses.
+import { ScrollArea } from '@/components/ui/scroll-area'; 
 
 import { db, storage } from '@/lib/firebase';
 import { doc, getDoc, getDocs, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp, type FieldValue, query, orderBy } from 'firebase/firestore';
@@ -31,7 +33,7 @@ import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
 import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
 import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
 import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab';
-
+// ... (rest of the interfaces and functions from the original file)
 
 export interface EvalRunResultItem {
   inputData: Record<string, any>;
@@ -199,12 +201,14 @@ const fetchPromptVersionText = async (userId: string | null, promptId: string, v
     if (typeof templateData === 'string') {
       try {
         const parsedTemplate = JSON.parse(templateData);
+        // New JSON structure: { system: "...", input: "..." }
         if (parsedTemplate && typeof parsedTemplate.system === 'string' && typeof parsedTemplate.input === 'string') {
           return `${parsedTemplate.system}\n\n${parsedTemplate.input}`;
-        } else {
-          return templateData;
+        } else { // Fallback for old plain text templates or if parsing fails but it's a string
+          return templateData; 
         }
       } catch (e) {
+        // If JSON.parse fails, it's an old plain text template
         return templateData;
       }
     }
@@ -412,7 +416,7 @@ export default function RunDetailsPage() {
       const { id, ...dataFromPayload } = updatePayload; const updateForFirestore: Record<string, any> = {};
       for (const key in dataFromPayload) { if (Object.prototype.hasOwnProperty.call(dataFromPayload, key)) { const value = (dataFromPayload as any)[key]; if (value !== undefined) { updateForFirestore[key] = value; } } }
       updateForFirestore.updatedAt = serverTimestamp(); if (updatePayload.completedAt) { updateForFirestore.completedAt = updatePayload.completedAt; }
-      if (updatePayload.firstRowFullPrompt !== undefined) { updateForFirestore.firstRowFullPrompt = updatePayload.firstRowFullPrompt; } // Ensure it's explicitly handled
+      if (updatePayload.firstRowFullPrompt !== undefined) { updateForFirestore.firstRowFullPrompt = updatePayload.firstRowFullPrompt; } 
       const runDocRef = doc(db, 'users', currentUserId, 'evaluationRuns', id); await updateDoc(runDocRef, updateForFirestore);
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['evalRunDetails', currentUserId, runId] }); queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] }); },
@@ -475,7 +479,7 @@ export default function RunDetailsPage() {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0; const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) { const errorMsg = "Missing config or no eval/summarization params."; toast({ title: "Cannot start", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return; }
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start", description: "No dataset sample.", variant: "destructive"}); addLog("Error: No previewed data.", "error"); return; }
-    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [], firstRowFullPrompt: '' }); 
+    updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [], firstRowFullPrompt: runDetails.firstRowFullPrompt || '' }); 
     setSimulationLog([]); addLog("LLM task init."); let collectedResults: EvalRunResultItem[] = [];
     try {
       setIsLoadingPromptTemplate(true); 
@@ -487,7 +491,7 @@ export default function RunDetailsPage() {
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
       const parameterIdsRequiringRationale = hasEvalParams ? evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id) : [];
       
-      let storedFirstRowPrompt = false;
+      let firstRowPromptAlreadySet = !!runDetails.firstRowFullPrompt;
 
       for (let batchStartIndex = 0; batchStartIndex < rowsToProcess; batchStartIndex += effectiveConcurrencyLimit) {
         const batchEndIndex = Math.min(batchStartIndex + effectiveConcurrencyLimit, rowsToProcess); const currentBatchRows = datasetToProcess.slice(batchStartIndex, batchEndIndex); addLog(`Batch: Rows ${batchStartIndex + 1}-${batchEndIndex}. Size: ${currentBatchRows.length}.`);
@@ -504,9 +508,9 @@ export default function RunDetailsPage() {
           
           const fullPromptForLLM = basePromptWithFilledPlaceholders + structuredCriteriaTextForLLM;
           
-          if (overallRowIndex === 0 && !storedFirstRowPrompt) {
+          if (overallRowIndex === 0 && !firstRowPromptAlreadySet) {
              updateRunMutation.mutate({ id: runId, firstRowFullPrompt: fullPromptForLLM });
-             storedFirstRowPrompt = true;
+             firstRowPromptAlreadySet = true;
           }
           const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [], summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [], parameterIdsRequiringRationale: parameterIdsRequiringRationale, modelName: runDetails.modelIdentifierForGenkit || undefined, modelConnectorProvider: runDetails.modelConnectorProvider, modelConnectorConfigString: runDetails.modelConnectorConfigString, };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex }; if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
@@ -761,12 +765,13 @@ export default function RunDetailsPage() {
                         including filled input parameters and appended evaluation/summarization criteria.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="flex-grow min-h-0 px-6 py-4">
-                  <ScrollArea className="h-full w-full border rounded-md bg-muted/10">
+                {/* This div handles the scrolling for the prompt content */}
+                <div className="flex-grow min-h-0 overflow-y-auto px-6 py-4"> 
+                  <div className="border rounded-md bg-muted/10"> {/* Optional: wrapper for border/bg for the pre tag content */}
                       <pre className="text-xs whitespace-pre-wrap p-4">
                           {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate && !runDetails.firstRowFullPrompt ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
                       </pre>
-                  </ScrollArea>
+                  </div>
                 </div>
                 <DialogFooter className="p-6 pt-4 border-t mt-auto flex-shrink-0">
                     <Button onClick={() => setIsFullPromptDialogVisible(false)}>Close</Button>
