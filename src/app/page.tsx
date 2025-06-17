@@ -19,26 +19,49 @@ interface Project {
 }
 
 const fetchProjects = async (): Promise<Project[]> => {
+  console.log("fetchProjects: Attempting to fetch projects...");
   if (!db) {
-    console.error("Firestore DB is not initialized in fetchProjects.");
-    throw new Error("Database not available. Check Firebase initialization (src/lib/firebase.ts).");
+    console.error("fetchProjects: Firestore DB instance is not available. Firebase might not have initialized correctly. Check src/lib/firebase.ts logs.");
+    throw new Error("Database not available. Check Firebase initialization.");
   }
-  const usersCollectionRef = collection(db, 'users');
+
   try {
+    const actualProjectId = db.app.options.projectId;
+    console.log(`fetchProjects: Firestore instance is configured for project ID: ${actualProjectId}`);
+    if (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID !== actualProjectId) {
+        console.warn(`fetchProjects: Mismatch! Environment NEXT_PUBLIC_FIREBASE_PROJECT_ID is ${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}, but Firestore instance is using ${actualProjectId}.`);
+    }
+  } catch (e) {
+    console.warn("fetchProjects: Could not retrieve projectId from db instance options.", e);
+  }
+
+  const usersCollectionRef = collection(db, 'users');
+  console.log("fetchProjects: Created collection reference for 'users'.");
+
+  try {
+    console.log("fetchProjects: Calling getDocs(usersCollectionRef)...");
     const usersSnapshot = await getDocs(usersCollectionRef);
+    console.log(`fetchProjects: getDocs returned. Snapshot empty: ${usersSnapshot.empty}, size: ${usersSnapshot.size}`);
+
     if (usersSnapshot.empty) {
-      console.warn("fetchProjects: Firestore 'users' collection is empty or not accessible. Check Firestore data and security rules.");
+      console.warn("fetchProjects: Firestore 'users' collection snapshot is empty. This means getDocs returned no documents. Possible reasons: 1) No documents in the 'users' collection of the connected project. 2) Firestore security rules are blocking read access (even if you think they are open, double-check paths and conditions). 3) The application is connected to the wrong Firestore project (check environment variables and firebase.ts logs).");
       return [];
     }
-    return usersSnapshot.docs.map(doc => ({
+    const projects = usersSnapshot.docs.map(doc => ({
       id: doc.id,
       name: `Project: ${doc.id}`
     }));
+    console.log("fetchProjects: Successfully mapped projects:", projects.map(p=>p.id));
+    return projects;
   } catch (e: any) {
-    console.error("fetchProjects: Error fetching documents from 'users' collection:", e);
+    console.error("fetchProjects: Error during getDocs or mapping:", e);
+    if (e.code) {
+        console.error(`fetchProjects: Firestore error code: ${e.code}, message: ${e.message}`);
+    }
     throw new Error(`Failed to fetch projects: ${e.message}. Check console and Firestore security rules.`);
   }
 };
+
 
 const queryClient = new QueryClient();
 
@@ -49,7 +72,7 @@ function SelectProjectPageComponent() {
   const { data: availableProjects = [], isLoading, error } = useQuery<Project[], Error>({
     queryKey: ['projects'],
     queryFn: fetchProjects,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    staleTime: 5 * 60 * 1000, 
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -110,10 +133,11 @@ function SelectProjectPageComponent() {
                   <p className="font-medium">No projects found. This could be due to:</p>
                   <ul className="list-disc list-inside pl-4">
                     <li>No project/user documents currently exist in the Firestore 'users' collection.</li>
-                    <li>Firestore security rules are preventing access to list documents in the 'users' collection.
-                        Ensure your rules allow read access (e.g., <code>{`match /users/{userId} { allow read: if true; }`}</code> for open access, or a more specific rule).
+                    <li>Firestore security rules are preventing access to list
+                        documents in the 'users' collection. Ensure your rules allow read
+                        access (e.g., <code>{`match /users/{userId} { allow read: if true; }`}</code> for open access, or a more specific rule).
                     </li>
-                    <li>An incorrect Firebase project configuration in your application's environment variables.</li>
+                    <li>An incorrect Firebase project configuration in your application's environment variables. (Check browser console for Firebase config details).</li>
                   </ul>
                   <p className="mt-1">Please check your Firebase project setup, data, and security rules. You might need to refresh this page after making changes.</p>
                 </div>

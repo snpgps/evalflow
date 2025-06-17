@@ -14,7 +14,17 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-console.log("Firebase Config being used:", firebaseConfig);
+// Check for missing essential config values
+const essentialKeys: (keyof typeof firebaseConfig)[] = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'appId'];
+const missingKeys = essentialKeys.filter(key => !firebaseConfig[key]);
+
+if (missingKeys.length > 0) {
+  console.error(`ERROR: Firebase configuration is missing essential keys: ${missingKeys.join(', ')}. Please check your .env.local or environment variables.`);
+  console.error("Firebase Config Object with missing values:", firebaseConfig);
+} else {
+  console.log("Firebase Config being used (all essential keys present):", firebaseConfig);
+}
+
 
 let app: FirebaseApp;
 let db: Firestore;
@@ -32,7 +42,13 @@ try {
 
   db = getFirestore(app);
   storage = getStorage(app); // Initialize storage
-  console.log("Firestore and Storage initialized.");
+  
+  if (db && db.app) {
+    console.log(`Firestore initialized and associated with project: ${db.app.options.projectId}`);
+  } else {
+    console.error("Firestore (db) object appears uninitialized or not correctly associated with an app after getFirestore(app).");
+  }
+
 
   // Initialize Analytics only in the browser environment and if measurementId is available
   if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
@@ -48,3 +64,4 @@ try {
 }
 
 export { app, db, analytics, storage };
+
