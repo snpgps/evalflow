@@ -187,7 +187,7 @@ export default function PromptsPage() {
       setSelectedPromptId(null);
       setSelectedVersionId(null);
     }
-  }, [promptsData, selectedPromptId, currentUserId, isLoadingPrompts, fetchPromptsError]);
+  }, [promptsData, selectedPromptId, currentUserId, isLoadingPrompts, fetchPromptsError, selectedVersionId]);
 
 
   useEffect(() => {
@@ -218,15 +218,18 @@ export default function PromptsPage() {
                  editablePart = ""; 
             }
         } else {
+            // Fallback for older prompts not matching the new structure
             editablePart = fullTemplate; 
         }
         setPromptTemplateContent(editablePart);
         setVersionNotes(currentVersionObj.notes);
       } else {
+        // No specific version selected or found, use default template for editable part
         setPromptTemplateContent(defaultInitialUserEditablePromptTemplate);
         setVersionNotes('Initial version notes');
       }
     } else {
+      // No prompt selected
       setSelectedVersion(null);
       setPromptTemplateContent(defaultInitialUserEditablePromptTemplate);
       setVersionNotes('');
@@ -238,6 +241,7 @@ export default function PromptsPage() {
     mutationFn: async ({ name, description }) => {
       if (!currentUserId) throw new Error("User not identified.");
 
+      // New prompt template starts with the default user-editable part
       const fullInitialTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${defaultInitialUserEditablePromptTemplate}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
 
       const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
@@ -250,7 +254,7 @@ export default function PromptsPage() {
 
       const initialVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', newPromptRef.id, 'versions'), {
         versionNumber: 1,
-        template: fullInitialTemplate,
+        template: fullInitialTemplate, // Save the full template including fixed parts
         notes: 'Initial version',
         createdAt: serverTimestamp(),
       });
@@ -470,8 +474,8 @@ export default function PromptsPage() {
     if (promptIdPendingDelete) {
       deletePromptTemplateMutation.mutate(promptIdPendingDelete);
     }
-    // setIsConfirmDeleteDialogOpen(false); // This will be handled by onOpenChange
-    // setPromptIdPendingDelete(null); // This will be handled by onOpenChange
+    setIsConfirmDeleteDialogOpen(false); 
+    setPromptIdPendingDelete(null); 
   };
 
   const formatDate = (isoString?: string) => {
@@ -608,31 +612,31 @@ export default function PromptsPage() {
                       <div className="space-y-3 text-sm py-2">
                           <p>Your prompt template is structured into three main parts:</p>
                           <ol className="list-decimal pl-5 space-y-1 text-xs">
-                            <li><strong className="font-medium">System Prompt (Uneditable):</strong> This part (shown above your editable section) tells the AI its role as an impartial evaluator and outlines its core tasks (Evaluation Labeling and Summarization).</li>
+                            <li><strong className="font-medium">System Prompt:</strong> This part (shown above your editable section) tells the AI its role as an impartial evaluator and outlines its core tasks (Evaluation Labeling and Summarization).</li>
                             <li><strong className="font-medium">Your Product Input Data Section (Editable):</strong> This is where you define the structure of the specific data the AI will analyze for each row from your dataset.</li>
-                            <li><strong className="font-medium">Detailed Instructions & Criteria (System-Appended, Uneditable):</strong> This section (shown below your editable section) will be automatically populated by the system during an evaluation run. It will contain the detailed definitions of any Evaluation Parameters and Summarization Tasks you select for that run.</li>
+                            <li><strong className="font-medium">Detailed Instructions & Criteria (System-Appended):</strong> This section (shown below your editable section) will be automatically populated by the system during an evaluation run. It will contain the detailed definitions of any Evaluation Parameters and Summarization Tasks you select for that run.</li>
                           </ol>
                           
                           <h3 className="font-semibold mt-2">1. Filling "Your Product Input Data Section":</h3>
                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li>This is the primary section you will edit.</li>
-                              <li>Clearly describe the input fields your product (or the system you're evaluating) would receive. For example, if evaluating a chatbot, you might include user queries, conversation history, etc.</li>
-                              <li>Use the "Product Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> for data that will be dynamically filled from your dataset. Ensure the placeholders match the names defined in your "Schema Definition" page.</li>
-                              <li>Example: <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap overflow-x-auto">User Query: {`{{UserQuery}}`}{`\n`}Previous Turn: {`{{BotResponse}}`}</pre></li>
+                              <li className="break-words">This is the primary section you will edit.</li>
+                              <li className="break-words">Clearly describe the input fields your product (or the system you're evaluating) would receive. For example, if evaluating a chatbot, you might include user queries, conversation history, etc.</li>
+                              <li className="break-words">Use the "Product Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> for data that will be dynamically filled from your dataset. Ensure the placeholders match the names defined in your "Schema Definition" page.</li>
+                              <li className="break-words">Example: <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap overflow-x-auto">User Query: {`{{UserQuery}}`}{`\n`}Previous Turn: {`{{BotResponse}}`}</pre></li>
                           </ul>
 
                           <h3 className="font-semibold mt-2">2. Understanding System-Appended Criteria:</h3>
                            <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li>You do <strong className="text-primary">not</strong> need to manually write out the full definitions for Evaluation Parameters or Summarization Tasks in your editable template section.</li>
-                              <li>When you create an "Eval Run", you will select which Evaluation Parameters and Summarization Definitions to include.</li>
-                              <li>The system will then take your prompt (with product data filled in from the dataset) and <strong className="text-primary">append</strong> the detailed definitions, labels, examples, etc., for each selected criterion into the "Detailed Instructions & Criteria" section of the final prompt sent to the Judge LLM.</li>
-                              <li>The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (via the fixed "System Prompt" and backend flow logic) to output a JSON array containing its judgments and summaries.</li>
+                              <li className="break-words">You do <strong className="text-primary">not</strong> need to manually write out the full definitions for Evaluation Parameters or Summarization Tasks in your editable template section.</li>
+                              <li className="break-words">When you create an "Eval Run", you will select which Evaluation Parameters and Summarization Definitions to include.</li>
+                              <li className="break-words">The system will then take your prompt (with product data filled in from the dataset) and <strong className="text-primary">append</strong> the detailed definitions, labels, examples, etc., for each selected criterion into the "Detailed Instructions & Criteria" section of the final prompt sent to the Judge LLM.</li>
+                              <li className="break-words">The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (via the fixed "System Prompt" and backend flow logic) to output a JSON array containing its judgments and summaries.</li>
                           </ul>
 
                           <h3 className="font-semibold mt-2">3. Best Practices:</h3>
                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li><strong>Be Clear and Specific:</strong> Avoid ambiguity in how you describe your product inputs.</li>
-                              <li><strong>Iterate:</strong> Use the "AI Insights" page for suggestions to improve your prompt based on evaluation results.</li>
+                              <li className="break-words"><strong>Be Clear and Specific:</strong> Avoid ambiguity in how you describe your product inputs.</li>
+                              <li className="break-words"><strong>Iterate:</strong> Use the "AI Insights" page for suggestions to improve your prompt based on evaluation results.</li>
                           </ul>
                       </div>
                     </ScrollArea>
@@ -668,15 +672,26 @@ export default function PromptsPage() {
           <ScrollArea className="flex-1">
             <div className="p-4 flex flex-col space-y-4">
               <div>
-                <Label className="font-medium text-base">System Prompt (Uneditable)</Label>
+                <Label className="font-medium text-base">System Prompt</Label>
                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
                   {FIXED_SYSTEM_PROMPT}
                 </div>
               </div>
 
               <div>
+                <Label htmlFor="version-notes" className="mt-2 mb-1 font-medium text-base">Version Notes (Version {selectedVersion?.versionNumber || 'N/A'})</Label>
+                <Input
+                id="version-notes"
+                value={versionNotes}
+                onChange={(e) => setVersionNotes(e.target.value)}
+                placeholder="Notes for this version (e.g., 'Improved clarity on instructions')"
+                disabled={!selectedVersion || updatePromptVersionMutation.isPending}
+                />
+              </div>
+
+              <div>
                 <Label htmlFor="prompt-template-area" className="font-medium text-base">
-                  Your Product Input Data Section (Editable - Version {selectedVersion?.versionNumber || 'N/A'})
+                  Your Product Input Data Section (Editable)
                   {selectedPrompt.currentVersionId === selectedVersionId && <Badge variant="outline" className="ml-2 border-green-500 text-green-600">Active</Badge>}
                 </Label>
                 <Textarea
@@ -691,21 +706,10 @@ export default function PromptsPage() {
               </div>
 
               <div>
-                <Label className="font-medium text-base">Detailed Instructions & Criteria (System-Appended, Uneditable)</Label>
+                <Label className="font-medium text-base">Detailed Instructions & Criteria</Label>
                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
                   {FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}
                 </div>
-              </div>
-
-               <div>
-                  <Label htmlFor="version-notes" className="mt-2 mb-1 font-medium">Version Notes</Label>
-                  <Input
-                  id="version-notes"
-                  value={versionNotes}
-                  onChange={(e) => setVersionNotes(e.target.value)}
-                  placeholder="Notes for this version (e.g., 'Improved clarity on instructions')"
-                  disabled={!selectedVersion || updatePromptVersionMutation.isPending}
-                  />
               </div>
             </div>
           </ScrollArea>
@@ -850,7 +854,7 @@ export default function PromptsPage() {
             <AlertDialogAction
               onClick={confirmDeletePrompt}
               disabled={deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === promptIdPendingDelete}
-              className={deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === promptIdPendingDelete ? "bg-destructive/70" : ""}
+              className={cn(deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === promptIdPendingDelete && "bg-destructive/70" )}
             >
               {(deletePromptTemplateMutation.isPending && deletePromptTemplateMutation.variables === promptIdPendingDelete) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirm Delete
