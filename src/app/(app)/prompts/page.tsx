@@ -21,7 +21,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
 import { fetchPromptTemplates } from '@/lib/promptActions';
-import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
+// import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page'; // No longer needed here
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -33,7 +33,7 @@ export interface ProductParameterForPrompts {
   description: string;
 }
 
-// Firestore-aligned interfaces for Evaluation Parameters
+// Firestore-aligned interfaces for Evaluation Parameters (kept for type definition, not for direct display here)
 export interface CategorizationLabelForPrompts {
     name: string;
     definition: string;
@@ -45,6 +45,15 @@ export interface EvalParameterForPrompts {
   definition: string;
   categorizationLabels?: CategorizationLabelForPrompts[];
   requiresRationale?: boolean;
+}
+
+// Kept for type definition, not for direct display here
+export interface SummarizationDefinition {
+  id: string;
+  name: string;
+  definition: string;
+  example?: string;
+  createdAt?: Timestamp;
 }
 
 
@@ -95,57 +104,6 @@ const fetchProductParametersForPrompts = async (userId: string | null): Promise<
   }));
 };
 
-// Fetch Evaluation Parameters
-const fetchEvaluationParametersForPrompts = async (userId: string | null): Promise<EvalParameterForPrompts[]> => {
-  if (!userId) return [];
-  try {
-    const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
-    const q = query(evalParamsCollectionRef, orderBy('createdAt', 'asc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(docSnap => {
-      const data = docSnap.data();
-      return {
-        id: docSnap.id,
-        name: data.name || 'Unnamed Eval Param',
-        definition: data.definition || '',
-        categorizationLabels: (data.categorizationLabels || []).map((label: any) => ({
-          name: label.name || '',
-          definition: label.definition || '',
-          example: label.example || undefined,
-        })),
-        requiresRationale: data.requiresRationale || false,
-      };
-    });
-  } catch (error) {
-    console.error("Error fetching evaluation parameters for prompts:", error);
-    toast({ title: "Error", description: "Could not fetch evaluation parameters.", variant: "destructive" });
-    return [];
-  }
-};
-
-// Fetch Summarization Definitions
-const fetchSummarizationDefinitionsForPrompts = async (userId: string | null): Promise<SummarizationDefinition[]> => {
-  if (!userId) return [];
-  try {
-    const defsCollectionRef = collection(db, 'users', userId, 'summarizationDefinitions');
-    const q = query(defsCollectionRef, orderBy('createdAt', 'asc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(docSnap => {
-      const data = docSnap.data();
-      return {
-        id: docSnap.id,
-        name: data.name || 'Unnamed Summarization',
-        definition: data.definition || '',
-        example: data.example || undefined,
-      };
-    });
-  } catch (error) {
-    console.error("Error fetching summarization definitions for prompts:", error);
-    toast({ title: "Error", description: "Could not fetch summarization definitions.", variant: "destructive" });
-    return [];
-  }
-};
-
 
 export default function PromptsPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -192,19 +150,6 @@ export default function PromptsPage() {
     queryFn: () => fetchProductParametersForPrompts(currentUserId),
     enabled: !!currentUserId && !isLoadingUserId,
   });
-
-  const { data: evaluationParameters = [], isLoading: isLoadingEvalParams, error: fetchEvalParamsError } = useQuery<EvalParameterForPrompts[], Error>({
-    queryKey: ['evaluationParametersForPrompts', currentUserId],
-    queryFn: () => fetchEvaluationParametersForPrompts(currentUserId),
-    enabled: !!currentUserId && !isLoadingUserId,
-  });
-
-  const { data: summarizationDefinitions = [], isLoading: isLoadingSummarizationDefs, error: fetchSummarizationDefsError } = useQuery<SummarizationDefinition[], Error>({
-    queryKey: ['summarizationDefinitionsForPrompts', currentUserId],
-    queryFn: () => fetchSummarizationDefinitionsForPrompts(currentUserId),
-    enabled: !!currentUserId && !isLoadingUserId,
-  });
-
 
   useEffect(() => {
     if (!currentUserId || isLoadingPrompts || fetchPromptsError || !promptsData) return;
@@ -257,31 +202,28 @@ export default function PromptsPage() {
       const currentVersionObj = currentPromptObj.versions.find(v => v.id === selectedVersionId);
       setSelectedVersion(currentVersionObj || null);
       if (currentVersionObj) {
-        // Parse the full template to extract the user-editable part
         const fullTemplate = currentVersionObj.template;
-        let editablePart = defaultInitialUserEditablePromptTemplate; // Fallback
+        let editablePart = defaultInitialUserEditablePromptTemplate; 
 
         if (fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) && fullTemplate.endsWith(FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER)) {
             const startIndex = FIXED_SYSTEM_PROMPT.length;
             const endIndex = fullTemplate.length - FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER.length;
+            // Extract the content between the fixed parts, trimming whitespace
             if (startIndex < endIndex) {
                 editablePart = fullTemplate.substring(startIndex, endIndex).trim();
-            } else { // Handles case where only fixed parts exist or overlap somehow
-                 editablePart = ""; // Or a very minimal placeholder like "--- Your Content Here ---"
+            } else { 
+                 editablePart = ""; 
             }
         } else {
-            // Backward compatibility: if it doesn't fit the new structure, assume the whole thing is editable
-            editablePart = fullTemplate;
+            editablePart = fullTemplate; // Backward compatibility or malformed
         }
         setPromptTemplateContent(editablePart);
         setVersionNotes(currentVersionObj.notes);
       } else {
-        // No version selected or prompt has no versions
         setPromptTemplateContent(defaultInitialUserEditablePromptTemplate);
         setVersionNotes('Initial version notes');
       }
     } else {
-      // No prompt selected
       setSelectedVersion(null);
       setPromptTemplateContent(defaultInitialUserEditablePromptTemplate);
       setVersionNotes('');
@@ -305,7 +247,7 @@ export default function PromptsPage() {
 
       const initialVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', newPromptRef.id, 'versions'), {
         versionNumber: 1,
-        template: fullInitialTemplate, // Store the full concatenated template
+        template: fullInitialTemplate,
         notes: 'Initial version',
         createdAt: serverTimestamp(),
       });
@@ -315,7 +257,7 @@ export default function PromptsPage() {
     },
     onSuccess: (newPromptId) => {
       queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
-      setSelectedPromptId(newPromptId);
+      setSelectedPromptId(newPromptId); // Automatically select the new prompt
       toast({ title: "Success", description: "Prompt template created." });
       setIsPromptDialogOpen(false);
       resetPromptDialogForm();
@@ -371,7 +313,7 @@ export default function PromptsPage() {
     mutationFn: async ({ promptId, userEditableTemplate, notes }) => {
       if (!currentUserId || !selectedPrompt) throw new Error("User or prompt not identified.");
 
-      const fullTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${userEditableTemplate}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
+      const fullTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${userEditableTemplate.trim()}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
       const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
 
       const newVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions'), {
@@ -388,7 +330,7 @@ export default function PromptsPage() {
     },
     onSuccess: (newVersionId) => {
       queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
-      setSelectedVersionId(newVersionId); // Select the new version
+      setSelectedVersionId(newVersionId); 
       toast({ title: "Success", description: "New prompt version created." });
     },
     onError: (error) => {
@@ -399,7 +341,7 @@ export default function PromptsPage() {
   const updatePromptVersionMutation = useMutation<void, Error, { promptId: string; versionId: string; userEditableTemplate: string; notes: string }>({
     mutationFn: async ({ promptId, versionId, userEditableTemplate, notes }) => {
       if (!currentUserId) throw new Error("User not identified.");
-      const fullTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${userEditableTemplate}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
+      const fullTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${userEditableTemplate.trim()}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
       const versionRef = doc(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions', versionId);
       await updateDoc(versionRef, { template: fullTemplate, notes });
       await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), { updatedAt: serverTimestamp() });
@@ -455,15 +397,6 @@ export default function PromptsPage() {
     insertIntoTextarea(`{{${variableName}}}`);
   };
 
-  const insertEvaluationParameter = (evalParam: EvalParameterForPrompts) => {
-    toast({title: "Info", description: "Evaluation Parameter details are automatically appended by the system during eval runs. You don't need to manually insert their full definitions here. Just ensure your prompt instructs the AI to refer to the criteria provided."})
-  };
-
-  const insertSummarizationDefinition = (summDef: SummarizationDefinition) => {
-     toast({title: "Info", description: "Summarization Definition details are automatically appended by the system during eval runs. You don't need to manually insert their full definitions here. Just ensure your prompt instructs the AI to refer to the tasks provided."})
-  };
-
-
   const handleSaveVersion = () => {
     if (!selectedPrompt || !selectedVersion || !currentUserId) {
       toast({ title: "Error", description: "No prompt or version selected to save.", variant: "destructive" });
@@ -484,7 +417,7 @@ export default function PromptsPage() {
     }
     addPromptVersionMutation.mutate({
       promptId: selectedPrompt.id,
-      userEditableTemplate: promptTemplateContent, // Pass the current editable content
+      userEditableTemplate: promptTemplateContent,
       notes: `New version based on v${selectedVersion?.versionNumber || 'current editor'}`,
     });
   };
@@ -680,30 +613,34 @@ export default function PromptsPage() {
                     </DialogHeader>
                     <ScrollArea className="flex-1 pr-2 -mr-2">
                       <div className="space-y-3 text-sm py-2">
-                          <p>Your prompt should clearly instruct the AI on how to analyze the provided "Product Input Data" and then perform tasks based on the "Detailed Instructions & Criteria" section that the system will provide.</p>
-
-                          <h3 className="font-semibold mt-2">1. Using Product Parameters (Your Inputs):</h3>
-                          <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li className="break-words">In the "Product Input Data" section of your template, reference parameters you defined in "Schema Definition" using Handlebars-like syntax: <code>{`{{ParameterName}}`}</code>.</li>
-                              <li className="break-words">Example: <code>User Query: {`{{UserQuery}}`}</code></li>
-                              <li className="break-words">The system replaces these with actual data from your dataset during evaluation runs.</li>
+                          <p>Your prompt template is structured into three main parts:</p>
+                          <ol className="list-decimal pl-5 space-y-1 text-xs">
+                            <li><strong>System Prompt (Uneditable):</strong> This part tells the AI its role (e.g., an impartial evaluator).</li>
+                            <li><strong>Your Product Input Data Section (Editable):</strong> This is where you define the structure of the specific data the AI will analyze for each row from your dataset.</li>
+                            <li><strong>Detailed Instructions & Criteria (System-Appended, Uneditable):</strong> This section will be automatically populated by the system during an evaluation run. It will contain the detailed definitions of any Evaluation Parameters and Summarization Tasks you select for that run.</li>
+                          </ol>
+                          
+                          <h3 className="font-semibold mt-2">1. Filling "Your Product Input Data Section":</h3>
+                          <ul className="list-disc pl-5 space-y-1 text-xs">
+                              <li className="break-words">This is the primary section you will edit.</li>
+                              <li className="break-words">Clearly describe the input fields your product (or the system you're evaluating) would receive. For example, if evaluating a chatbot, you might include user queries, conversation history, etc.</li>
+                              <li className="break-words">Use the "Product Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> for data that will be dynamically filled from your dataset.</li>
+                              <li className="break-words">Example: <code>User Query: {`{{UserQuery}}`}<br />Previous Turn: {`{{BotResponse}}`}</code></li>
                           </ul>
 
-                          <h3 className="font-semibold mt-2">2. Evaluation Parameters & Summarization Definitions (System-Provided Criteria):</h3>
-                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li className="break-words">You do <strong className="text-primary">not</strong> need to manually write out the full definitions for these in your prompt template.</li>
+                          <h3 className="font-semibold mt-2">2. Understanding System-Appended Criteria:</h3>
+                           <ul className="list-disc pl-5 space-y-1 text-xs">
+                              <li className="break-words">You do <strong className="text-primary">not</strong> need to manually write out the full definitions for Evaluation Parameters or Summarization Tasks in your template.</li>
                               <li className="break-words">When you create an "Eval Run", you will select which Evaluation Parameters and Summarization Definitions to include.</li>
-                              <li className="break-words">The system will then take your prompt (with product data filled in) and <strong className="text-primary">append</strong> a section containing the full details (ID, Name, Definition, Labels, Examples, Rationale requirement) for each selected Evaluation Parameter and Summarization Definition.</li>
-                              <li className="break-words">Your prompt template should simply have a placeholder or a general instruction for the AI to pay attention to this system-appended section. The "Detailed Instructions & Criteria" part of your editor serves this purpose.
-                              </li>
-                              <li className="break-words">The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (in the `judge-llm-evaluation-flow.ts`) to output a JSON array. You do not need to repeat JSON formatting instructions in your template.</li>
+                              <li className="break-words">The system will then take your prompt (with product data filled in from the dataset) and <strong className="text-primary">append</strong> the detailed definitions, labels, examples, etc., for each selected criterion into the "Detailed Instructions & Criteria" section of the final prompt sent to the Judge LLM.</li>
+                              <li className="break-words">Ensure your editable section generally instructs the AI to refer to the criteria that will be provided in that appended section.</li>
+                              <li className="break-words">The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (via the fixed "System Prompt" and backend flow logic) to output a JSON array. You do not need to repeat JSON formatting instructions in your editable template section.</li>
                           </ul>
 
-                          <h3 className="font-semibold mt-2">3. Best Practices for Your Template:</h3>
-                          <ul className="list-disc pl-5 space-y-1 text-xs break-words">
-                              <li className="break-words"><strong>Be Clear and Specific:</strong> Avoid ambiguity in your instructions.</li>
-                              <li className="break-words"><strong>Provide Context:</strong> Briefly explain the overall task if it helps the AI understand the product inputs.</li>
-                              <li className="break-words"><strong>Role-Playing:</strong> You can assign a role (e.g., "You are an expert customer service analyst...").</li>
+                          <h3 className="font-semibold mt-2">3. Best Practices:</h3>
+                          <ul className="list-disc pl-5 space-y-1 text-xs">
+                              <li className="break-words"><strong>Be Clear and Specific:</strong> Avoid ambiguity in how you describe your product inputs.</li>
+                              <li className="break-words"><strong>Use Placeholders Correctly:</strong> Ensure your <code>{`{{ParameterName}}`}</code> placeholders match the names defined in your "Schema Definition" page.</li>
                               <li className="break-words"><strong>Iterate:</strong> Use the "AI Insights" page for suggestions to improve your prompt based on evaluation results.</li>
                           </ul>
                       </div>
@@ -721,7 +658,6 @@ export default function PromptsPage() {
         </CardHeader>
         <CardContent className="flex-1 p-0 flex flex-col lg:flex-row min-h-0">
           <div className="flex-1 p-4 flex flex-col min-w-0 space-y-4">
-            {/* Uneditable System Prompt */}
             <div>
               <Label className="font-medium text-base">System Prompt (Uneditable)</Label>
               <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
@@ -729,7 +665,6 @@ export default function PromptsPage() {
               </div>
             </div>
 
-            {/* Editable User Product Input Section */}
             <div>
               <Label htmlFor="prompt-template-area" className="font-medium text-base">
                 Your Product Input Data Section (Editable - Version {selectedVersion?.versionNumber || 'N/A'})
@@ -746,7 +681,6 @@ export default function PromptsPage() {
               />
             </div>
 
-            {/* Uneditable Detailed Instructions Placeholder */}
             <div>
               <Label className="font-medium text-base">Detailed Instructions & Criteria (System-Appended, Uneditable)</Label>
               <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
@@ -786,56 +720,6 @@ export default function PromptsPage() {
                           Insert into Your Section
                         </Button>
                         <p className="text-xs text-muted-foreground truncate min-w-0" title={param.description}>{param.description}</p>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-4 border-t mb-4">
-                <h3 className="text-md font-semibold mb-2">Evaluation Parameters</h3>
-                 <p className="text-xs text-muted-foreground mb-2">These are appended by the system during runs. You don't insert their full details here.</p>
-                {isLoadingEvalParams ? <Skeleton className="h-20 w-full" /> :
-                fetchEvalParamsError ? <p className="text-xs text-destructive">Error loading evaluation parameters.</p> :
-                evaluationParameters.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No evaluation parameters defined. Go to Evaluation Parameters.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {evaluationParameters.map(param => (
-                      <Card key={param.id} className="p-2 shadow-sm bg-background overflow-hidden">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Target className="h-4 w-4 text-green-600 shrink-0" />
-                          <span className="text-sm font-medium truncate min-w-0" title={param.name}>{param.name}</span>
-                        </div>
-                        <Button onClick={() => insertEvaluationParameter(param)} title={`This will be automatically added if selected in a run`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
-                          Info (System-Added)
-                        </Button>
-                        <p className="text-xs text-muted-foreground truncate min-w-0" title={param.definition}>{param.definition}</p>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-4 border-t">
-                <h3 className="text-md font-semibold mb-2">Summarization Definitions</h3>
-                <p className="text-xs text-muted-foreground mb-2">These are appended by the system during runs. You don't insert their full details here.</p>
-                {isLoadingSummarizationDefs ? <Skeleton className="h-20 w-full" /> :
-                fetchSummarizationDefsError ? <p className="text-xs text-destructive">Error loading summarization definitions.</p> :
-                summarizationDefinitions.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No summarization definitions defined. Go to Evaluation Parameters page.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {summarizationDefinitions.map(def => (
-                      <Card key={def.id} className="p-2 shadow-sm bg-background overflow-hidden">
-                        <div className="flex items-center gap-2 mb-1">
-                          <AlignLeft className="h-4 w-4 text-purple-600 shrink-0" />
-                          <span className="text-sm font-medium truncate min-w-0" title={def.name}>{def.name}</span>
-                        </div>
-                         <Button onClick={() => insertSummarizationDefinition(def)} title={`This will be automatically added if selected in a run`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
-                          Info (System-Added)
-                        </Button>
-                        <p className="text-xs text-muted-foreground truncate min-w-0" title={def.definition}>{def.definition}</p>
                       </Card>
                     ))}
                   </div>
@@ -933,7 +817,7 @@ export default function PromptsPage() {
         </ScrollArea>
       </Card>
 
-      <div className="flex-1 flex flex-col min-w-0"> {/* Added min-w-0 here for the editor parent */}
+      <div className="flex-1 flex flex-col min-w-0"> 
          {renderEditorArea()}
       </div>
     </div>
