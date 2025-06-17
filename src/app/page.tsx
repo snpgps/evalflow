@@ -51,7 +51,7 @@ const fetchProjects = async (): Promise<Project[]> => {
     }
     const projects = usersSnapshot.docs.map(doc => ({
       id: doc.id,
-      name: `Project: ${doc.id}`
+      name: doc.id // Removed "Project: " prefix
     }));
     console.log("fetchProjects: Successfully mapped projects:", projects.map(p=>p.id));
     return projects;
@@ -174,13 +174,13 @@ function SelectProjectPageComponent() {
                     <li>No project/user documents currently exist in the Firestore 'users' collection.</li>
                     <li>
                       An incorrect Firebase project configuration.
-                      <strong> Check your browser's developer console</strong> for logs from `firebase.ts` and `page.tsx (fetchProjects)`.
+                      <strong> Check your browser's developer console</strong> for logs from `firebase.ts` (should show Firebase Config) and `page.tsx (fetchProjects)` (should show connected Project ID).
                       Compare the logged 'Project ID' with the Project ID shown in your Firebase Console (where you see your 'users' data). They MUST match.
                       Verify your `NEXT_PUBLIC_FIREBASE_PROJECT_ID` environment variable.
                     </li>
                     <li>
                       Firestore security rules are preventing access to list documents in the 'users' collection.
-                      Ensure your rules allow `list` access on the `users` path (e.g., <code>{`match /users/{userId} { allow read: if true; }`}</code> for open access, or a more specific rule).
+                      Ensure your rules allow `list` access on the `users` path (e.g., <code>{`match /users/{userId} { allow read: if true; // For list access and individual doc access }`}</code> or a more specific rule for `list`).
                     </li>
                   </ul>
                   <p className="mt-1">Please check your Firebase project setup, data, and security rules. You might need to refresh this page after making changes.</p>
