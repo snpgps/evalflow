@@ -1,6 +1,7 @@
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getAuth, type Auth } from 'firebase/auth'; // Import getAuth and Auth
 import { getAnalytics, type Analytics } from 'firebase/analytics';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
@@ -28,6 +29,7 @@ if (missingKeys.length > 0) {
 
 let app: FirebaseApp;
 let db: Firestore;
+let auth: Auth; // Declare auth
 let analytics: Analytics | undefined;
 let storage: FirebaseStorage;
 
@@ -41,7 +43,8 @@ try {
   }
 
   db = getFirestore(app);
-  storage = getStorage(app); // Initialize storage
+  auth = getAuth(app); // Initialize auth
+  storage = getStorage(app);
   
   if (db && db.app) {
     console.log(`Firestore initialized and associated with project: ${db.app.options.projectId}`);
@@ -63,5 +66,5 @@ try {
   // For example, you might want to set a global error state.
 }
 
-export { app, db, analytics, storage };
+export { app, db, auth, analytics, storage }; // Export auth
 
