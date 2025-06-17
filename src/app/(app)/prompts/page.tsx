@@ -86,8 +86,7 @@ const FIXED_PRODUCT_INPUT_HEADER = `--- PRODUCT INPUT DATA ---`;
 const FIXED_PRODUCT_INPUT_FOOTER = `--- END PRODUCT INPUT DATA ---`;
 const FIXED_CRITERIA_HEADER = `--- DETAILED INSTRUCTIONS & CRITERIA ---`;
 
-const defaultInitialUserEditablePromptTemplate = `Your input data and definition goes here. Insert the input data here with a definition here.
-(Use the "Product Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.)
+const defaultInitialUserEditablePromptTemplate = `Your input data and definition goes here. Use the "Product Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.
 Example:
 "Below is the full conversation transcript between the shopper and the voicebot : "{{conv_full_conversation}}"
 User Selected Language: {{User Language}}
@@ -220,19 +219,29 @@ export default function PromptsPage() {
         if (startIndex !== -1 && endIndex !== -1 && (startIndex + productInputStartMarkerWithNewline.length) <= endIndex) {
              editablePart = fullTemplate.substring(startIndex + productInputStartMarkerWithNewline.length, endIndex).trim();
         } else if (fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) && fullTemplate.includes(FIXED_CRITERIA_HEADER)) {
-             // If system prompt and criteria header are there, but not the product markers,
-             // it's likely an older prompt or one where product markers were implicitly expected.
-             // Extract content between system prompt and criteria header.
-             const afterSystemPrompt = fullTemplate.substring(FIXED_SYSTEM_PROMPT.length).trim();
-             const criteriaStartIndex = afterSystemPrompt.lastIndexOf(FIXED_CRITERIA_HEADER);
+             const afterSystemPromptAndHeader = fullTemplate.substring(FIXED_SYSTEM_PROMPT.length + FIXED_PRODUCT_INPUT_HEADER.length).trim();
+             const criteriaStartIndex = afterSystemPromptAndHeader.indexOf(FIXED_PRODUCT_INPUT_FOOTER + '\n\n' + FIXED_CRITERIA_HEADER);
              if (criteriaStartIndex !== -1) {
-                 editablePart = afterSystemPrompt.substring(0, criteriaStartIndex).trim();
+                 editablePart = afterSystemPromptAndHeader.substring(0, criteriaStartIndex).trim();
              } else {
-                // Fallback if only system prompt is found
-                editablePart = afterSystemPrompt;
+                // Fallback: if system prompt exists, try to get content after it, before criteria header
+                const systemPromptEndIndex = fullTemplate.indexOf(FIXED_SYSTEM_PROMPT) + FIXED_SYSTEM_PROMPT.length;
+                const criteriaHeaderIndex = fullTemplate.lastIndexOf(FIXED_CRITERIA_HEADER);
+                if (systemPromptEndIndex !== -1 && criteriaHeaderIndex !== -1 && systemPromptEndIndex < criteriaHeaderIndex) {
+                    let potentialEditable = fullTemplate.substring(systemPromptEndIndex, criteriaHeaderIndex).trim();
+                    // Attempt to remove product markers if they exist in this fallback scenario
+                    if (potentialEditable.startsWith(FIXED_PRODUCT_INPUT_HEADER)) {
+                        potentialEditable = potentialEditable.substring(FIXED_PRODUCT_INPUT_HEADER.length).trim();
+                    }
+                    if (potentialEditable.endsWith(FIXED_PRODUCT_INPUT_FOOTER)) {
+                        potentialEditable = potentialEditable.substring(0, potentialEditable.length - FIXED_PRODUCT_INPUT_FOOTER.length).trim();
+                    }
+                    editablePart = potentialEditable;
+                } else {
+                    editablePart = defaultInitialUserEditablePromptTemplate; // Could not parse effectively
+                }
              }
         } else if (!fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) || !fullTemplate.includes(FIXED_CRITERIA_HEADER)) {
-            // Very old prompt, or user manually edited everything: load as is into editable area
             editablePart = fullTemplate;
         }
 
@@ -486,7 +495,8 @@ export default function PromptsPage() {
     if (promptIdPendingDelete) {
       deletePromptTemplateMutation.mutate(promptIdPendingDelete);
     }
-    // Resetting states is handled by onOpenChange of AlertDialog
+    setIsConfirmDeleteDialogOpen(false);
+    setPromptIdPendingDelete(null);
   };
 
   const formatDate = (isoString?: string) => {
@@ -681,7 +691,7 @@ export default function PromptsPage() {
               </div>
               
               <div>
-                <Label className="font-medium text-base">Your Product Input Data Section</Label>
+                 <Label className="font-medium text-base">Your Product Input Data Section</Label>
                  <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
                   {FIXED_PRODUCT_INPUT_HEADER}
                 </div>
