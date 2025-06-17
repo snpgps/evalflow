@@ -510,7 +510,7 @@ export default function DatasetsPage() {
             }
             
             if (sheetNameToLoadHeadersFor && filteredSheetNames.includes(sheetNameToLoadHeadersFor)) {
-                setMappingDialogSelectedSheet(sheetNameToLoadHeadersFor);
+                // setMappingDialogSelectedSheet(sheetNameToLoadHeadersFor); // This will be set by handleMappingDialogSheetSelect
                 await handleMappingDialogSheetSelect(sheetNameToLoadHeadersFor, localFileData.blob, localFileData.name);
             } else if (filteredSheetNames.length > 0 && version.selectedSheetName && !filteredSheetNames.includes(version.selectedSheetName)) {
                 console.warn(`Previously selected sheet "${version.selectedSheetName}" not found in the file. Clearing selection.`);
@@ -518,7 +518,7 @@ export default function DatasetsPage() {
                 setMappingDialogSelectedSheet('');
                 setMappingDialogSheetColumnHeaders([]);
             } else if (filteredSheetNames.length === 0 && localFileData.blob.size > 0) {
-                toast({ title: "Excel File Error", description: "The selected Excel file contains no valid sheet names or no sheets.", variant: "warning"});
+                toast({ title: "Excel File Error", description: "The selected Excel file contains no valid sheet names or no sheets.", variant: "default"});
                 setMappingDialogSheetColumnHeaders([]);
             }
         } else if (localFileData.name.toLowerCase().endsWith('.csv')) {
@@ -527,7 +527,7 @@ export default function DatasetsPage() {
             if (lines.length > 0 && lines[0].trim() !== '') {
                 const csvHeaders = lines[0].split(',').map(h => String(h.replace(/^"|"$/g, '').trim())).filter(h => h !== '');
                 setMappingDialogSheetColumnHeaders(csvHeaders);
-                 if (csvHeaders.length === 0) { toast({ title: "CSV Parsing", description: "CSV file has a header row, but no valid column names could be extracted or all are empty.", variant: "warning" }); }
+                 if (csvHeaders.length === 0) { toast({ title: "CSV Parsing", description: "CSV file has a header row, but no valid column names could be extracted or all are empty.", variant: "default" }); }
 
                 const currentVersionMapping = version.columnMapping || {};
                 const currentVersionGtMapping = version.groundTruthMapping || {};
@@ -549,7 +549,7 @@ export default function DatasetsPage() {
                      setMappingDialogCurrentGtMapping(initialGtMapping);
                 }
             } else {
-                 toast({ title: "CSV Parsing", description: "CSV file appears to be empty or has no header row.", variant: "warning"});
+                 toast({ title: "CSV Parsing", description: "CSV file appears to be empty or has no header row.", variant: "default"});
                  setMappingDialogSheetColumnHeaders([]);
             }
         }
