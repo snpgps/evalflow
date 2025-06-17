@@ -319,7 +319,6 @@ export default function RunDetailsPage() {
 
   const [filterStates, setFilterStates] = useState<AllFilterStates>({});
 
-  // const [promptTemplateText, setPromptTemplateText] = useState<string | null>(null); // This local state is no longer needed as runDetails.firstRowFullPrompt will be used
   const [isLoadingPromptTemplate, setIsLoadingPromptTemplate] = useState<boolean>(false);
   const [isFullPromptDialogVisible, setIsFullPromptDialogVisible] = useState<boolean>(false);
 
@@ -413,7 +412,7 @@ export default function RunDetailsPage() {
       const { id, ...dataFromPayload } = updatePayload; const updateForFirestore: Record<string, any> = {};
       for (const key in dataFromPayload) { if (Object.prototype.hasOwnProperty.call(dataFromPayload, key)) { const value = (dataFromPayload as any)[key]; if (value !== undefined) { updateForFirestore[key] = value; } } }
       updateForFirestore.updatedAt = serverTimestamp(); if (updatePayload.completedAt) { updateForFirestore.completedAt = updatePayload.completedAt; }
-      if (updatePayload.firstRowFullPrompt) { updateForFirestore.firstRowFullPrompt = updatePayload.firstRowFullPrompt; }
+      if (updatePayload.firstRowFullPrompt !== undefined) { updateForFirestore.firstRowFullPrompt = updatePayload.firstRowFullPrompt; } // Ensure it's explicitly handled
       const runDocRef = doc(db, 'users', currentUserId, 'evaluationRuns', id); await updateDoc(runDocRef, updateForFirestore);
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['evalRunDetails', currentUserId, runId] }); queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] }); },
@@ -483,7 +482,6 @@ export default function RunDetailsPage() {
       const fetchedPromptTemplateString = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
       setIsLoadingPromptTemplate(false); 
       if (!fetchedPromptTemplateString) throw new Error("Failed to fetch prompt template.");
-      // setPromptTemplateText(fetchedPromptTemplateString); // No longer need local state, it's for firstRowFullPrompt
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
       if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
       const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
@@ -712,7 +710,7 @@ export default function RunDetailsPage() {
             summarizationDefDetailsForLLM={summarizationDefDetailsForLLM}
             filterStates={filterStates}
             onFilterChange={handleFilterChange}
-            onOpenQuestionDialog={handleOpenQuestionDialog}
+            onOpenQuestionDialog={onOpenQuestionDialog}
             onDownloadResults={handleDownloadResults}
             canDownloadResults={canDownloadResults}
           />
@@ -763,11 +761,13 @@ export default function RunDetailsPage() {
                         including filled input parameters and appended evaluation/summarization criteria.
                     </DialogDescription>
                 </DialogHeader>
-                <ScrollArea className="flex-grow min-h-0 mx-6 my-4 border rounded-md">
-                    <pre className="text-xs whitespace-pre-wrap p-4">
-                        {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
-                    </pre>
-                </ScrollArea>
+                <div className="flex-grow min-h-0 px-6 py-4">
+                  <ScrollArea className="h-full w-full border rounded-md bg-muted/10">
+                      <pre className="text-xs whitespace-pre-wrap p-4">
+                          {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
+                      </pre>
+                  </ScrollArea>
+                </div>
                 <DialogFooter className="p-6 pt-4 border-t mt-auto flex-shrink-0">
                     <Button onClick={() => setIsFullPromptDialogVisible(false)}>Close</Button>
                 </DialogFooter>
