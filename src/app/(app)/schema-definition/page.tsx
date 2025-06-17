@@ -15,6 +15,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, type Timestamp, deleteField, type FieldValue } from 'firebase/firestore';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from '@/hooks/use-toast';
 
 interface InputParameter {
   id: string; // Firestore document ID
@@ -32,10 +33,10 @@ type InputParameterUpdatePayload = { id: string } & Partial<Omit<InputParameter,
 
 const fetchInputParameters = async (userId: string | null): Promise<InputParameter[]> => {
   if (!userId) {
-    console.log("fetchInputParameters: No userId provided, returning empty array.");
+    console.log("fetchInputParameters: No project ID (internally userId) provided, returning empty array.");
     return [];
   }
-  console.log(`fetchInputParameters: Fetching for userId: ${userId}`);
+  console.log(`fetchInputParameters: Fetching for project ID (internally userId): ${userId}`);
   try {
     const parametersCollection = collection(db, 'users', userId, 'inputParameters');
     const q = query(parametersCollection, orderBy('createdAt', 'asc'));
@@ -53,23 +54,22 @@ const fetchInputParameters = async (userId: string | null): Promise<InputParamet
     return params;
   } catch (error) {
     console.error("fetchInputParameters: Error fetching input parameters from Firestore:", error);
-    // Re-throw the error so react-query can handle it and set the error state
     throw error;
   }
 };
 
 export default function SchemaDefinitionPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const storedUserId = localStorage.getItem('currentUserId');
-    if (storedUserId && storedUserId.trim() !== "") {
-      console.log("SchemaDefinitionPage: User ID found in localStorage:", storedUserId);
-      setCurrentUserId(storedUserId.trim());
+    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    if (storedProjectId && storedProjectId.trim() !== "") {
+      console.log("SchemaDefinitionPage: Project ID (internally userId) found in localStorage:", storedProjectId);
+      setCurrentUserId(storedProjectId.trim());
     } else {
-      console.log("SchemaDefinitionPage: No User ID in localStorage.");
+      console.log("SchemaDefinitionPage: No Project ID (internally userId) in localStorage.");
       setCurrentUserId(null);
     }
     setIsLoadingUserId(false);
@@ -86,7 +86,7 @@ export default function SchemaDefinitionPage() {
       console.error("SchemaDefinitionPage: React Query fetchError:", fetchError);
     }
     if(!isLoadingParameters && parameters.length === 0 && !!currentUserId && !fetchError) {
-      console.log("SchemaDefinitionPage: Parameters loaded, but the array is empty.");
+      console.log("SchemaDefinitionPage: Parameters loaded, but the array is empty for the current project.");
     }
   }, [fetchError, isLoadingParameters, parameters, currentUserId]);
 
@@ -100,7 +100,7 @@ export default function SchemaDefinitionPage() {
 
   const addMutation = useMutation<void, Error, Omit<InputParameter, 'id' | 'createdAt' | 'order'>>({
     mutationFn: async (newParameterDataFromMutate) => {
-      if (!currentUserId) throw new Error("User not identified for add operation.");
+      if (!currentUserId) throw new Error("Project not selected for add operation.");
 
       const dataForDoc: any = {
         name: newParameterDataFromMutate.name,
@@ -110,9 +110,8 @@ export default function SchemaDefinitionPage() {
       };
 
       if (newParameterDataFromMutate.type === 'dropdown') {
-        dataForDoc.options = newParameterDataFromMutate.options || []; // Ensure options is an array, even if empty
+        dataForDoc.options = newParameterDataFromMutate.options || [];
       }
-      // If type is not 'dropdown', 'options' field is not added to dataForDoc.
 
       await addDoc(collection(db, 'users', currentUserId, 'inputParameters'), dataForDoc);
     },
@@ -120,16 +119,17 @@ export default function SchemaDefinitionPage() {
       queryClient.invalidateQueries({ queryKey: ['inputParameters', currentUserId] });
       resetForm();
       setIsDialogOpen(false);
+      toast({ title: "Success", description: "Input parameter added." });
     },
     onError: (error) => {
       console.error("Error adding parameter:", error);
-      alert(`Error adding parameter: ${error.message}`);
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   });
 
   const updateMutation = useMutation<void, Error, InputParameterUpdatePayload>({
     mutationFn: async (parameterUpdatePayload) => {
-      if (!currentUserId) throw new Error("User not identified for update operation.");
+      if (!currentUserId) throw new Error("Project not selected for update operation.");
       const { id, ...dataToUpdate } = parameterUpdatePayload;
       const docRef = doc(db, 'users', currentUserId, 'inputParameters', id);
       await updateDoc(docRef, dataToUpdate);
@@ -138,35 +138,37 @@ export default function SchemaDefinitionPage() {
       queryClient.invalidateQueries({ queryKey: ['inputParameters', currentUserId] });
       resetForm();
       setIsDialogOpen(false);
+      toast({ title: "Success", description: "Input parameter updated." });
     },
      onError: (error) => {
       console.error("Error updating parameter:", error);
-      alert(`Error updating parameter: ${error.message}`);
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   });
 
   const deleteMutation = useMutation<void, Error, string>({
     mutationFn: async (parameterId) => {
-      if (!currentUserId) throw new Error("User not identified for delete operation.");
+      if (!currentUserId) throw new Error("Project not selected for delete operation.");
       await deleteDoc(doc(db, 'users', currentUserId, 'inputParameters', parameterId));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inputParameters', currentUserId] });
+      toast({ title: "Success", description: "Input parameter deleted." });
     },
     onError: (error) => {
       console.error("Error deleting parameter:", error);
-      alert(`Error deleting parameter: ${error.message}`);
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     }
   });
 
  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!currentUserId) {
-        alert("No User ID found. Please log in again.");
+        toast({title: "Project Not Selected", description: "Please select a project first.", variant: "destructive"});
         return;
     }
     if (!parameterName.trim() || !parameterDefinition.trim()) {
-        alert("Parameter Name and Definition are required.");
+        toast({title: "Validation Error", description: "Parameter Name and Definition are required.", variant: "destructive"});
         return;
     }
 
@@ -217,7 +219,7 @@ export default function SchemaDefinitionPage() {
 
   const handleDelete = (id: string) => {
     if (!currentUserId) {
-        alert("No User ID found. Please log in again.");
+        toast({title: "Project Not Selected", description: "Please select a project first.", variant: "destructive"});
         return;
     }
     if (confirm('Are you sure you want to delete this parameter?')) {
@@ -227,7 +229,7 @@ export default function SchemaDefinitionPage() {
 
   const handleAddNewParameterClick = () => {
     if (!currentUserId) {
-      alert("Please log in first to add parameters.");
+      toast({title: "Project Selection Required", description: "Please select a project to add parameters.", variant: "destructive"});
       return;
     }
     setEditingParameter(null);
@@ -254,7 +256,6 @@ export default function SchemaDefinitionPage() {
     );
   }
 
-  // This check is more specific: if there IS a fetchError from react-query
   if (fetchError) {
     return (
       <Card className="shadow-lg m-4 md:m-0">
@@ -263,7 +264,7 @@ export default function SchemaDefinitionPage() {
         </CardHeader>
         <CardContent>
           <p>Could not fetch input parameters: {fetchError.message}</p>
-           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered a User ID on the login page and have a stable internet connection. Check your browser's developer console (Network and Console tabs) for more specific Firebase errors. Also, verify your Firebase project's Firestore security rules and API key restrictions.</p>
+           <p className="mt-2 text-sm text-muted-foreground">Please ensure you have selected a project and have a stable internet connection. Check your browser's developer console (Network and Console tabs) for more specific Firebase errors. Also, verify your Firebase project's Firestore security rules and API key restrictions.</p>
         </CardContent>
       </Card>
     );
@@ -336,24 +337,24 @@ export default function SchemaDefinitionPage() {
       <Card>
         <CardHeader>
           <CardTitle>Defined Input Parameters</CardTitle>
-          <CardDescription>Manage your existing input parameters. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription>
+          <CardDescription>Manage your existing input parameters. {currentUserId ? `(Project ID: ${currentUserId})` : ''}</CardDescription>
         </CardHeader>
         <CardContent>
           {!currentUserId && !isLoadingUserId ? (
              <div className="text-center text-muted-foreground py-8">
-                <p>Please log in to see your parameters.</p>
+                <p>Please select a project to see its parameters.</p>
               </div>
-          ) : isLoadingParameters ? ( // This case is now less likely to show due to the top-level loader, but good fallback
+          ) : isLoadingParameters ? ( 
             <div className="space-y-2">
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
             </div>
-          ) : parameters.length === 0 && !fetchError ? ( // Check if parameters array is empty AND there was no fetchError
+          ) : parameters.length === 0 && !fetchError ? ( 
             <div className="text-center text-muted-foreground py-8">
-              <p>No input parameters defined yet {currentUserId ? `for User ID: ${currentUserId}` : ''}.</p>
+              <p>No input parameters defined yet {currentUserId ? `for Project ID: ${currentUserId}` : ''}.</p>
               <p className="text-sm">Click "Add New Parameter" to get started.</p>
             </div>
-          ) : ( // This implies parameters.length > 0 AND no fetchError
+          ) : ( 
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>

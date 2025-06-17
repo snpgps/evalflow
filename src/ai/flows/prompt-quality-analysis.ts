@@ -10,7 +10,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {z}from 'genkit';
 
 const AnalyzePromptQualityInputSchema = z.object({
   evalResults: z
@@ -18,7 +18,7 @@ const AnalyzePromptQualityInputSchema = z.object({
     .describe(
       'A string containing the results of an eval run, including model outputs, ground truth labels, and evaluation metrics.'
     ),
-  inputParametersSchema: z // Renamed from productParametersSchema
+  inputParametersSchema: z 
     .string()
     .describe(
       'A string representing the schema of the input parameters used in the eval run, including field names, types, and descriptions.'

@@ -24,7 +24,7 @@ const AnalyzeSummarizationProblemsInputSchema = z.object({
   generatedSummaryDetails: z.array(GeneratedSummaryDetailSchema).describe("An array of objects, each detailing a specific input and its generated summary."),
   targetSummarizationDefinitionName: z.string().optional().describe("The name of the summarization definition that was used to generate these summaries (for context, if available)."),
   targetSummarizationDefinitionText: z.string().optional().describe("The full definition text of the target summarization task (for context, if available)."),
-  inputSchemaDescription: z.string().optional().describe("A textual description of the schema for input parameters (e.g., field names, types, descriptions) that were available as inputs to the original prompt, which generated the summary."),
+  inputSchemaDescription: z.string().optional().describe("A textual description of the schema for input parameters (e.g., field names, types, descriptions) that were available as inputs to the original prompt, which generated the summary."), // Renamed from productSchemaDescription
   productContext: z.string().optional().describe("A brief description of the AI product or its primary goal, e.g., 'Customer service chatbot for e-commerce site', 'Tool to summarize meeting transcripts'. This helps interpret user intents from summaries."),
 });
 export type AnalyzeSummarizationProblemsInput = z.infer<typeof AnalyzeSummarizationProblemsInputSchema>;
@@ -84,7 +84,7 @@ Context about the AI Product (if provided):
 Generated Summary Details (reflecting user interactions for THIS BATCH):
 {{#each generatedSummaryDetails}}
 Summary Example:
-  - Input Data Provided to Product: {{{json inputData}}}
+  - Input Data Provided to AI: {{{json inputData}}}
   - Generated Summary of Interaction: "{{generatedSummary}}"
 ---
 {{/each}}
@@ -125,7 +125,7 @@ const batchAnalysisPrompt = ai.definePrompt({
 const AggregationPromptInputSchema = z.object({
   allBatchedCategories: z.array(UserIntentCategorySchema).describe("An array of all user intent categories collected from individual batch analyses."),
   productContext: z.string().optional().describe("The original product context, if provided."),
-  inputSchemaDescription: z.string().optional(), // Renamed
+  inputSchemaDescription: z.string().optional(), 
   targetSummarizationDefinitionName: z.string().optional(),
   targetSummarizationDefinitionText: z.string().optional(),
 });
@@ -182,11 +182,11 @@ const aggregationAnalysisPrompt = ai.definePrompt({
   output: { schema: AnalyzeSummarizationProblemsOutputSchema },
   prompt: handlebarsAggregationPrompt,
   config: {
-    temperature: 0.5, // Slightly lower temperature for more deterministic merging
+    temperature: 0.5, 
   },
 });
 
-const BATCH_SIZE = 30; // Number of summaries per LLM call for initial categorization
+const BATCH_SIZE = 30; 
 
 const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
   {
@@ -195,7 +195,7 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
     outputSchema: AnalyzeSummarizationProblemsOutputSchema,
   },
   async (input): Promise<AnalyzeSummarizationProblemsOutput> => {
-    try { // Top-level try-catch for the entire flow
+    try { 
       if (!input || !input.generatedSummaryDetails || input.generatedSummaryDetails.length === 0) {
           return { userIntentCategories: [], overallSummaryOfUserIntents: "No summaries provided to analyze user intents." };
       }
@@ -203,7 +203,6 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
       const allSummaries = input.generatedSummaryDetails;
 
       if (allSummaries.length <= BATCH_SIZE) {
-        // Process as a single batch
         try {
           const { output, usage } = await batchAnalysisPrompt(input);
           if (!output) {
@@ -222,7 +221,6 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
             };
         }
       } else {
-        // Process in batches and then aggregate
         const collectedBatchedCategories: UserIntentCategory[] = [];
         let totalSummariesProcessedInBatches = 0;
 
@@ -243,7 +241,6 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
             }
           } catch (batchError: any) {
             console.error(`Error processing batch ${Math.floor(i / BATCH_SIZE) + 1} for user intent analysis:`, batchError);
-            // Log and continue, aggregation step will handle potentially fewer categories.
           }
         }
 
@@ -259,7 +256,7 @@ const internalAnalyzeUserIntentsFromSummariesFlow = ai.defineFlow(
           const aggregationInput: z.infer<typeof AggregationPromptInputSchema> = {
             allBatchedCategories: collectedBatchedCategories,
             productContext: input.productContext,
-            inputSchemaDescription: input.inputSchemaDescription, // Renamed
+            inputSchemaDescription: input.inputSchemaDescription, 
             targetSummarizationDefinitionName: input.targetSummarizationDefinitionName,
             targetSummarizationDefinitionText: input.targetSummarizationDefinitionText,
           };

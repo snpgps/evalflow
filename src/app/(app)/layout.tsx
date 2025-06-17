@@ -12,21 +12,21 @@ import { Skeleton } from '@/components/ui/skeleton';
 const queryClient = new QueryClient();
 
 function AppContent({ children }: { children: React.ReactNode }) {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId for backend
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
-    const storedUserId = localStorage.getItem('currentUserId');
-    if (storedUserId) {
-      setCurrentUserId(storedUserId);
+    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    if (storedProjectId) {
+      setCurrentUserId(storedProjectId);
     }
     setIsLoadingUserId(false);
   }, []);
 
   useEffect(() => {
     if (!isLoadingUserId && !currentUserId) {
-      router.push('/login');
+      router.push('/select-project'); // Redirect to select-project
     }
   }, [currentUserId, isLoadingUserId, router]);
 
@@ -45,10 +45,10 @@ function AppContent({ children }: { children: React.ReactNode }) {
     );
   }
   
-  if (!currentUserId) {
+  if (!currentUserId) { // If no project ID (still currentUserId internally)
     return (
        <div className="flex flex-col flex-1 min-h-screen items-center justify-center bg-background">
-          <p>Redirecting to login...</p>
+          <p>Redirecting to project selection...</p>
        </div>
     );
   }
@@ -61,7 +61,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
         </SidebarContent>
       </Sidebar>
       <div className="flex flex-col flex-1 min-h-screen">
-        <Header userId={currentUserId} />
+        <Header userId={currentUserId} /> {/* Pass currentUserId as userId prop to Header */}
         <SidebarInset>
           <main className="flex-1 p-6 bg-background">
             {children}

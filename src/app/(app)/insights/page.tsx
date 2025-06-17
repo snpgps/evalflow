@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BrainCircuit, Wand2, Send, Loader2, AlertTriangle, FileText, Copy, Lightbulb, ListChecks, Save, Trash2, HelpCircle, Users, Info, PanelLeftClose, PanelRightOpen } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from '@/components/ui/badge';
@@ -38,7 +38,7 @@ import {
   type UserIntentCategory,
 } from '@/ai/flows/analyze-summarization-problems';
 import type { EvalParameterForPrompts, CategorizationLabelForPrompts } from '@/app/(app)/prompts/page';
-import type { InputParameterForPrompts } from '@/app/(app)/prompts/page'; // Renamed
+import type { InputParameterForPrompts } from '@/app/(app)/prompts/page';
 import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
 
 
@@ -77,14 +77,14 @@ interface StoredAnalysisDataForFirestore {
   problemCategories: ProblemCategory[] | UserIntentCategory[];
   overallSummary?: string | null;
   sourceDataCount: number;
-  productContext?: string | null; // Updated type
+  productContext?: string | null; 
 }
 
 interface StoredAnalysis extends Omit<StoredAnalysisDataForFirestore, 'createdAt' | 'problemCategories' | 'overallSummary' | 'sourceDataCount' | 'productContext'> {
   id: string;
   createdAt: Timestamp;
   sourceDataCount: number;
-  productContext?: string | null; // Updated type
+  productContext?: string | null; 
 }
 
 interface StoredAnalysisWithDetails extends StoredAnalysis {
@@ -149,9 +149,9 @@ const fetchAllEvalParamsDetails = async (userId: string | null): Promise<EvalPar
   });
 };
 
-const fetchAllInputParamsSchema = async (userId: string | null): Promise<InputParameterForPrompts[]> => { // Renamed
+const fetchAllInputParamsSchema = async (userId: string | null): Promise<InputParameterForPrompts[]> => { 
     if (!userId) return [];
-    const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters'); // Renamed
+    const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters'); 
     const q = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(docSnap => ({
@@ -247,11 +247,11 @@ const sanitizeDataForFirestore = (data: any): any => {
 
 
 export default function AiInsightsPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
 
-  const [currentProductPrompt, setCurrentProductPrompt] = useState('');
+  const [currentProductPrompt, setCurrentProductPrompt] = useState(''); // "Product Prompt" terminology to be reviewed
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   
   const [analysisType, setAnalysisType] = useState<'evaluation' | 'summarization'>('evaluation');
@@ -288,8 +288,8 @@ export default function AiInsightsPage() {
 
 
   useEffect(() => {
-    const storedUserId = localStorage.getItem('currentUserId');
-    setCurrentUserId(storedUserId || null);
+    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    setCurrentUserId(storedProjectId || null);
     setIsLoadingUserId(false);
   }, []);
 
@@ -351,9 +351,9 @@ export default function AiInsightsPage() {
     enabled: !!currentUserId,
   });
   
-  const { data: allInputParams = [], isLoading: isLoadingAllInputParams } = useQuery<InputParameterForPrompts[], Error>({ // Renamed
-      queryKey: ['allInputParamsForInsightsSchema', currentUserId], // Renamed
-      queryFn: () => fetchAllInputParamsSchema(currentUserId), // Renamed
+  const { data: allInputParams = [], isLoading: isLoadingAllInputParams } = useQuery<InputParameterForPrompts[], Error>({ 
+      queryKey: ['allInputParamsForInsightsSchema', currentUserId], 
+      queryFn: () => fetchAllInputParamsSchema(currentUserId), 
       enabled: !!currentUserId,
   });
 
@@ -363,7 +363,7 @@ export default function AiInsightsPage() {
     enabled: !!currentUserId,
   });
 
-  const inputParametersSchemaText = useMemo(() => { // Renamed
+  const inputParametersSchemaText = useMemo(() => { 
     if (!allInputParams || allInputParams.length === 0) return "No input parameters defined.";
     return "Input Parameters Schema:\n" + allInputParams.map(p => `- ${p.name}: ${p.description || 'No definition'}`).join("\n");
   }, [allInputParams]);
@@ -466,7 +466,7 @@ export default function AiInsightsPage() {
 
   const handleSuggestImprovements = async (e: FormEvent) => {
     e.preventDefault();
-    if (!currentProductPrompt.trim()) { toast({ title: "Input Error", description: "Please provide your current product prompt.", variant: "destructive" }); return; }
+    if (!currentProductPrompt.trim()) { toast({ title: "Input Error", description: "Please provide the current prompt for this product.", variant: "destructive" }); return; }
     if (mismatchDetailsForFlow.length === 0) { toast({ title: "No Mismatches", description: "No rows found where the LLM output differs from your desired target label.", variant: "default" }); return; }
     setIsLoadingSuggestion(true); setSuggestionResult(null); setSuggestionError(null);
     try {
@@ -499,7 +499,7 @@ export default function AiInsightsPage() {
         addAnalysisLog(`Analyzing ${mismatchDetailsForFlow.length} mismatch details.`);
         setIsLoadingProblemAnalysis(true);
         try {
-            const input: AnalyzeEvalProblemCategoriesInput = { mismatchDetails: mismatchDetailsForFlow, targetEvaluationParameterName: currentEvalParam.name, targetEvaluationParameterDefinition: currentEvalParam.definition, desiredTargetLabel: desiredTargetLabel, inputSchemaDescription: inputParametersSchemaText }; // Renamed
+            const input: AnalyzeEvalProblemCategoriesInput = { mismatchDetails: mismatchDetailsForFlow, targetEvaluationParameterName: currentEvalParam.name, targetEvaluationParameterDefinition: currentEvalParam.definition, desiredTargetLabel: desiredTargetLabel, inputSchemaDescription: inputParametersSchemaText }; 
             addAnalysisLog("Sending request to AI for problem category analysis...");
             const result = await analyzeEvalProblemCategories(input);
             setProblemAnalysisResult(result);
@@ -532,7 +532,7 @@ export default function AiInsightsPage() {
                 generatedSummaryDetails: summariesForFlow,
                 targetSummarizationDefinitionName: currentSummarizationDef.name,
                 targetSummarizationDefinitionText: currentSummarizationDef.definition,
-                inputSchemaDescription: inputParametersSchemaText, // Renamed
+                inputSchemaDescription: inputParametersSchemaText, 
                 productContext: productContextForAnalysis.trim() || undefined 
             };
             addAnalysisLog("Sending request to AI for user intent analysis...");
@@ -552,7 +552,7 @@ export default function AiInsightsPage() {
 
   const saveAnalysisMutation = useMutation<void, Error, StoredAnalysisDataForFirestore>({
     mutationFn: async (analysisData) => {
-      if (!currentUserId || !selectedRunId) throw new Error("User or Run ID missing.");
+      if (!currentUserId || !selectedRunId) throw new Error("Project or Run ID missing.");
       await addDoc(collection(db, 'users', currentUserId, 'evaluationRuns', selectedRunId, 'storedAnalyses'), analysisData);
     },
     onSuccess: () => {
@@ -568,7 +568,7 @@ export default function AiInsightsPage() {
 
   const deleteStoredAnalysisMutation = useMutation<void, Error, string>({
     mutationFn: async (analysisId) => {
-        if (!currentUserId || !selectedRunId) throw new Error("User or Run ID missing.");
+        if (!currentUserId || !selectedRunId) throw new Error("Project or Run ID missing.");
         await deleteDoc(doc(db, 'users', currentUserId, 'evaluationRuns', selectedRunId, 'storedAnalyses', analysisId));
     },
     onSuccess: (_data, deletedAnalysisId) => {
@@ -765,7 +765,7 @@ export default function AiInsightsPage() {
 
 
   if (isLoadingUserId) return <div className="p-6"><Skeleton className="h-screen w-full"/></div>;
-  if (!currentUserId) return <Card className="m-4"><CardContent className="p-6 text-center text-muted-foreground">Please log in to use AI Insights.</CardContent></Card>;
+  if (!currentUserId) return <Card className="m-4"><CardContent className="p-6 text-center text-muted-foreground">Please select a project to use AI Insights.</CardContent></Card>;
 
   const sharedInputSelectionHeaderUI = (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -838,7 +838,7 @@ export default function AiInsightsPage() {
         </Select>
       </div>
       <div>
-        <Label htmlFor="productContextForAnalysis">Product Context (Optional)</Label>
+        <Label htmlFor="productContextForAnalysis">Input Context (Optional)</Label>
         <Input 
             id="productContextForAnalysis" 
             value={productContextForAnalysis} 
@@ -846,7 +846,7 @@ export default function AiInsightsPage() {
             placeholder="e.g., E-commerce customer support bot" 
             disabled={!selectedRunId}
         />
-        <p className="text-xs text-muted-foreground mt-1">Briefly describe the product to help the AI understand user intents.</p>
+        <p className="text-xs text-muted-foreground mt-1">Briefly describe the input context to help the AI understand user intents.</p>
       </div>
     </div>
   );
@@ -884,7 +884,7 @@ export default function AiInsightsPage() {
         
         <TabsContent value="prompt_improver" className="mt-6">
           <form onSubmit={handleSuggestImprovements} className="space-y-6">
-            <Card> <CardHeader> <CardTitle className="text-lg">1. Provide Your Current Prompt</CardTitle> </CardHeader> <CardContent> <div> <Label htmlFor="currentProductPrompt" className="font-semibold">Your Current Product Prompt</Label> <Textarea id="currentProductPrompt" value={currentProductPrompt} onChange={e => setCurrentProductPrompt(e.target.value)} placeholder="Paste or type your existing product prompt template here..." rows={8} required className="font-mono text-sm" /> </div> </CardContent> </Card>
+            <Card> <CardHeader> <CardTitle className="text-lg">1. Provide Your Current Prompt</CardTitle> </CardHeader> <CardContent> <div> <Label htmlFor="currentProductPrompt" className="font-semibold">Current Prompt for this Project</Label> <Textarea id="currentProductPrompt" value={currentProductPrompt} onChange={e => setCurrentProductPrompt(e.target.value)} placeholder="Paste or type your existing product prompt template here..." rows={8} required className="font-mono text-sm" /> </div> </CardContent> </Card>
             <Card>
                 <CardHeader> <CardTitle className="text-lg">Target Your Analysis (for Prompt Improvement)</CardTitle> <CardDescription>Select an evaluation run, the specific parameter, and the label you wanted the AI to choose more often. This focuses the improvement suggestions.</CardDescription> </CardHeader>
                 <CardContent className="space-y-4">
@@ -1007,7 +1007,7 @@ export default function AiInsightsPage() {
                                                 {sa.analysisType === 'summarization' && <span className="font-medium"> {sa.targetSummarizationDefName}</span>}
                                                 ({sa.sourceDataCount} items analyzed)
                                             </div>
-                                            {sa.analysisType === 'summarization' && sa.productContext && <p className="text-xs text-muted-foreground break-words">Product Context: <span className="italic">{sa.productContext}</span></p>}
+                                            {sa.analysisType === 'summarization' && sa.productContext && <p className="text-xs text-muted-foreground break-words">Input Context: <span className="italic">{sa.productContext}</span></p>}
                                         </div>
                                         <div className="flex gap-1 shrink-0">
                                             <Button variant="outline" size="sm" onClick={() => handleViewStoredAnalysis(sa.id)} disabled={viewingSavedAnalysisId === sa.id}>View</Button>

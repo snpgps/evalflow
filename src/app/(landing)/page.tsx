@@ -1,7 +1,7 @@
 
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Rocket, LogIn } from "lucide-react";
+import { Rocket, Building } from "lucide-react"; // Changed LogIn to Building
 
 export default function LandingPage() {
   return (
@@ -16,10 +16,10 @@ export default function LandingPage() {
         Streamline your AI model evaluations with powerful tools for schema definition, dataset management, prompt engineering, and performance analysis.
       </p>
       <div className="flex flex-col sm:flex-row items-center gap-4 sm:space-x-4">
-        <Link href="/login" className="w-full sm:w-auto">
+        <Link href="/select-project" className="w-full sm:w-auto">
           <Button size="lg" className="font-semibold w-full sm:w-auto">
-            <LogIn className="mr-2 h-5 w-5" />
-            Log In
+            <Building className="mr-2 h-5 w-5" />
+            Select Project
           </Button>
         </Link>
       </div>
@@ -29,4 +29,3 @@ export default function LandingPage() {
     </div>
   );
 }
-

@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog, InfoIcon as InfoIconLucide, FileText as FileTextIcon } from "lucide-react"; // Added FileTextIcon
+import { Play, AlertTriangle, Loader2, ArrowLeft, CheckCircle, XCircle, Clock, Zap, DatabaseZap, Wand2, MessageSquareQuote, Filter as FilterIcon, FileSearch, BarChart3, Database, Cog, InfoIcon as InfoIconLucide, FileText as FileTextIcon } from "lucide-react"; 
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -33,7 +33,6 @@ import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmen
 import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab';
 
 
-// Interfaces - Exported for use in child components
 export interface EvalRunResultItem {
   inputData: Record<string, any>;
   judgeLlmOutput: Record<string, { chosenLabel?: string | null; generatedSummary?: string | null; rationale?: string | null; error?: string }>;
@@ -43,7 +42,7 @@ export interface EvalRunResultItem {
 export interface EvalRun {
   id: string;
   name: string;
-  runType: 'Product' | 'GroundTruth';
+  runType: 'Product' | 'GroundTruth'; // "Product" terminology to be reviewed
   status: 'Completed' | 'Running' | 'Pending' | 'Failed' | 'Processing' | 'DataPreviewed';
   createdAt: Timestamp;
   updatedAt?: Timestamp;
@@ -78,8 +77,8 @@ export interface EvalRun {
 
 export interface DatasetVersionConfig {
     storagePath?: string;
-    columnMapping?: Record<string, string>; // Key: Input Parameter Name
-    groundTruthMapping?: Record<string, string>; // Key: Evaluation Parameter ID
+    columnMapping?: Record<string, string>; 
+    groundTruthMapping?: Record<string, string>; 
     selectedSheetName?: string | null;
 }
 
@@ -121,7 +120,7 @@ export interface ParameterChartData {
   totalCompared?: number;
 }
 
-export interface InputParameterForSchema { // Renamed from ProductParameterForSchema
+export interface InputParameterForSchema { 
   id: string;
   name: string;
   type: string;
@@ -135,7 +134,6 @@ export interface ContextDocumentDisplayDetail {
     fileName: string;
 }
 
-// Type for filter states
 export type FilterValueMatchMismatch = 'all' | 'match' | 'mismatch';
 export type FilterValueSelectedLabel = string | 'all';
 export interface ParamFilterState {
@@ -243,9 +241,9 @@ const fetchSummarizationDefDetailsForPrompt = async (userId: string | null, defI
     return details;
 };
 
-const fetchInputParametersForSchema = async (userId: string | null): Promise<InputParameterForSchema[]> => { // Renamed
+const fetchInputParametersForSchema = async (userId: string | null): Promise<InputParameterForSchema[]> => { 
   if (!userId) return [];
-  const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters'); // Renamed collection
+  const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters'); 
   const q = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => {
@@ -281,7 +279,7 @@ const fetchContextDocumentDetailsForRun = async (userId: string | null, docIds: 
 export default function RunDetailsPage() {
   const reactParams = useParams();
   const runId = reactParams.runId as string;
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
   const [isLoadingUserId, setIsLoadingUserId] = useState<boolean>(true);
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -330,8 +328,8 @@ export default function RunDetailsPage() {
   };
 
   useEffect(() => {
-    const storedUserId = localStorage.getItem('currentUserId');
-    setCurrentUserId(storedUserId || null);
+    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    setCurrentUserId(storedProjectId || null);
     setIsLoadingUserId(false);
   }, []);
 
@@ -396,7 +394,7 @@ export default function RunDetailsPage() {
 
   const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue } >({
     mutationFn: async (updatePayload) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       const { id, ...dataFromPayload } = updatePayload; const updateForFirestore: Record<string, any> = {};
       for (const key in dataFromPayload) { if (Object.prototype.hasOwnProperty.call(dataFromPayload, key)) { const value = (dataFromPayload as any)[key]; if (value !== undefined) { updateForFirestore[key] = value; } } }
       updateForFirestore.updatedAt = serverTimestamp(); if (updatePayload.completedAt) { updateForFirestore.completedAt = updatePayload.completedAt; }
@@ -567,7 +565,6 @@ export default function RunDetailsPage() {
 
     return runDetails.results.filter(item => {
       for (const paramId in filterStates) {
-        // Ensure this paramId is relevant for the current run's configuration.
         if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) {
           continue; 
         }
@@ -575,7 +572,6 @@ export default function RunDetailsPage() {
         const currentParamFilters = filterStates[paramId];
         const llmOutput = item.judgeLlmOutput?.[paramId];
 
-        // Ground Truth Match/Mismatch Filter
         let passesGtFilter = true;
         if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') {
           const gtDbValue = item.groundTruth?.[paramId];
@@ -583,7 +579,7 @@ export default function RunDetailsPage() {
           const hasValidGtForComparison = gtDbValue !== undefined && gtDbValue !== null && String(gtDbValue).trim() !== '';
 
           if (!hasValidLlmOutputForComparison || !hasValidGtForComparison) {
-            passesGtFilter = false; // Cannot satisfy specific match/mismatch if data is incomplete
+            passesGtFilter = false; 
           } else {
             const isMatch = String(llmOutput!.chosenLabel).trim().toLowerCase() === String(gtDbValue).trim().toLowerCase();
             if ((currentParamFilters.matchMismatch === 'match' && !isMatch) || (currentParamFilters.matchMismatch === 'mismatch' && isMatch)) {
@@ -593,8 +589,6 @@ export default function RunDetailsPage() {
         }
         if (!passesGtFilter) return false;
 
-
-        // LLM Chosen Label Filter
         let passesLabelFilter = true;
         if (currentParamFilters.selectedLabel !== 'all') {
           const hasValidLlmOutputForLabelFilter = llmOutput && typeof llmOutput.chosenLabel === 'string' && !llmOutput.error;
@@ -609,7 +603,7 @@ export default function RunDetailsPage() {
         }
         if (!passesLabelFilter) return false;
       }
-      return true; // Row passes all active filters for all relevant parameters
+      return true; 
     });
   }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
@@ -630,7 +624,7 @@ export default function RunDetailsPage() {
 
 
   if (isLoadingUserId) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
-  if (!currentUserId) { return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please log in.</CardContent></Card>; }
+  if (!currentUserId) { return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please select a project.</CardContent></Card>; }
   if (isLoadingRunDetails && !!currentUserId) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
   if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
   if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
@@ -752,4 +746,3 @@ export default function RunDetailsPage() {
   );
   return pageJSX;
 }
-

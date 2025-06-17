@@ -22,26 +22,25 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import * as XLSX from 'xlsx';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { EvalParameterForPrompts as EvaluationParameterForMapping } from '@/app/(app)/prompts/page'; // Re-using from prompts for now
+import type { EvalParameterForPrompts as EvaluationParameterForMapping } from '@/app/(app)/prompts/page';
 import { toast } from '@/hooks/use-toast';
 
-// Interfaces for data structure
 interface DatasetVersion {
-  id: string; // Firestore document ID
+  id: string; 
   versionNumber: number;
   fileName: string;
-  uploadDate: string; // ISO String
-  size: string; // e.g. "2.5MB"
+  uploadDate: string; 
+  size: string; 
   records: number;
   storagePath?: string;
   selectedSheetName?: string | null;
-  columnMapping?: Record<string, string>; // Input param name -> Sheet column name
-  groundTruthMapping?: Record<string, string>; // Eval param ID -> Sheet column name
+  columnMapping?: Record<string, string>; 
+  groundTruthMapping?: Record<string, string>; 
   createdAt?: Timestamp;
 }
 
 interface Dataset {
-  id: string; // Firestore document ID
+  id: string; 
   name: string;
   description: string;
   versions: DatasetVersion[];
@@ -58,7 +57,7 @@ interface InputParameterForMapping {
   name: string;
 }
 
-const UNMAP_VALUE = "__[NONE]__"; // Special value for "Do Not Map" options
+const UNMAP_VALUE = "__[NONE]__";
 
 
 const fetchDatasetsWithVersions = async (userId: string | null): Promise<Dataset[]> => {
@@ -100,7 +99,6 @@ const fetchInputParametersForMapping = async (userId: string | null): Promise<In
   }));
 };
 
-// Fetch Evaluation Parameters for Ground Truth Mapping
 const fetchEvaluationParametersForGtMapping = async (userId: string | null): Promise<EvaluationParameterForMapping[]> => {
   if (!userId) return [];
   const evalParamsCollectionRef = collection(db, 'users', userId, 'evaluationParameters');
@@ -111,22 +109,21 @@ const fetchEvaluationParametersForGtMapping = async (userId: string | null): Pro
     return {
       id: docSnap.id,
       name: data.name || 'Unnamed Eval Param',
-      definition: data.definition || '', // Not strictly needed for mapping but good for consistency
-      // categorizationLabels and requiresRationale not needed for mapping UI here
+      definition: data.definition || '', 
     };
   });
 };
 
 
 export default function DatasetsPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const storedUserId = localStorage.getItem('currentUserId');
-    if (storedUserId && storedUserId.trim() !== "") {
-      setCurrentUserId(storedUserId.trim());
+    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    if (storedProjectId && storedProjectId.trim() !== "") {
+      setCurrentUserId(storedProjectId.trim());
     } else {
       setCurrentUserId(null);
     }
@@ -174,7 +171,7 @@ export default function DatasetsPage() {
 
   const addDatasetMutation = useMutation<void, Error, NewDatasetData>({
     mutationFn: async (newDataset) => {
-      if (!currentUserId) throw new Error("User not identified for add operation.");
+      if (!currentUserId) throw new Error("Project not selected for add operation.");
       await addDoc(collection(db, 'users', currentUserId, 'datasets'), newDataset);
     },
     onSuccess: () => {
@@ -186,7 +183,7 @@ export default function DatasetsPage() {
 
   const updateDatasetMutation = useMutation<void, Error, DatasetUpdatePayload>({
     mutationFn: async (datasetToUpdate) => {
-      if (!currentUserId) throw new Error("User not identified for update operation.");
+      if (!currentUserId) throw new Error("Project not selected for update operation.");
       const { id, ...dataToUpdate } = datasetToUpdate;
       const docRef = doc(db, 'users', currentUserId, 'datasets', id);
       await updateDoc(docRef, dataToUpdate);
@@ -200,7 +197,7 @@ export default function DatasetsPage() {
 
   const deleteDatasetMutation = useMutation<void, Error, string>({
     mutationFn: async (datasetIdToDelete) => {
-      if (!currentUserId) throw new Error("User not identified for delete operation.");
+      if (!currentUserId) throw new Error("Project not selected for delete operation.");
 
       const versionsCollectionRef = collection(db, 'users', currentUserId, 'datasets', datasetIdToDelete, 'versions');
       const versionsSnapshot = await getDocs(versionsCollectionRef);
@@ -236,7 +233,7 @@ export default function DatasetsPage() {
 
   const addDatasetVersionMutation = useMutation<void, Error, { datasetId: string; versionFirestoreData: NewDatasetVersionFirestoreData; fileToUpload: File }>({
     mutationFn: async ({ datasetId, versionFirestoreData, fileToUpload }) => {
-      if (!currentUserId) throw new Error("User not identified for adding version.");
+      if (!currentUserId) throw new Error("Project not selected for adding version.");
 
       const versionDocRef = await addDoc(collection(db, 'users', currentUserId, 'datasets', datasetId, 'versions'), versionFirestoreData);
       const versionId = versionDocRef.id;
@@ -261,7 +258,7 @@ export default function DatasetsPage() {
 
   const updateVersionMappingMutation = useMutation<void, Error, UpdateVersionMappingPayload>({
     mutationFn: async ({ datasetId, versionId, selectedSheetName, columnMapping, groundTruthMapping }) => {
-      if (!currentUserId) throw new Error("User not identified for updating mapping.");
+      if (!currentUserId) throw new Error("Project not selected for updating mapping.");
       const versionDocRef = doc(db, 'users', currentUserId, 'datasets', datasetId, 'versions', versionId);
       await updateDoc(versionDocRef, { selectedSheetName, columnMapping, groundTruthMapping });
     },
@@ -350,7 +347,6 @@ export default function DatasetsPage() {
                      toast({title: "Excel Parsing", description: `Sheet '${newSheetName}' appears to be empty or has no header row.`, variant: "default"});
                 }
                 
-                // Use current version's mappings if available, otherwise attempt auto-map
                 const currentVersionMapping = versionBeingMapped?.version.columnMapping || {};
                 const currentVersionGtMapping = versionBeingMapped?.version.groundTruthMapping || {};
 
@@ -510,7 +506,6 @@ export default function DatasetsPage() {
             }
             
             if (sheetNameToLoadHeadersFor && filteredSheetNames.includes(sheetNameToLoadHeadersFor)) {
-                // setMappingDialogSelectedSheet(sheetNameToLoadHeadersFor); // This will be set by handleMappingDialogSheetSelect
                 await handleMappingDialogSheetSelect(sheetNameToLoadHeadersFor, localFileData.blob, localFileData.name);
             } else if (filteredSheetNames.length > 0 && version.selectedSheetName && !filteredSheetNames.includes(version.selectedSheetName)) {
                 console.warn(`Previously selected sheet "${version.selectedSheetName}" not found in the file. Clearing selection.`);
@@ -565,7 +560,7 @@ export default function DatasetsPage() {
 
   const handleCreateNewDatasetClick = () => {
     if (!currentUserId) {
-      toast({title: "Login Required", description: "Please log in to create a dataset.", variant: "destructive"});
+      toast({title: "Project Selection Required", description: "Please select a project to create a dataset.", variant: "destructive"});
       return;
     }
     resetDatasetForm();
@@ -639,7 +634,7 @@ export default function DatasetsPage() {
       </Card>
 
       {!currentUserId && !isLoadingUserId ? (
-        <Card><CardContent className="text-center text-muted-foreground py-12"><p>Please log in to manage datasets.</p></CardContent></Card>
+        <Card><CardContent className="text-center text-muted-foreground py-12"><p>Please select a project to manage datasets.</p></CardContent></Card>
       ) : datasets.length === 0 && !isLoadingDatasets ? (
          <Card><CardContent className="text-center text-muted-foreground py-12"><FileSpreadsheet className="mx-auto h-12 w-12 mb-4" /><h3 className="text-xl font-semibold mb-2">No datasets.</h3></CardContent></Card>
       ) : (
@@ -791,7 +786,6 @@ export default function DatasetsPage() {
                        <p className="text-sm text-amber-700 pt-2 border-t">No input parameters found for mapping. Please define them in Input Parameter Schema.</p>
                      )}
 
-                    {/* Ground Truth Mapping Section */}
                     { showGtParamMappingUI && (
                       <div className="space-y-3 pt-3 border-t">
                         <Label className="flex items-center"><CheckSquare className="mr-2 h-4 w-4 text-green-600"/>Map Evaluation Parameters to Ground Truth Columns (Optional)</Label>
@@ -855,4 +849,3 @@ export default function DatasetsPage() {
     </div>
   );
 }
-

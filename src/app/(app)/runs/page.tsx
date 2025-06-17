@@ -27,7 +27,6 @@ import { useRouter } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 
-// Interfaces for dropdown data
 interface SelectableDatasetVersion { id: string; versionNumber: number; fileName?: string; columnMapping?: Record<string,string>; groundTruthMapping?: Record<string, string>; }
 interface SelectableDataset { id: string; name: string; versions: SelectableDatasetVersion[]; }
 interface SelectableModelConnector { id: string; name: string; provider?: string; config?: string; }
@@ -38,17 +37,15 @@ interface SelectableContextDocument { id: string; name: string; fileName: string
 interface SelectableSummarizationDef { id: string; name: string; }
 
 
-// Interface for EvalRun Firestore document
 interface EvalRun {
-  id: string; // Firestore document ID
+  id: string; 
   name: string;
-  runType: 'Product' | 'GroundTruth';
+  runType: 'Product' | 'GroundTruth'; // "Product" to be reviewed
   status: 'Completed' | 'Running' | 'Pending' | 'Failed' | 'Processing' | 'DataPreviewed';
   createdAt: Timestamp;
   updatedAt?: Timestamp;
   completedAt?: Timestamp;
 
-  // Configuration
   datasetId: string;
   datasetName?: string;
   datasetVersionId?: string;
@@ -56,8 +53,8 @@ interface EvalRun {
 
   modelConnectorId: string;
   modelConnectorName?: string;
-  modelConnectorProvider?: string; // Added
-  modelConnectorConfigString?: string; // Added to store the config JSON string
+  modelConnectorProvider?: string; 
+  modelConnectorConfigString?: string; 
   modelIdentifierForGenkit?: string;
 
   promptId: string;
@@ -75,7 +72,6 @@ interface EvalRun {
   runOnNRows: number;
   concurrencyLimit: number;
 
-  // Results
   progress?: number;
   results?: any[];
   previewedDatasetSample?: Array<Record<string, any>>;
@@ -93,7 +89,6 @@ type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'compl
 
 const GEMINI_CONTEXT_CACHING_MODELS = ["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"];
 
-// Fetch functions for dropdowns
 const fetchSelectableDatasets = async (userId: string | null): Promise<SelectableDataset[]> => {
   if (!userId) return [];
   const datasetsCollectionRef = collection(db, 'users', userId, 'datasets');
@@ -179,7 +174,6 @@ const fetchSelectableSummarizationDefs = async (userId: string | null): Promise<
 };
 
 
-// Fetch Evaluation Runs
 const fetchEvalRuns = async (userId: string | null): Promise<EvalRun[]> => {
   if (!userId) return [];
   const evalRunsCollectionRef = collection(db, 'users', userId, 'evaluationRuns');
@@ -190,14 +184,14 @@ const fetchEvalRuns = async (userId: string | null): Promise<EvalRun[]> => {
 
 
 export default function EvalRunsPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
   const router = useRouter();
 
   useEffect(() => {
-    const storedUserId = localStorage.getItem('currentUserId');
-    setCurrentUserId(storedUserId || null);
+    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    setCurrentUserId(storedProjectId || null);
     setIsLoadingUserId(false);
   }, []);
 
@@ -241,7 +235,7 @@ export default function EvalRunsPage() {
 
   const [isNewRunDialogOpen, setIsNewRunDialogOpen] = useState(false);
   const [newRunName, setNewRunName] = useState('');
-  const [newRunType, setNewRunType] = useState<'Product' | 'GroundTruth'>('Product');
+  const [newRunType, setNewRunType] = useState<'Product' | 'GroundTruth'>('Product'); // "Product" term
   const [selectedDatasetId, setSelectedDatasetId] = useState('');
   const [selectedDatasetVersionId, setSelectedDatasetVersionId] = useState('');
   const [selectedConnectorId, setSelectedConnectorId] = useState('');
@@ -250,7 +244,7 @@ export default function EvalRunsPage() {
   const [selectedEvalParamIds, setSelectedEvalParamIds] = useState<string[]>([]);
   const [selectedContextDocIds, setSelectedContextDocIds] = useState<string[]>([]);
   const [selectedSummarizationDefIds, setSelectedSummarizationDefIds] = useState<string[]>([]);
-  const [runOnNRows, setRunOnNRows] = useState<number>(0); // 0 means all
+  const [runOnNRows, setRunOnNRows] = useState<number>(0); 
   const [newRunConcurrencyLimit, setNewRunConcurrencyLimit] = useState<number>(3);
 
   const [showContextDocSelector, setShowContextDocSelector] = useState(false);
@@ -283,7 +277,7 @@ export default function EvalRunsPage() {
 
   const addEvalRunMutation = useMutation<string, Error, NewEvalRunPayload>({
     mutationFn: async (newRunRawData) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       
       const newRunDataForFirestore: Record<string, any> = {};
       for (const key in newRunRawData) {
@@ -320,7 +314,7 @@ export default function EvalRunsPage() {
 
   const deleteEvalRunMutation = useMutation<void, Error, string>({
     mutationFn: async (runId: string) => {
-      if (!currentUserId) { throw new Error("User not identified for delete operation."); }
+      if (!currentUserId) { throw new Error("Project not selected for delete operation."); }
       try { 
         const analysesCollectionRef = collection(db, 'users', currentUserId, 'evaluationRuns', runId, 'storedAnalyses');
         const analysesSnapshot = await getDocs(analysesCollectionRef);
@@ -372,7 +366,7 @@ export default function EvalRunsPage() {
                 const providerPrefix = connector.provider.toLowerCase().replace(/\s+/g, '');
                 if (providerPrefix === 'vertexai' || providerPrefix === 'googleai') {
                     modelIdentifierForGenkit = `googleai/${parsedConfig.model}`;
-                } else if (providerPrefix === 'azureopenai') { // Keep the openai prefix for azure for genkit, if applicable
+                } else if (providerPrefix === 'azureopenai') { 
                     modelIdentifierForGenkit = `openai/${parsedConfig.model}`; 
                 }
             }
@@ -415,7 +409,6 @@ export default function EvalRunsPage() {
     setNewRunName(`${runToDuplicate.name} - Copy`);
     setNewRunType(runToDuplicate.runType);
 
-    // Dataset and Version
     if (datasets.find(d => d.id === runToDuplicate.datasetId)) {
       setSelectedDatasetId(runToDuplicate.datasetId);
       const dataset = datasets.find(d => d.id === runToDuplicate.datasetId);
@@ -429,14 +422,12 @@ export default function EvalRunsPage() {
       setSelectedDatasetVersionId('');
     }
     
-    // Model Connector
     if (modelConnectors.find(c => c.id === runToDuplicate.modelConnectorId)) {
       setSelectedConnectorId(runToDuplicate.modelConnectorId);
     } else {
       setSelectedConnectorId('');
     }
 
-    // Prompt and Version
     if (promptTemplates.find(p => p.id === runToDuplicate.promptId)) {
       setSelectedPromptId(runToDuplicate.promptId);
       const prompt = promptTemplates.find(p => p.id === runToDuplicate.promptId);
@@ -456,7 +447,6 @@ export default function EvalRunsPage() {
     setRunOnNRows(runToDuplicate.runOnNRows);
     setNewRunConcurrencyLimit(runToDuplicate.concurrencyLimit);
     
-    // Trigger showContextDocSelector update based on duplicated connector
     const duplicatedConnector = modelConnectors.find(c => c.id === runToDuplicate.modelConnectorId);
     let shouldShowSelectorForDuplicated = false;
     if (duplicatedConnector && duplicatedConnector.provider === 'Vertex AI' && duplicatedConnector.config) {
@@ -471,7 +461,6 @@ export default function EvalRunsPage() {
     if (!shouldShowSelectorForDuplicated) {
       setSelectedContextDocIds([]); 
     }
-
 
     setIsNewRunDialogOpen(true);
   };
@@ -497,7 +486,7 @@ export default function EvalRunsPage() {
 
 
   if (isLoadingUserId) return <div className="p-4 md:p-6"><Skeleton className="h-32 w-full"/></div>;
-  if (!currentUserId) return <Card className="m-4 md:m-0"><CardContent className="p-6 text-center text-muted-foreground">Please log in to manage evaluation runs.</CardContent></Card>;
+  if (!currentUserId) return <Card className="m-4 md:m-0"><CardContent className="p-6 text-center text-muted-foreground">Please select a project to manage evaluation runs.</CardContent></Card>;
 
 
   const isNewRunButtonDisabled = addEvalRunMutation.isPending || 
@@ -676,7 +665,7 @@ export default function EvalRunsPage() {
         <CardHeader>
             <div>
                 <CardTitle>Evaluation Run History</CardTitle>
-                <CardDescription>Review past and ongoing evaluation runs.</CardDescription>
+                <CardDescription>Review past and ongoing evaluation runs for this project.</CardDescription>
             </div>
         </CardHeader>
         <CardContent>
@@ -734,4 +723,3 @@ export default function EvalRunsPage() {
     </div>
   );
 }
-

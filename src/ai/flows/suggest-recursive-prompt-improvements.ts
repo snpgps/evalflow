@@ -26,7 +26,7 @@ export type MismatchDetail = z.infer<typeof MismatchDetailSchema>;
 const SuggestRecursivePromptImprovementsInputSchema = z.object({
   originalPromptTemplate: z.string().describe("The original prompt template text that was used in the evaluation."),
   mismatchDetails: z.array(MismatchDetailSchema).describe("An array of objects, each detailing a specific instance where the LLM's output did not match the ground truth."),
-  inputParametersSchema: z.string().optional().describe("A JSON string or textual description of the schema for input parameters used in the prompt (e.g., field names, types, descriptions)."),
+  inputParametersSchema: z.string().optional().describe("A JSON string or textual description of the schema for input parameters (e.g., field names, types, descriptions)."), // Renamed from productParametersSchema
   evaluationParametersSchema: z.string().optional().describe("A JSON string or textual description of all evaluation parameters and their labels that were part of the evaluation setup."),
 });
 export type SuggestRecursivePromptImprovementsInput = z.infer<typeof SuggestRecursivePromptImprovementsInputSchema>;

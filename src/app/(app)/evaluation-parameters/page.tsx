@@ -96,14 +96,14 @@ const fetchSummarizationDefinitions = async (userId: string | null): Promise<Sum
 
 
 export default function EvaluationParametersPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const storedUserId = localStorage.getItem('currentUserId');
-    if (storedUserId && storedUserId.trim() !== "") {
-      setCurrentUserId(storedUserId.trim());
+    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    if (storedProjectId && storedProjectId.trim() !== "") {
+      setCurrentUserId(storedProjectId.trim());
     } else {
       setCurrentUserId(null);
     }
@@ -128,7 +128,7 @@ export default function EvaluationParametersPage() {
 
   const addMutation = useMutation<void, Error, Omit<EvalParameter, 'id' | 'createdAt'>>({
     mutationFn: async (newParameterData) => {
-      if (!currentUserId) throw new Error("User not identified for add operation.");
+      if (!currentUserId) throw new Error("Project not selected for add operation.");
       const dataWithTimestamp = {
         ...newParameterData,
         categorizationLabels: newParameterData.categorizationLabels || [],
@@ -148,7 +148,7 @@ export default function EvaluationParametersPage() {
 
   const updateParamMutation = useMutation<void, Error, EvalParameterUpdatePayload>({
     mutationFn: async (parameterToUpdate) => {
-      if (!currentUserId) throw new Error("User not identified for update operation.");
+      if (!currentUserId) throw new Error("Project not selected for update operation.");
       const { id, ...dataToUpdate } = parameterToUpdate;
       const docRef = doc(db, 'users', currentUserId, 'evaluationParameters', id);
       await updateDoc(docRef, dataToUpdate);
@@ -164,7 +164,7 @@ export default function EvaluationParametersPage() {
 
   const updateLabelsMutation = useMutation<void, Error, UpdateLabelsPayload>({
     mutationFn: async ({ parameterId, labels }) => {
-      if (!currentUserId) throw new Error("User not identified for updating labels.");
+      if (!currentUserId) throw new Error("Project not selected for updating labels.");
       const docRef = doc(db, 'users', currentUserId, 'evaluationParameters', parameterId);
       await updateDoc(docRef, { categorizationLabels: labels });
     },
@@ -179,7 +179,7 @@ export default function EvaluationParametersPage() {
 
   const deleteMutation = useMutation<void, Error, string>({
     mutationFn: async (parameterId) => {
-      if (!currentUserId) throw new Error("User not identified for delete operation.");
+      if (!currentUserId) throw new Error("Project not selected for delete operation.");
       await deleteDoc(doc(db, 'users', currentUserId, 'evaluationParameters', parameterId));
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['evaluationParameters', currentUserId] }); toast({ title: "Success", description: "Evaluation parameter deleted." });},
@@ -200,7 +200,7 @@ export default function EvaluationParametersPage() {
 
   const addContextDocMutation = useMutation<void, Error, { payload: NewContextDocumentPayload; file: File }>({
     mutationFn: async ({ payload, file }) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       const docRef = await addDoc(collection(db, 'users', currentUserId, 'contextDocuments'), payload);
       const storagePath = `users/${currentUserId}/contextDocuments/${docRef.id}/${file.name}`;
       const fileStorageRef = storageRef(storage, storagePath);
@@ -222,7 +222,7 @@ export default function EvaluationParametersPage() {
 
   const deleteContextDocMutation = useMutation<void, Error, ContextDocument>({
     mutationFn: async (docToDelete) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       if (docToDelete.storagePath) {
         try {
           await deleteFileFromStorage(storageRef(storage, docToDelete.storagePath));
@@ -259,7 +259,7 @@ export default function EvaluationParametersPage() {
 
   const addSummarizationDefMutation = useMutation<void, Error, Omit<SummarizationDefinition, 'id' | 'createdAt'>>({
     mutationFn: async (newDefData) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       await addDoc(collection(db, 'users', currentUserId, 'summarizationDefinitions'), { ...newDefData, createdAt: serverTimestamp() });
     },
     onSuccess: () => {
@@ -273,7 +273,7 @@ export default function EvaluationParametersPage() {
 
   const updateSummarizationDefMutation = useMutation<void, Error, SummarizationDefinitionUpdatePayload>({
     mutationFn: async (defToUpdate) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       const { id, ...dataToUpdate } = defToUpdate;
       await updateDoc(doc(db, 'users', currentUserId, 'summarizationDefinitions', id), dataToUpdate);
     },
@@ -288,7 +288,7 @@ export default function EvaluationParametersPage() {
 
   const deleteSummarizationDefMutation = useMutation<void, Error, string>({
     mutationFn: async (defId) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       await deleteDoc(doc(db, 'users', currentUserId, 'summarizationDefinitions', defId));
     },
     onSuccess: () => {
@@ -302,15 +302,15 @@ export default function EvaluationParametersPage() {
   // --- Form Reset & Dialog Openers ---
   const resetParamForm = () => { setParamName(''); setParamDefinition(''); setParamRequiresRationale(false); setEditingEvalParam(null); };
   const openEditParamDialog = (param: EvalParameter) => { setEditingEvalParam(param); setParamName(param.name); setParamDefinition(param.definition); setParamRequiresRationale(param.requiresRationale || false); setIsParamDialogOpen(true); };
-  const handleAddNewParameterClick = () => { if (!currentUserId) { toast({title: "Login Required", description: "Please log in.", variant: "destructive"}); return; } resetParamForm(); setIsParamDialogOpen(true); };
+  const handleAddNewParameterClick = () => { if (!currentUserId) { toast({title: "Project Selection Required", description: "Please select a project.", variant: "destructive"}); return; } resetParamForm(); setIsParamDialogOpen(true); };
   const resetLabelsDialogForm = () => { setCurrentCategorizationLabelsInLabelsDialog([]); setEditingLabelsForParam(null); };
   const openManageLabelsDialog = (param: EvalParameter) => { setEditingLabelsForParam(param); setCurrentCategorizationLabelsInLabelsDialog(param.categorizationLabels?.map((cl, index) => ({ ...cl, tempId: `cl-${param.id}-${index}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}` })) || []); setIsLabelsDialogOpen(true); };
   const resetContextDocForm = () => { setContextDocName(''); setContextDocDescription(''); setContextDocFile(null); };
-  const handleAddNewContextDocClick = () => { if (!currentUserId) { toast({title: "Login Required", description: "Please log in.", variant: "destructive"}); return; } resetContextDocForm(); setIsContextDocDialogOpen(true); };
+  const handleAddNewContextDocClick = () => { if (!currentUserId) { toast({title: "Project Selection Required", description: "Please select a project.", variant: "destructive"}); return; } resetContextDocForm(); setIsContextDocDialogOpen(true); };
 
   const resetSummarizationDefForm = () => { setSummarizationDefName(''); setSummarizationDefDefinition(''); setSummarizationDefExample(''); setEditingSummarizationDef(null); };
   const openEditSummarizationDefDialog = (def: SummarizationDefinition) => { setEditingSummarizationDef(def); setSummarizationDefName(def.name); setSummarizationDefDefinition(def.definition); setSummarizationDefExample(def.example || ''); setIsSummarizationDefDialogOpen(true); };
-  const handleAddNewSummarizationDefClick = () => { if (!currentUserId) { toast({title: "Login Required", description: "Please log in.", variant: "destructive"}); return; } resetSummarizationDefForm(); setIsSummarizationDefDialogOpen(true); };
+  const handleAddNewSummarizationDefClick = () => { if (!currentUserId) { toast({title: "Project Selection Required", description: "Please select a project.", variant: "destructive"}); return; } resetSummarizationDefForm(); setIsSummarizationDefDialogOpen(true); };
 
   // --- Handlers ---
   const handleSubmitParamForm = (e: FormEvent) => {
@@ -327,7 +327,7 @@ export default function EvaluationParametersPage() {
   const handleRemoveCategorizationLabelInLabelsDialog = (tempId: string) => setCurrentCategorizationLabelsInLabelsDialog(prev => prev.filter(label => label.tempId !== tempId));
   const handleSubmitLabelsDialog = (e: FormEvent) => {
     e.preventDefault();
-    if (!editingLabelsForParam || !currentUserId) { toast({title: "Error", description: "Parameter not selected or user not identified.", variant: "destructive"}); return; }
+    if (!editingLabelsForParam || !currentUserId) { toast({title: "Error", description: "Parameter not selected or project not identified.", variant: "destructive"}); return; }
     const labelsToSave: CategorizationLabelToStore[] = currentCategorizationLabelsInLabelsDialog.map(({ tempId, ...rest }) => rest).filter(cl => cl.name.trim() && cl.definition.trim());
     updateLabelsMutation.mutate({ parameterId: editingLabelsForParam.id, labels: labelsToSave });
   };
@@ -342,7 +342,7 @@ export default function EvaluationParametersPage() {
       description: contextDocDescription.trim(),
       fileName: contextDocFile.name,
       storagePath: '', 
-      userId: currentUserId,
+      userId: currentUserId, // Still userId internally for Firestore path
       createdAt: serverTimestamp() 
     };
     addContextDocMutation.mutate({ payload, file: contextDocFile });
@@ -409,9 +409,9 @@ export default function EvaluationParametersPage() {
       </Dialog>
 
       <Card>
-        <CardHeader> <CardTitle>Defined Evaluation Parameters</CardTitle> <CardDescription>Manage your existing evaluation parameters. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription> </CardHeader>
+        <CardHeader> <CardTitle>Defined Evaluation Parameters</CardTitle> <CardDescription>Manage your existing evaluation parameters. {currentUserId ? `(Project ID: ${currentUserId})` : ''}</CardDescription> </CardHeader>
         <CardContent>
-          {!currentUserId && !isLoadingUserId ? ( <div className="text-center text-muted-foreground py-8"><p>Please log in to see your evaluation parameters.</p></div> ) : evalParameters.length === 0 && !isLoadingParameters ? ( <div className="text-center text-muted-foreground py-8"><p>No evaluation parameters defined yet. Click "Add New Evaluation Parameter" to get started.</p></div> ) : (
+          {!currentUserId && !isLoadingUserId ? ( <div className="text-center text-muted-foreground py-8"><p>Please select a project to see evaluation parameters.</p></div> ) : evalParameters.length === 0 && !isLoadingParameters ? ( <div className="text-center text-muted-foreground py-8"><p>No evaluation parameters defined yet. Click "Add New Evaluation Parameter" to get started.</p></div> ) : (
             <TooltipProvider>
               <Table>
                 <TableHeader><TableRow><TableHead className="w-[50px] hidden md:table-cell">Order</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Definition</TableHead><TableHead>Rationale Req.</TableHead><TableHead className="text-right w-auto md:w-[200px]">Actions</TableHead></TableRow></TableHeader>
@@ -475,7 +475,7 @@ export default function EvaluationParametersPage() {
       <Card>
         <CardHeader> <CardTitle>Defined Summarization Definitions</CardTitle> <CardDescription>Manage your existing summarization tasks.</CardDescription> </CardHeader>
         <CardContent>
-          {!currentUserId && !isLoadingUserId ? ( <div className="text-center text-muted-foreground py-8"><p>Please log in to see summarization definitions.</p></div> ) : summarizationDefinitions.length === 0 && !isLoadingSummarizationDefs ? ( <div className="text-center text-muted-foreground py-8"><p>No summarization definitions created yet.</p></div> ) : (
+          {!currentUserId && !isLoadingUserId ? ( <div className="text-center text-muted-foreground py-8"><p>Please select a project to see summarization definitions.</p></div> ) : summarizationDefinitions.length === 0 && !isLoadingSummarizationDefs ? ( <div className="text-center text-muted-foreground py-8"><p>No summarization definitions created yet.</p></div> ) : (
             <Table>
               <TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Definition</TableHead><TableHead className="hidden md:table-cell">Example</TableHead><TableHead className="text-right w-auto md:w-[120px]">Actions</TableHead></TableRow></TableHeader>
               <TableBody>
@@ -518,7 +518,7 @@ export default function EvaluationParametersPage() {
       <Card>
         <CardHeader> <CardTitle>Uploaded Context Documents</CardTitle> <CardDescription>Your stored context documents.</CardDescription> </CardHeader>
         <CardContent>
-          {!currentUserId && !isLoadingUserId ? ( <div className="text-center text-muted-foreground py-8"><p>Please log in to see context documents.</p></div> ) : contextDocuments.length === 0 && !isLoadingContextDocs ? ( <div className="text-center text-muted-foreground py-8"><p>No context documents uploaded yet.</p></div> ) : (
+          {!currentUserId && !isLoadingUserId ? ( <div className="text-center text-muted-foreground py-8"><p>Please select a project to see context documents.</p></div> ) : contextDocuments.length === 0 && !isLoadingContextDocs ? ( <div className="text-center text-muted-foreground py-8"><p>No context documents uploaded yet.</p></div> ) : (
             <Table>
               <TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Description</TableHead><TableHead>File Name</TableHead><TableHead className="text-right w-[80px]">Actions</TableHead></TableRow></TableHeader>
               <TableBody>

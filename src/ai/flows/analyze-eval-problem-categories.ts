@@ -30,7 +30,7 @@ const AnalyzeEvalProblemCategoriesInputSchema = z.object({
   targetEvaluationParameterName: z.string().describe("The name of the evaluation parameter that is being analyzed."),
   targetEvaluationParameterDefinition: z.string().describe("The definition of the target evaluation parameter."),
   desiredTargetLabel: z.string().describe("The specific label the user wants the AI product to achieve more often for the target parameter."),
-  inputSchemaDescription: z.string().optional().describe("A textual description of the schema for input parameters (e.g., field names, types, descriptions) that were available as inputs to the original prompt."),
+  inputSchemaDescription: z.string().optional().describe("A textual description of the schema for input parameters (e.g., field names, types, descriptions) that were available as inputs to the original prompt."), // Renamed from productSchemaDescription
 });
 export type AnalyzeEvalProblemCategoriesInput = z.infer<typeof AnalyzeEvalProblemCategoriesInputSchema>;
 
@@ -82,10 +82,10 @@ Context:
 Mismatch Details (where LLM output != Desired Target Label):
 {{#each mismatchDetails}}
 Mismatch Example:
-  - Input Data Provided to Product: {{{json inputData}}}
+  - Input Data Provided to AI: {{{json inputData}}}
   - LLM's Actual Chosen Label for "{{../targetEvaluationParameterName}}": "{{llmChosenLabel}}"
   - LLM's Rationale (if any): "{{llmRationale}}"
-  - (User's Desired Label was: "{{../desiredTargetLabel}}")
+  - (Desired Label was: "{{../desiredTargetLabel}}")
 ---
 {{/each}}
 
@@ -94,11 +94,11 @@ Instructions:
 2.  For each mismatch, try to understand *why* the LLM chose its label instead of the '{{desiredTargetLabel}}'. Consider the user's input, the LLM's rationale (if any), and the definition of the '{{targetEvaluationParameterName}}'.
 3.  Identify common themes, patterns, or root causes for these deviations. These are your "problem categories".
     Examples of problem categories could be:
-    - "User input lacked sufficient detail for the AI to infer [aspect related to desired label]."
-    - "The AI model appears to have misinterpreted [specific part of user input or parameter definition]."
+    - "Input lacked sufficient detail for the AI to infer [aspect related to desired label]."
+    - "The AI model appears to have misinterpreted [specific part of input or parameter definition]."
     - "The prompt might not clearly instruct the AI on how to handle cases requiring [characteristic of desired label]."
     - "LLM focused too much on [X] and missed [Y] leading to the wrong label."
-    - "User's request was ambiguous regarding [aspect needed for desired label]."
+    - "Input was ambiguous regarding [aspect needed for desired label]."
 4.  Group the mismatches into these distinct problem categories. A single mismatch should ideally belong to one primary category.
 5.  For each category, provide:
     - 'categoryName': A concise name for the problem category.

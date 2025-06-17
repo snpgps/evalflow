@@ -26,14 +26,12 @@ import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
-// Firestore-aligned interfaces for Input Parameters
-export interface InputParameterForPrompts {
+export interface InputParameterForPrompts { // Renamed from ProductParameter
   id: string;
   name: string;
   description: string;
 }
 
-// Firestore-aligned interfaces for Evaluation Parameters (kept for type definition, not for direct display here)
 export interface CategorizationLabelForPrompts {
     name: string;
     definition: string;
@@ -47,7 +45,6 @@ export interface EvalParameterForPrompts {
   requiresRationale?: boolean;
 }
 
-// Kept for type definition, not for direct display here
 export interface SummarizationDefinition {
   id: string;
   name: string;
@@ -57,13 +54,12 @@ export interface SummarizationDefinition {
 }
 
 
-// Interfaces for client-side state and display
 export interface PromptVersion {
   id: string;
   versionNumber: number;
-  template: string; // This will store the FULL concatenated template
+  template: string; 
   notes: string;
-  createdAt: string; // ISO String
+  createdAt: string; 
 }
 
 export interface PromptTemplate {
@@ -72,8 +68,8 @@ export interface PromptTemplate {
   description: string;
   versions: PromptVersion[];
   currentVersionId: string | null;
-  createdAt?: string; // ISO String for display
-  updatedAt?: string; // ISO String for display
+  createdAt?: string; 
+  updatedAt?: string; 
 }
 
 const FIXED_SYSTEM_PROMPT = `You are an impartial and rigorous evaluator of AI-generated outputs. Your task is to judge the quality of responses to a given input based on objective criteria. You must not add new content, speculate, or favor any model. Score only based on how well the response meets the criteria.
@@ -82,8 +78,8 @@ Your task is to analyze the provided input data and then perform two types of ta
 1.  **Evaluation Labeling**: For each specified Evaluation Parameter, choose the most appropriate label based on its definition and the input data.
 2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.`;
 
-const FIXED_INPUT_DATA_HEADER = `--- INPUT DATA ---`;
-const FIXED_INPUT_DATA_FOOTER = `--- END INPUT DATA ---`;
+const FIXED_INPUT_DATA_HEADER = `--- INPUT DATA ---`; // Renamed from FIXED_PRODUCT_INPUT_HEADER
+const FIXED_INPUT_DATA_FOOTER = `--- END INPUT DATA ---`; // Renamed from FIXED_PRODUCT_INPUT_FOOTER
 const FIXED_CRITERIA_HEADER = `--- DETAILED INSTRUCTIONS & CRITERIA ---`;
 
 const defaultInitialUserEditablePromptTemplate = `Your input data and definition goes here. Use the "Input Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.
@@ -93,10 +89,9 @@ User Selected Language: {{User Language}}
 "`;
 
 
-// Fetch Input Parameters
-const fetchInputParametersForPrompts = async (userId: string | null): Promise<InputParameterForPrompts[]> => {
+const fetchInputParametersForPrompts = async (userId: string | null): Promise<InputParameterForPrompts[]> => { // Renamed
   if (!userId) return [];
-  const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters');
+  const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters'); // Renamed
   const paramsQuery = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(paramsQuery);
   return snapshot.docs.map(docSnap => ({
@@ -108,7 +103,7 @@ const fetchInputParametersForPrompts = async (userId: string | null): Promise<In
 
 
 export default function PromptsPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
 
@@ -123,7 +118,7 @@ export default function PromptsPage() {
   const [promptName, setPromptName] = useState('');
   const [promptDescription, setPromptDescription] = useState('');
 
-  const [promptTemplateContent, setPromptTemplateContent] = useState(''); // This now holds ONLY the user-editable part
+  const [promptTemplateContent, setPromptTemplateContent] = useState(''); 
   const [versionNotes, setVersionNotes] = useState('');
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -135,9 +130,9 @@ export default function PromptsPage() {
 
 
   useEffect(() => {
-    const storedUserId = localStorage.getItem('currentUserId');
-    if (storedUserId && storedUserId.trim() !== "") {
-      setCurrentUserId(storedUserId.trim());
+    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    if (storedProjectId && storedProjectId.trim() !== "") {
+      setCurrentUserId(storedProjectId.trim());
     } else {
       setCurrentUserId(null);
     }
@@ -150,9 +145,9 @@ export default function PromptsPage() {
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
-  const { data: inputParameters = [], isLoading: isLoadingInputParams, error: fetchInputParamsError } = useQuery<InputParameterForPrompts[], Error>({
-    queryKey: ['inputParametersForPrompts', currentUserId],
-    queryFn: () => fetchInputParametersForPrompts(currentUserId),
+  const { data: inputParameters = [], isLoading: isLoadingInputParams, error: fetchInputParamsError } = useQuery<InputParameterForPrompts[], Error>({ // Renamed
+    queryKey: ['inputParametersForPrompts', currentUserId], // Renamed
+    queryFn: () => fetchInputParametersForPrompts(currentUserId), // Renamed
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
@@ -224,12 +219,10 @@ export default function PromptsPage() {
              if (criteriaStartIndex !== -1) {
                  editablePart = afterSystemPromptAndHeader.substring(0, criteriaStartIndex).trim();
              } else {
-                // Fallback: if system prompt exists, try to get content after it, before criteria header
                 const systemPromptEndIndex = fullTemplate.indexOf(FIXED_SYSTEM_PROMPT) + FIXED_SYSTEM_PROMPT.length;
                 const criteriaHeaderIndex = fullTemplate.lastIndexOf(FIXED_CRITERIA_HEADER);
                 if (systemPromptEndIndex !== -1 && criteriaHeaderIndex !== -1 && systemPromptEndIndex < criteriaHeaderIndex) {
                     let potentialEditable = fullTemplate.substring(systemPromptEndIndex, criteriaHeaderIndex).trim();
-                    // Attempt to remove input markers if they exist in this fallback scenario
                     if (potentialEditable.startsWith(FIXED_INPUT_DATA_HEADER)) {
                         potentialEditable = potentialEditable.substring(FIXED_INPUT_DATA_HEADER.length).trim();
                     }
@@ -238,11 +231,10 @@ export default function PromptsPage() {
                     }
                     editablePart = potentialEditable;
                 } else {
-                    editablePart = defaultInitialUserEditablePromptTemplate; // Could not parse effectively
+                    editablePart = defaultInitialUserEditablePromptTemplate; 
                 }
              }
         } else if (!fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) || !fullTemplate.includes(FIXED_CRITERIA_HEADER)) {
-            // Fallback for very old templates or templates that don't have the expected structure
             editablePart = fullTemplate;
         }
 
@@ -262,7 +254,7 @@ export default function PromptsPage() {
 
   const addPromptTemplateMutation = useMutation<string, Error, { name: string; description: string }>({
     mutationFn: async ({ name, description }) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
 
       const fullInitialTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${defaultInitialUserEditablePromptTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}`;
 
@@ -298,7 +290,7 @@ export default function PromptsPage() {
 
   const updatePromptTemplateMutation = useMutation<void, Error, { id: string; name: string; description: string }>({
     mutationFn: async ({ id, name, description }) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       const promptRef = doc(db, 'users', currentUserId, 'promptTemplates', id);
       await updateDoc(promptRef, { name, description, updatedAt: serverTimestamp() });
     },
@@ -315,7 +307,7 @@ export default function PromptsPage() {
 
   const deletePromptTemplateMutation = useMutation<void, Error, string>({
     mutationFn: async (promptId) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
 
       const versionsRef = collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions');
       const versionsSnapshot = await getDocs(versionsRef);
@@ -340,7 +332,7 @@ export default function PromptsPage() {
 
   const addPromptVersionMutation = useMutation<string, Error, { promptId: string; userEditableTemplate: string; notes: string }>({
     mutationFn: async ({ promptId, userEditableTemplate, notes }) => {
-      if (!currentUserId || !selectedPrompt) throw new Error("User or prompt not identified.");
+      if (!currentUserId || !selectedPrompt) throw new Error("Project or prompt not identified.");
 
       const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}`;
       const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
@@ -369,7 +361,7 @@ export default function PromptsPage() {
 
   const updatePromptVersionMutation = useMutation<void, Error, { promptId: string; versionId: string; userEditableTemplate: string; notes: string }>({
     mutationFn: async ({ promptId, versionId, userEditableTemplate, notes }) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}`;
       const versionRef = doc(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions', versionId);
       await updateDoc(versionRef, { template: fullTemplateToSave, notes });
@@ -422,7 +414,7 @@ export default function PromptsPage() {
     }
   };
 
-  const insertInputParameter = (variableName: string) => {
+  const insertInputParameter = (variableName: string) => { // Renamed
     insertIntoTextarea(`{{${variableName}}}`);
   };
 
@@ -479,7 +471,7 @@ export default function PromptsPage() {
 
   const handleOpenNewPromptDialog = () => {
     if (!currentUserId) {
-        toast({ title: "Login Required", description: "Please log in to create prompts.", variant: "destructive" });
+        toast({ title: "Project Selection Required", description: "Please select a project to create prompts.", variant: "destructive" });
         return;
     }
     resetPromptDialogForm();
@@ -496,8 +488,6 @@ export default function PromptsPage() {
     if (promptIdPendingDelete) {
       deletePromptTemplateMutation.mutate(promptIdPendingDelete);
     }
-    // setIsConfirmDeleteDialogOpen(false); // Handled by onOpenChange
-    // setPromptIdPendingDelete(null); // Handled by onOpenChange
   };
 
   const formatDate = (isoString?: string) => {
@@ -522,7 +512,7 @@ export default function PromptsPage() {
       return <div className="p-4 text-destructive">Error: {fetchPromptsError.message}</div>;
     }
     if (!currentUserId && !isLoadingUserId) {
-        return <div className="p-6 text-center text-muted-foreground">Please log in to manage prompts.</div>;
+        return <div className="p-6 text-center text-muted-foreground">Please select a project to manage prompts.</div>;
     }
     if (promptsData.length === 0) {
       return (
@@ -634,10 +624,10 @@ export default function PromptsPage() {
                         <div className="space-y-3 text-sm py-2">
                             <p>Your prompt template is structured into several parts:</p>
                             <ol className="list-decimal pl-5 space-y-1 text-xs">
-                                <li><strong className="font-medium">System Prompt:</strong> Tells the AI its role. This part is fixed by the system and shown for your reference.</li>
+                                <li><strong className="font-medium">System Prompt:</strong> Tells the AI its role. This part is fixed by the system.</li>
                                 <li><strong className="font-medium">Your Input Data Section:</strong> This is where you define the structure of the specific data the AI will analyze.
                                     <ul className="list-disc pl-5 space-y-0.5 mt-1">
-                                        <li>The markers <code>{FIXED_INPUT_DATA_HEADER}</code> and <code>{FIXED_INPUT_DATA_FOOTER}</code> will be automatically wrapped around this section by the system during evaluation runs. They are shown as uneditable labels in the UI for clarity.</li>
+                                        <li>The markers <code>{FIXED_INPUT_DATA_HEADER}</code> and <code>{FIXED_INPUT_DATA_FOOTER}</code> will be automatically wrapped around this section by the system during evaluation runs.</li>
                                         <li>Use the "Input Parameters" sidebar to insert placeholders like <code>{`{{ParameterName}}`}</code> into the editable textarea.</li>
                                         <li>Example: <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap break-words">User Query: {`{{UserQuery}}`}{`\n`}Previous Turn: {`{{BotResponse}}`}</pre></li>
                                     </ul>
@@ -745,7 +735,7 @@ export default function PromptsPage() {
                   <p className="text-sm text-muted-foreground">No input parameters defined. Go to Schema Definition.</p>
                 ) : (
                   <div className="space-y-2">
-                    {inputParameters.map(param => (
+                    {inputParameters.map(param => ( // Renamed productParameters to inputParameters
                       <Card key={param.id} className="p-2 shadow-sm bg-background overflow-hidden">
                         <div className="flex items-center gap-2 mb-1">
                           <Tag className="h-4 w-4 text-primary shrink-0" />

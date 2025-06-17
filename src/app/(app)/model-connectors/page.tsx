@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
 import { testDirectAnthropicClient, type TestDirectAnthropicClientInput, type TestDirectAnthropicClientOutput } from '@/ai/flows/test-direct-anthropic-client-flow';
 import { testGoogleAIConnection, type TestGoogleAIConnectionInput, type TestGoogleAIConnectionOutput } from '@/ai/flows/test-googleai-connection-flow';
-import { testDirectOpenAIClient, type TestDirectOpenAIClientInput, type TestDirectOpenAIClientOutput } from '@/ai/flows/test-direct-openai-client-flow'; // Added OpenAI test flow
+import { testDirectOpenAIClient, type TestDirectOpenAIClientInput, type TestDirectOpenAIClientOutput } from '@/ai/flows/test-direct-openai-client-flow'; 
 
 interface ModelConnector {
   id: string; // Firestore document ID
@@ -51,9 +51,9 @@ const OPENAI_MODELS = [
   "gpt-4",
   "gpt-3.5-turbo",
 ];
-const AZURE_OPENAI_MODELS = [ // These are examples, actual deployment names vary
-  "gpt-4", // (Deployment Name for GPT-4 on Azure)
-  "gpt-35-turbo", // (Deployment Name for GPT-3.5-Turbo on Azure)
+const AZURE_OPENAI_MODELS = [ 
+  "gpt-4", 
+  "gpt-35-turbo", 
 ];
 const ANTHROPIC_MODELS = [
   "claude-3-5-sonnet-20240620",
@@ -75,14 +75,14 @@ const fetchModelConnectors = async (userId: string | null): Promise<ModelConnect
 };
 
 export default function ModelConnectorsPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const storedUserId = localStorage.getItem('currentUserId');
-    if (storedUserId && storedUserId.trim() !== "") {
-      setCurrentUserId(storedUserId.trim());
+    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    if (storedProjectId && storedProjectId.trim() !== "") {
+      setCurrentUserId(storedProjectId.trim());
     } else {
       setCurrentUserId(null);
     }
@@ -105,14 +105,12 @@ export default function ModelConnectorsPage() {
   const [config, setConfig] = useState('{}');
   const [selectedModelForDropdown, setSelectedModelForDropdown] = useState('');
 
-  // State for Test Connection Dialog
   const [isTestConnectionDialogOpen, setIsTestConnectionDialogOpen] = useState(false);
   const [connectorToTest, setConnectorToTest] = useState<ModelConnector | null>(null);
   const [testPrompt, setTestPrompt] = useState<string>("Hello, please respond with a short friendly greeting and mention your model name if you know it.");
   const [testResult, setTestResult] = useState<TestDirectAnthropicClientOutput | TestGoogleAIConnectionOutput | TestDirectOpenAIClientOutput | null>(null);
   const [isSubmittingTest, setIsSubmittingTest] = useState(false);
 
-  // State for Delete Confirmation Dialog
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [connectorIdPendingDelete, setConnectorIdPendingDelete] = useState<string | null>(null);
 
@@ -139,14 +137,10 @@ export default function ModelConnectorsPage() {
       if (relevantProvidersForModelDropdown.includes(effectiveProvider) && selectedModelForDropdown) {
         currentConfigJson.model = selectedModelForDropdown;
       } else if (!selectedModelForDropdown && currentConfigJson.model && relevantProvidersForModelDropdown.includes(effectiveProvider)) {
-         // If no model selected in dropdown, but model exists in config, remove it from config (dropdown takes precedence)
-         // Only do this if the provider is one that USES the dropdown.
-         // For "Other" or "Local LLM", user might manually set "model" in JSON.
          if (relevantProvidersForModelDropdown.includes(effectiveProvider)) {
             delete currentConfigJson.model;
          }
       }
-
 
       const newConfigString = Object.keys(currentConfigJson).length === 0 ? '{}' : JSON.stringify(currentConfigJson, null, 2);
       if (newConfigString !== config.trim()) {
@@ -160,7 +154,7 @@ export default function ModelConnectorsPage() {
 
   const addConnectorMutation = useMutation<void, Error, ModelConnectorCreationPayload>({
     mutationFn: async (newConnectorData) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       await addDoc(collection(db, 'users', currentUserId, 'modelConnectors'), newConnectorData);
     },
     onSuccess: () => {
@@ -176,7 +170,7 @@ export default function ModelConnectorsPage() {
 
   const updateConnectorMutation = useMutation<void, Error, ModelConnectorUpdatePayload>({
     mutationFn: async (connectorToUpdate) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       const { id, ...dataToUpdate } = connectorToUpdate;
       const docRef = doc(db, 'users', currentUserId, 'modelConnectors', id);
       await updateDoc(docRef, dataToUpdate);
@@ -194,7 +188,7 @@ export default function ModelConnectorsPage() {
 
   const deleteConnectorMutation = useMutation<void, Error, string>({
     mutationFn: async (connectorIdToDelete) => {
-      if (!currentUserId) throw new Error("User not identified.");
+      if (!currentUserId) throw new Error("Project not selected.");
       await deleteDoc(doc(db, 'users', currentUserId, 'modelConnectors', connectorIdToDelete));
     },
     onSuccess: () => {
@@ -210,7 +204,7 @@ export default function ModelConnectorsPage() {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!currentUserId) {
-        toast({title: "Error", description: "User not identified.", variant: "destructive"});
+        toast({title: "Project Not Selected", description: "Please select a project first.", variant: "destructive"});
         return;
     }
     if (!connectorName.trim() || !apiKey.trim()) {
@@ -270,16 +264,16 @@ export default function ModelConnectorsPage() {
           if (currentModels.includes(parsedConfig.model)) {
             setSelectedModelForDropdown(parsedConfig.model);
           } else {
-            setSelectedModelForDropdown(''); // Model in config not in standard list for provider
+            setSelectedModelForDropdown(''); 
           }
         } else {
-          setSelectedModelForDropdown(''); // No model in config
+          setSelectedModelForDropdown(''); 
         }
       } else {
-         setSelectedModelForDropdown(''); // Config is empty
+         setSelectedModelForDropdown(''); 
       }
     } catch (e) {
-      setSelectedModelForDropdown(''); // Error parsing config
+      setSelectedModelForDropdown(''); 
       console.warn("Failed to parse connector.config in openEditDialog for model dropdown", e);
     }
     setIsFormDialogOpen(true);
@@ -287,7 +281,7 @@ export default function ModelConnectorsPage() {
 
   const handleDeleteInitiate = (id: string) => {
     if (!currentUserId) {
-      toast({ title: "Error", description: "User not identified.", variant: "destructive" });
+      toast({ title: "Project Not Selected", description: "Please select a project first.", variant: "destructive" });
       return;
     }
     setConnectorIdPendingDelete(id);
@@ -298,14 +292,12 @@ export default function ModelConnectorsPage() {
     if (connectorIdPendingDelete) {
       deleteConnectorMutation.mutate(connectorIdPendingDelete);
     }
-    // setIsConfirmDeleteDialogOpen(false); // This will be handled by onOpenChange
-    // setConnectorIdPendingDelete(null); // This will be handled by onOpenChange
   };
 
 
   const handleOpenNewFormDialog = () => {
     if (!currentUserId) {
-      toast({title: "Login Required", description: "Please log in to add connectors.", variant: "destructive"});
+      toast({title: "Project Selection Required", description: "Please select a project to add connectors.", variant: "destructive"});
       return;
     }
     resetForm();
@@ -316,26 +308,20 @@ export default function ModelConnectorsPage() {
     setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // For Genkit-based tests (e.g., Google AI via Vertex AI)
   const getGenkitModelId = (connector: ModelConnector | null): string | undefined => {
     if (!connector || !connector.config) return undefined;
-    if (connector.provider === 'Anthropic' || connector.provider === 'OpenAI') return undefined; // These use direct clients for tests
+    if (connector.provider === 'Anthropic' || connector.provider === 'OpenAI') return undefined; 
     try {
       const parsedConfig = JSON.parse(connector.config);
       if (parsedConfig.model && typeof parsedConfig.model === 'string') {
         if (connector.provider === 'Vertex AI') return `googleai/${parsedConfig.model}`;
-        // For Azure OpenAI, the model name might be the deployment name itself
-        // This might need adjustment based on how Genkit's Azure OpenAI plugin handles model IDs
-        if (connector.provider === 'Azure OpenAI') return `openai/${parsedConfig.model}`; // Assuming Genkit uses an openai/ prefix
-        // Add other Genkit plugin providers here if needed
+        if (connector.provider === 'Azure OpenAI') return `openai/${parsedConfig.model}`; 
       }
     } catch (e) {
-      // console.warn("Could not parse config for Genkit model ID for connector:", connector.name);
     }
     return undefined;
   };
 
-  // For direct client tests (e.g., Anthropic, OpenAI)
   const getDirectClientModelName = (connector: ModelConnector | null): string | undefined => {
     if (!connector || !connector.config) return undefined;
     if (connector.provider !== 'Anthropic' && connector.provider !== 'OpenAI') return undefined;
@@ -343,7 +329,6 @@ export default function ModelConnectorsPage() {
       const parsedConfig = JSON.parse(connector.config);
       return parsedConfig.model as string | undefined;
     } catch (e) {
-      // console.warn("Could not parse direct client model from config:", connector.name);
     }
     return undefined;
   };
@@ -475,7 +460,7 @@ export default function ModelConnectorsPage() {
                 </div>
                 <div>
                   <Label htmlFor="conn-provider">LLM Provider</Label>
-                  <Select value={provider} onValueChange={(value: any) => { setProvider(value); setSelectedModelForDropdown(''); setConfig('{}'); /* Reset config when provider changes */ }}>
+                  <Select value={provider} onValueChange={(value: any) => { setProvider(value); setSelectedModelForDropdown(''); setConfig('{}'); }}>
                     <SelectTrigger id="conn-provider">
                       <SelectValue placeholder="Select provider" />
                     </SelectTrigger>
@@ -518,17 +503,13 @@ export default function ModelConnectorsPage() {
                     value={config}
                     onChange={(e) => {
                       setConfig(e.target.value);
-                      // Attempt to sync dropdown if model is manually changed in JSON, for relevant providers
                       if (provider && ["OpenAI", "Vertex AI", "Azure OpenAI", "Anthropic"].includes(provider)) {
                           try {
                             const parsed = JSON.parse(e.target.value);
                             if (parsed.model && typeof parsed.model === 'string' && currentModelsForProvider.includes(parsed.model)) {
                                setSelectedModelForDropdown(parsed.model);
-                            } else if (!parsed.model && selectedModelForDropdown) {
-                               // If model removed from JSON, clear dropdown selection
-                               //setSelectedModelForDropdown(''); // This can cause loop if dropdown also clears JSON
                             }
-                          } catch (err) { /* Ignore parse errors while typing */ }
+                          } catch (err) { }
                       }
                     }}
                     placeholder='e.g., { "temperature": 0.7, "maxOutputTokens": 1024 }'
@@ -556,12 +537,12 @@ export default function ModelConnectorsPage() {
         <CardHeader>
           <CardTitle>Saved Connectors</CardTitle>
           <CardDescription>Your configured Judge LLM connections.
-            {!currentUserId ? " Please log in." : ""}
+            {!currentUserId ? " Please select a project." : `(Project ID: ${currentUserId})`}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {!currentUserId && !isLoadingUserId ? (
-             <div className="text-center text-muted-foreground py-8"><p>Please log in to manage model connectors.</p></div>
+             <div className="text-center text-muted-foreground py-8"><p>Please select a project to manage model connectors.</p></div>
           ): connectors.length === 0 && !isLoadingConnectors ? (
              <div className="text-center text-muted-foreground py-8">
               <PlugZap className="mx-auto h-12 w-12 text-gray-400 mb-4" />
@@ -589,7 +570,6 @@ export default function ModelConnectorsPage() {
                   if (conn.provider === 'Anthropic') testIconColor = "text-orange-500";
                   else if (conn.provider === 'Vertex AI') testIconColor = "text-green-500";
                   else if (conn.provider === 'OpenAI') testIconColor = "text-sky-500";
-
 
                   return (
                     <TableRow key={conn.id} className="hover:bg-muted/50">
@@ -715,7 +695,7 @@ export default function ModelConnectorsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConnectorIdPendingDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => {setIsConfirmDeleteDialogOpen(false); setConnectorIdPendingDelete(null);}}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDeleteConnector}
               disabled={deleteConnectorMutation.isPending && deleteConnectorMutation.variables === connectorIdPendingDelete}
