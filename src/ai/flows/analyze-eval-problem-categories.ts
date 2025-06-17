@@ -19,7 +19,7 @@ import type { MismatchDetail } from './suggest-recursive-prompt-improvements';
 const AnalyzeEvalProblemCategoriesInputSchema = z.object({
   mismatchDetails: z.array(
     z.object({ 
-      inputData: z.record(z.string(), z.any()).describe("The product parameters input for the row that had a mismatch."),
+      inputData: z.record(z.string(), z.any()).describe("The input parameters for the row that had a mismatch."),
       evaluationParameterName: z.string().describe("The name of the evaluation parameter where the mismatch occurred."),
       evaluationParameterDefinition: z.string().describe("The definition of the evaluation parameter."),
       llmChosenLabel: z.string().describe("The label incorrectly chosen by the LLM."),
@@ -30,7 +30,7 @@ const AnalyzeEvalProblemCategoriesInputSchema = z.object({
   targetEvaluationParameterName: z.string().describe("The name of the evaluation parameter that is being analyzed."),
   targetEvaluationParameterDefinition: z.string().describe("The definition of the target evaluation parameter."),
   desiredTargetLabel: z.string().describe("The specific label the user wants the AI product to achieve more often for the target parameter."),
-  productSchemaDescription: z.string().optional().describe("A textual description of the schema for product parameters (e.g., field names, types, descriptions) that were available as inputs to the original product prompt."),
+  inputSchemaDescription: z.string().optional().describe("A textual description of the schema for input parameters (e.g., field names, types, descriptions) that were available as inputs to the original prompt."),
 });
 export type AnalyzeEvalProblemCategoriesInput = z.infer<typeof AnalyzeEvalProblemCategoriesInputSchema>;
 
@@ -40,7 +40,7 @@ const ProblemCategorySchema = z.object({
   description: z.string().describe("A brief explanation of what this problem category entails and why it leads to the undesired LLM output."),
   count: z.number().int().describe("The number of provided mismatch details that fall into this problem category. This should be a positive integer (e.g., 1, 2, 3...)."),
   exampleMismatch: z.object({
-      inputData: z.string().describe("The product parameters input for the row that had a mismatch, formatted as a JSON string."),
+      inputData: z.string().describe("The input parameters for the row that had a mismatch, formatted as a JSON string."),
       evaluationParameterName: z.string(),
       evaluationParameterDefinition: z.string(),
       llmChosenLabel: z.string(),
@@ -74,9 +74,9 @@ Context:
 - Target Evaluation Parameter Definition: "{{targetEvaluationParameterDefinition}}"
 - Desired Target Label for this parameter: "{{desiredTargetLabel}}"
 
-{{#if productSchemaDescription}}
-- Product Input Parameters Schema (used in the original prompt):
-{{{productSchemaDescription}}}
+{{#if inputSchemaDescription}}
+- Input Parameters Schema (used in the original prompt):
+{{{inputSchemaDescription}}}
 {{/if}}
 
 Mismatch Details (where LLM output != Desired Target Label):

@@ -38,7 +38,7 @@ import {
   type UserIntentCategory,
 } from '@/ai/flows/analyze-summarization-problems';
 import type { EvalParameterForPrompts, CategorizationLabelForPrompts } from '@/app/(app)/prompts/page';
-import type { ProductParameterForPrompts } from '@/app/(app)/prompts/page';
+import type { InputParameterForPrompts } from '@/app/(app)/prompts/page'; // Renamed
 import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
 
 
@@ -77,14 +77,14 @@ interface StoredAnalysisDataForFirestore {
   problemCategories: ProblemCategory[] | UserIntentCategory[];
   overallSummary?: string | null;
   sourceDataCount: number;
-  productContext?: string | null;
+  productContext?: string | null; // Updated type
 }
 
 interface StoredAnalysis extends Omit<StoredAnalysisDataForFirestore, 'createdAt' | 'problemCategories' | 'overallSummary' | 'sourceDataCount' | 'productContext'> {
   id: string;
   createdAt: Timestamp;
   sourceDataCount: number;
-  productContext?: string | null;
+  productContext?: string | null; // Updated type
 }
 
 interface StoredAnalysisWithDetails extends StoredAnalysis {
@@ -149,9 +149,9 @@ const fetchAllEvalParamsDetails = async (userId: string | null): Promise<EvalPar
   });
 };
 
-const fetchAllProductParamsSchema = async (userId: string | null): Promise<ProductParameterForPrompts[]> => {
+const fetchAllInputParamsSchema = async (userId: string | null): Promise<InputParameterForPrompts[]> => { // Renamed
     if (!userId) return [];
-    const paramsCollectionRef = collection(db, 'users', userId, 'productParameters');
+    const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters'); // Renamed
     const q = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
     const snapshot = await getDocs(q);
     return snapshot.docs.map(docSnap => ({
@@ -351,9 +351,9 @@ export default function AiInsightsPage() {
     enabled: !!currentUserId,
   });
   
-  const { data: allProductParams = [], isLoading: isLoadingAllProductParams } = useQuery<ProductParameterForPrompts[], Error>({
-      queryKey: ['allProductParamsForInsightsSchema', currentUserId],
-      queryFn: () => fetchAllProductParamsSchema(currentUserId),
+  const { data: allInputParams = [], isLoading: isLoadingAllInputParams } = useQuery<InputParameterForPrompts[], Error>({ // Renamed
+      queryKey: ['allInputParamsForInsightsSchema', currentUserId], // Renamed
+      queryFn: () => fetchAllInputParamsSchema(currentUserId), // Renamed
       enabled: !!currentUserId,
   });
 
@@ -363,10 +363,10 @@ export default function AiInsightsPage() {
     enabled: !!currentUserId,
   });
 
-  const productParametersSchemaText = useMemo(() => {
-    if (!allProductParams || allProductParams.length === 0) return "No product parameters defined.";
-    return "Product Parameters Schema:\n" + allProductParams.map(p => `- ${p.name}: ${p.description || 'No definition'}`).join("\n");
-  }, [allProductParams]);
+  const inputParametersSchemaText = useMemo(() => { // Renamed
+    if (!allInputParams || allInputParams.length === 0) return "No input parameters defined.";
+    return "Input Parameters Schema:\n" + allInputParams.map(p => `- ${p.name}: ${p.description || 'No definition'}`).join("\n");
+  }, [allInputParams]);
 
   const evaluationParametersSchemaText = useMemo(() => {
     if (!allEvalParamsDetails || allEvalParamsDetails.length === 0) return "No evaluation parameters defined.";
@@ -470,7 +470,7 @@ export default function AiInsightsPage() {
     if (mismatchDetailsForFlow.length === 0) { toast({ title: "No Mismatches", description: "No rows found where the LLM output differs from your desired target label.", variant: "default" }); return; }
     setIsLoadingSuggestion(true); setSuggestionResult(null); setSuggestionError(null);
     try {
-      const input: SuggestRecursivePromptImprovementsInput = { originalPromptTemplate: currentProductPrompt, mismatchDetails: mismatchDetailsForFlow, productParametersSchema: productParametersSchemaText, evaluationParametersSchema: evaluationParametersSchemaText };
+      const input: SuggestRecursivePromptImprovementsInput = { originalPromptTemplate: currentProductPrompt, mismatchDetails: mismatchDetailsForFlow, inputParametersSchema: inputParametersSchemaText, evaluationParametersSchema: evaluationParametersSchemaText };
       const result = await suggestRecursivePromptImprovements(input); setSuggestionResult(result); toast({ title: "Suggestions Generated!", description: "Review the suggested prompt and reasoning below." });
     } catch (error) { console.error("Error suggesting prompt improvements:", error); const errorMessage = (error as Error).message || "Failed to get suggestions."; setSuggestionError(errorMessage); toast({ title: "Suggestion Error", description: errorMessage, variant: "destructive" });
     } finally { setIsLoadingSuggestion(false); }
@@ -499,7 +499,7 @@ export default function AiInsightsPage() {
         addAnalysisLog(`Analyzing ${mismatchDetailsForFlow.length} mismatch details.`);
         setIsLoadingProblemAnalysis(true);
         try {
-            const input: AnalyzeEvalProblemCategoriesInput = { mismatchDetails: mismatchDetailsForFlow, targetEvaluationParameterName: currentEvalParam.name, targetEvaluationParameterDefinition: currentEvalParam.definition, desiredTargetLabel: desiredTargetLabel, productSchemaDescription: productParametersSchemaText };
+            const input: AnalyzeEvalProblemCategoriesInput = { mismatchDetails: mismatchDetailsForFlow, targetEvaluationParameterName: currentEvalParam.name, targetEvaluationParameterDefinition: currentEvalParam.definition, desiredTargetLabel: desiredTargetLabel, inputSchemaDescription: inputParametersSchemaText }; // Renamed
             addAnalysisLog("Sending request to AI for problem category analysis...");
             const result = await analyzeEvalProblemCategories(input);
             setProblemAnalysisResult(result);
@@ -532,7 +532,7 @@ export default function AiInsightsPage() {
                 generatedSummaryDetails: summariesForFlow,
                 targetSummarizationDefinitionName: currentSummarizationDef.name,
                 targetSummarizationDefinitionText: currentSummarizationDef.definition,
-                productSchemaDescription: productParametersSchemaText,
+                inputSchemaDescription: inputParametersSchemaText, // Renamed
                 productContext: productContextForAnalysis.trim() || undefined 
             };
             addAnalysisLog("Sending request to AI for user intent analysis...");
@@ -1043,4 +1043,3 @@ export default function AiInsightsPage() {
     </div>
   );
 }
-

@@ -18,10 +18,10 @@ const AnalyzePromptQualityInputSchema = z.object({
     .describe(
       'A string containing the results of an eval run, including model outputs, ground truth labels, and evaluation metrics.'
     ),
-  productParametersSchema: z
+  inputParametersSchema: z // Renamed from productParametersSchema
     .string()
     .describe(
-      'A string representing the schema of the product parameters used in the eval run, including field names, types, and descriptions.'
+      'A string representing the schema of the input parameters used in the eval run, including field names, types, and descriptions.'
     ),
   evaluationParameters: z
     .string()
@@ -55,11 +55,11 @@ const prompt = ai.definePrompt({
   output: {schema: AnalyzePromptQualityOutputSchema},
   prompt: `You are an AI assistant specialized in analyzing the quality of prompts used in AI model evaluations (evals).
 
-  You are provided with the results of an eval run, the schema of the product parameters used, the evaluation parameters, and the prompt template.
+  You are provided with the results of an eval run, the schema of the input parameters used, the evaluation parameters, and the prompt template.
   Your goal is to identify patterns and insights about prompt quality and determine which parameters contribute most to successful outcomes.
 
   Eval Results: {{{evalResults}}}
-  Product Parameter Schema: {{{productParametersSchema}}}
+  Input Parameter Schema: {{{inputParametersSchema}}}
   Evaluation Parameters: {{{evaluationParameters}}}
   Prompt Template: {{{promptTemplate}}}
 

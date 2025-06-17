@@ -23,7 +23,7 @@ const workflowSteps = [
   },
   {
     title: "Prepare Your Data",
-    description: "Upload datasets and map columns to your product schema. Optionally, map columns for ground truth comparisons.",
+    description: "Upload datasets and map columns to your input schema. Optionally, map columns for ground truth comparisons.",
     href: "/datasets",
     icon: Database,
     color: "text-orange-500",
@@ -75,7 +75,7 @@ export default function DashboardPage() {
             <div>
               <CardTitle className="text-2xl md:text-3xl font-headline">Welcome to EvalFlow!</CardTitle>
               <CardDescription className="text-base mt-1">
-                EvalFlow helps you systematically define, test, and improve your AI applications. Begin by setting up your product and evaluation parameters, then manage your data and prompts, run evaluations, and finally, leverage AI insights to iterate and enhance performance.
+                EvalFlow helps you systematically define, test, and improve your AI applications. Begin by setting up your input and evaluation parameters, then manage your data and prompts, run evaluations, and finally, leverage AI insights to iterate and enhance performance.
               </CardDescription>
             </div>
           </div>
@@ -122,4 +122,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

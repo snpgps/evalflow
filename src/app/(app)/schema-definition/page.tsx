@@ -16,7 +16,7 @@ import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 
-interface ProductParameter {
+interface InputParameter {
   id: string; // Firestore document ID
   name: string;
   type: 'text' | 'dropdown' | 'textarea';
@@ -27,32 +27,32 @@ interface ProductParameter {
 }
 
 // Type for update payload, allowing options to be FieldValue for deletion
-type ProductParameterUpdatePayload = { id: string } & Partial<Omit<ProductParameter, 'id' | 'createdAt' | 'order' | 'options'>> & { options?: string[] | FieldValue };
+type InputParameterUpdatePayload = { id: string } & Partial<Omit<InputParameter, 'id' | 'createdAt' | 'order' | 'options'>> & { options?: string[] | FieldValue };
 
 
-const fetchProductParameters = async (userId: string | null): Promise<ProductParameter[]> => {
+const fetchInputParameters = async (userId: string | null): Promise<InputParameter[]> => {
   if (!userId) {
-    console.log("fetchProductParameters: No userId provided, returning empty array.");
+    console.log("fetchInputParameters: No userId provided, returning empty array.");
     return [];
   }
-  console.log(`fetchProductParameters: Fetching for userId: ${userId}`);
+  console.log(`fetchInputParameters: Fetching for userId: ${userId}`);
   try {
-    const parametersCollection = collection(db, 'users', userId, 'productParameters');
+    const parametersCollection = collection(db, 'users', userId, 'inputParameters');
     const q = query(parametersCollection, orderBy('createdAt', 'asc'));
     const snapshot = await getDocs(q);
-    console.log(`fetchProductParameters: Snapshot received. Empty: ${snapshot.empty}. Size: ${snapshot.size}`);
+    console.log(`fetchInputParameters: Snapshot received. Empty: ${snapshot.empty}. Size: ${snapshot.size}`);
     if (snapshot.empty) {
-        console.log("fetchProductParameters: No documents found.");
+        console.log("fetchInputParameters: No documents found.");
     }
     const params = snapshot.docs.map(docSnap => {
       const data = docSnap.data();
-      console.log(`fetchProductParameters: Document ID: ${docSnap.id}, Data:`, data);
-      return { id: docSnap.id, ...data } as ProductParameter;
+      console.log(`fetchInputParameters: Document ID: ${docSnap.id}, Data:`, data);
+      return { id: docSnap.id, ...data } as InputParameter;
     });
-    console.log("fetchProductParameters: Successfully fetched and mapped parameters:", params);
+    console.log("fetchInputParameters: Successfully fetched and mapped parameters:", params);
     return params;
   } catch (error) {
-    console.error("fetchProductParameters: Error fetching product parameters from Firestore:", error);
+    console.error("fetchInputParameters: Error fetching input parameters from Firestore:", error);
     // Re-throw the error so react-query can handle it and set the error state
     throw error;
   }
@@ -75,9 +75,9 @@ export default function SchemaDefinitionPage() {
     setIsLoadingUserId(false);
   }, []);
 
-  const { data: parameters = [], isLoading: isLoadingParameters, error: fetchError } = useQuery<ProductParameter[], Error>({
-    queryKey: ['productParameters', currentUserId],
-    queryFn: () => fetchProductParameters(currentUserId),
+  const { data: parameters = [], isLoading: isLoadingParameters, error: fetchError } = useQuery<InputParameter[], Error>({
+    queryKey: ['inputParameters', currentUserId],
+    queryFn: () => fetchInputParameters(currentUserId),
     enabled: !!currentUserId && !isLoadingUserId,
   });
 
@@ -91,14 +91,14 @@ export default function SchemaDefinitionPage() {
   }, [fetchError, isLoadingParameters, parameters, currentUserId]);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingParameter, setEditingParameter] = useState<ProductParameter | null>(null);
+  const [editingParameter, setEditingParameter] = useState<InputParameter | null>(null);
 
   const [parameterName, setParameterName] = useState('');
   const [parameterType, setParameterType] = useState<'text' | 'dropdown' | 'textarea'>('text');
   const [parameterDefinition, setParameterDefinition] = useState('');
   const [dropdownOptions, setDropdownOptions] = useState('');
 
-  const addMutation = useMutation<void, Error, Omit<ProductParameter, 'id' | 'createdAt' | 'order'>>({
+  const addMutation = useMutation<void, Error, Omit<InputParameter, 'id' | 'createdAt' | 'order'>>({
     mutationFn: async (newParameterDataFromMutate) => {
       if (!currentUserId) throw new Error("User not identified for add operation.");
 
@@ -114,10 +114,10 @@ export default function SchemaDefinitionPage() {
       }
       // If type is not 'dropdown', 'options' field is not added to dataForDoc.
 
-      await addDoc(collection(db, 'users', currentUserId, 'productParameters'), dataForDoc);
+      await addDoc(collection(db, 'users', currentUserId, 'inputParameters'), dataForDoc);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['productParameters', currentUserId] });
+      queryClient.invalidateQueries({ queryKey: ['inputParameters', currentUserId] });
       resetForm();
       setIsDialogOpen(false);
     },
@@ -127,15 +127,15 @@ export default function SchemaDefinitionPage() {
     }
   });
 
-  const updateMutation = useMutation<void, Error, ProductParameterUpdatePayload>({
+  const updateMutation = useMutation<void, Error, InputParameterUpdatePayload>({
     mutationFn: async (parameterUpdatePayload) => {
       if (!currentUserId) throw new Error("User not identified for update operation.");
       const { id, ...dataToUpdate } = parameterUpdatePayload;
-      const docRef = doc(db, 'users', currentUserId, 'productParameters', id);
+      const docRef = doc(db, 'users', currentUserId, 'inputParameters', id);
       await updateDoc(docRef, dataToUpdate);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['productParameters', currentUserId] });
+      queryClient.invalidateQueries({ queryKey: ['inputParameters', currentUserId] });
       resetForm();
       setIsDialogOpen(false);
     },
@@ -148,10 +148,10 @@ export default function SchemaDefinitionPage() {
   const deleteMutation = useMutation<void, Error, string>({
     mutationFn: async (parameterId) => {
       if (!currentUserId) throw new Error("User not identified for delete operation.");
-      await deleteDoc(doc(db, 'users', currentUserId, 'productParameters', parameterId));
+      await deleteDoc(doc(db, 'users', currentUserId, 'inputParameters', parameterId));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['productParameters', currentUserId] });
+      queryClient.invalidateQueries({ queryKey: ['inputParameters', currentUserId] });
     },
     onError: (error) => {
       console.error("Error deleting parameter:", error);
@@ -171,7 +171,7 @@ export default function SchemaDefinitionPage() {
     }
 
     if (editingParameter) {
-      const payloadForUpdate: ProductParameterUpdatePayload = {
+      const payloadForUpdate: InputParameterUpdatePayload = {
             id: editingParameter.id,
             name: parameterName.trim(),
             type: parameterType,
@@ -185,7 +185,7 @@ export default function SchemaDefinitionPage() {
         }
         updateMutation.mutate(payloadForUpdate);
     } else {
-      const newParamData: Omit<ProductParameter, 'id' | 'createdAt' | 'order'> = {
+      const newParamData: Omit<InputParameter, 'id' | 'createdAt' | 'order'> = {
         name: parameterName.trim(),
         type: parameterType,
         definition: parameterDefinition.trim(),
@@ -206,7 +206,7 @@ export default function SchemaDefinitionPage() {
     setEditingParameter(null);
   };
 
-  const openEditDialog = (param: ProductParameter) => {
+  const openEditDialog = (param: InputParameter) => {
     setEditingParameter(param);
     setParameterName(param.name);
     setParameterType(param.type);
@@ -262,7 +262,7 @@ export default function SchemaDefinitionPage() {
             <CardTitle className="text-xl md:text-2xl font-headline text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Data</CardTitle>
         </CardHeader>
         <CardContent>
-          <p>Could not fetch product parameters: {fetchError.message}</p>
+          <p>Could not fetch input parameters: {fetchError.message}</p>
            <p className="mt-2 text-sm text-muted-foreground">Please ensure you have entered a User ID on the login page and have a stable internet connection. Check your browser's developer console (Network and Console tabs) for more specific Firebase errors. Also, verify your Firebase project's Firestore security rules and API key restrictions.</p>
         </CardContent>
       </Card>
@@ -276,8 +276,8 @@ export default function SchemaDefinitionPage() {
           <div className="flex items-center gap-3">
              <Settings2 className="h-7 w-7 text-primary" />
             <div>
-              <CardTitle className="text-xl md:text-2xl font-headline">Product Parameter Schema</CardTitle>
-              <CardDescription>Define the structured fields for your AI product evaluations. These parameters will be used for dataset mapping and prompt templating.</CardDescription>
+              <CardTitle className="text-xl md:text-2xl font-headline">Input Parameter Schema</CardTitle>
+              <CardDescription>Define the structured fields for your AI inputs. These parameters will be used for dataset mapping and prompt templating.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -288,9 +288,9 @@ export default function SchemaDefinitionPage() {
           <Dialog open={isDialogOpen} onOpenChange={(isOpen) => { setIsDialogOpen(isOpen); if(!isOpen) resetForm();}}>
             <DialogContent className="sm:max-w-[525px]">
               <DialogHeader>
-                <DialogTitle>{editingParameter ? 'Edit' : 'Add New'} Product Parameter</DialogTitle>
+                <DialogTitle>{editingParameter ? 'Edit' : 'Add New'} Input Parameter</DialogTitle>
                 <DialogDescription>
-                  Define a field for your product data. This will be used to structure datasets and create prompt variables.
+                  Define a field for your input data. This will be used to structure datasets and create prompt variables.
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 py-4">
@@ -335,8 +335,8 @@ export default function SchemaDefinitionPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Defined Parameters</CardTitle>
-          <CardDescription>Manage your existing product parameters. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription>
+          <CardTitle>Defined Input Parameters</CardTitle>
+          <CardDescription>Manage your existing input parameters. {currentUserId ? `(User ID: ${currentUserId})` : ''}</CardDescription>
         </CardHeader>
         <CardContent>
           {!currentUserId && !isLoadingUserId ? (
@@ -350,7 +350,7 @@ export default function SchemaDefinitionPage() {
             </div>
           ) : parameters.length === 0 && !fetchError ? ( // Check if parameters array is empty AND there was no fetchError
             <div className="text-center text-muted-foreground py-8">
-              <p>No product parameters defined yet {currentUserId ? `for User ID: ${currentUserId}` : ''}.</p>
+              <p>No input parameters defined yet {currentUserId ? `for User ID: ${currentUserId}` : ''}.</p>
               <p className="text-sm">Click "Add New Parameter" to get started.</p>
             </div>
           ) : ( // This implies parameters.length > 0 AND no fetchError

@@ -14,7 +14,7 @@ import {ai} from '@/ai/genkit';
 import { z } from 'genkit'; 
 
 const MismatchDetailSchema = z.object({
-  inputData: z.record(z.string(), z.any()).describe("The product parameters input for the row that had a mismatch."),
+  inputData: z.record(z.string(), z.any()).describe("The input parameters for the row that had a mismatch."),
   evaluationParameterName: z.string().describe("The name of the evaluation parameter where the mismatch occurred."),
   evaluationParameterDefinition: z.string().describe("The definition of the evaluation parameter."),
   llmChosenLabel: z.string().describe("The label incorrectly chosen by the LLM."),
@@ -26,7 +26,7 @@ export type MismatchDetail = z.infer<typeof MismatchDetailSchema>;
 const SuggestRecursivePromptImprovementsInputSchema = z.object({
   originalPromptTemplate: z.string().describe("The original prompt template text that was used in the evaluation."),
   mismatchDetails: z.array(MismatchDetailSchema).describe("An array of objects, each detailing a specific instance where the LLM's output did not match the ground truth."),
-  productParametersSchema: z.string().optional().describe("A JSON string or textual description of the schema for product parameters used in the prompt (e.g., field names, types, descriptions)."),
+  inputParametersSchema: z.string().optional().describe("A JSON string or textual description of the schema for input parameters used in the prompt (e.g., field names, types, descriptions)."),
   evaluationParametersSchema: z.string().optional().describe("A JSON string or textual description of all evaluation parameters and their labels that were part of the evaluation setup."),
 });
 export type SuggestRecursivePromptImprovementsInput = z.infer<typeof SuggestRecursivePromptImprovementsInputSchema>;
@@ -66,11 +66,11 @@ Here are details of the mismatches from the evaluation run where the LLM's outpu
 {{/each}}
 </MismatchDetails>
 
-{{#if productParametersSchema}}
-For context, here is the schema of product parameters that can be used in the prompt template:
-<ProductParametersSchema>
-{{{productParametersSchema}}}
-</ProductParametersSchema>
+{{#if inputParametersSchema}}
+For context, here is the schema of input parameters that can be used in the prompt template:
+<InputParametersSchema>
+{{{inputParametersSchema}}}
+</InputParametersSchema>
 {{/if}}
 
 {{#if evaluationParametersSchema}}

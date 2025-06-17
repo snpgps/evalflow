@@ -78,8 +78,8 @@ export interface EvalRun {
 
 export interface DatasetVersionConfig {
     storagePath?: string;
-    columnMapping?: Record<string, string>;
-    groundTruthMapping?: Record<string, string>;
+    columnMapping?: Record<string, string>; // Key: Input Parameter Name
+    groundTruthMapping?: Record<string, string>; // Key: Evaluation Parameter ID
     selectedSheetName?: string | null;
 }
 
@@ -121,7 +121,7 @@ export interface ParameterChartData {
   totalCompared?: number;
 }
 
-export interface ProductParameterForSchema {
+export interface InputParameterForSchema { // Renamed from ProductParameterForSchema
   id: string;
   name: string;
   type: string;
@@ -243,9 +243,9 @@ const fetchSummarizationDefDetailsForPrompt = async (userId: string | null, defI
     return details;
 };
 
-const fetchProductParametersForSchema = async (userId: string | null): Promise<ProductParameterForSchema[]> => {
+const fetchInputParametersForSchema = async (userId: string | null): Promise<InputParameterForSchema[]> => { // Renamed
   if (!userId) return [];
-  const paramsCollectionRef = collection(db, 'users', userId, 'productParameters');
+  const paramsCollectionRef = collection(db, 'users', userId, 'inputParameters'); // Renamed collection
   const q = query(paramsCollectionRef, orderBy('createdAt', 'asc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docSnap => {
@@ -256,7 +256,7 @@ const fetchProductParametersForSchema = async (userId: string | null): Promise<P
       type: data.type,
       definition: data.definition,
       options: data.options,
-    } as ProductParameterForSchema;
+    } as InputParameterForSchema;
   });
 };
 
@@ -425,8 +425,8 @@ export default function RunDetailsPage() {
     setIsPreviewDataLoading(true); setPreviewDataError(null); setSimulationLog([]); addLog("Data Preview: Start.");
     try {
         addLog("Data Preview: Fetching dataset version config..."); const versionConfig = await fetchDatasetVersionConfig(currentUserId, runDetails.datasetId, runDetails.datasetVersionId);
-        if (!versionConfig || !versionConfig.storagePath || !versionConfig.columnMapping || Object.keys(versionConfig.columnMapping).length === 0) { throw new Error("Dataset version config (storage path or product column mapping) incomplete."); }
-        addLog(`Data Preview: Storage path: ${versionConfig.storagePath}`); addLog(`Data Preview: Product Column mapping: ${JSON.stringify(versionConfig.columnMapping)}`); if (versionConfig.groundTruthMapping && Object.keys(versionConfig.groundTruthMapping).length > 0) { addLog(`Data Preview: Ground Truth Mapping: ${JSON.stringify(versionConfig.groundTruthMapping)}`); } else if (runDetails.runType === 'GroundTruth') { addLog(`Data Preview: Warning: GT Run, but no GT mapping.`); } if (versionConfig.selectedSheetName) addLog(`Data Preview: Selected sheet: ${versionConfig.selectedSheetName}`);
+        if (!versionConfig || !versionConfig.storagePath || !versionConfig.columnMapping || Object.keys(versionConfig.columnMapping).length === 0) { throw new Error("Dataset version config (storage path or input column mapping) incomplete."); }
+        addLog(`Data Preview: Storage path: ${versionConfig.storagePath}`); addLog(`Data Preview: Input Column mapping: ${JSON.stringify(versionConfig.columnMapping)}`); if (versionConfig.groundTruthMapping && Object.keys(versionConfig.groundTruthMapping).length > 0) { addLog(`Data Preview: Ground Truth Mapping: ${JSON.stringify(versionConfig.groundTruthMapping)}`); } else if (runDetails.runType === 'GroundTruth') { addLog(`Data Preview: Warning: GT Run, but no GT mapping.`); } if (versionConfig.selectedSheetName) addLog(`Data Preview: Selected sheet: ${versionConfig.selectedSheetName}`);
         addLog("Data Preview: Downloading dataset file..."); const fileRef = storageRef(storage, versionConfig.storagePath); const blob = await getBlob(fileRef); addLog(`Data Preview: File downloaded (${(blob.size / (1024*1024)).toFixed(2)} MB). Parsing...`);
         let parsedRows: Array<Record<string, any>> = []; const fileName = versionConfig.storagePath.split('/').pop()?.toLowerCase() || '';
         if (fileName.endsWith('.xlsx')) { const arrayBuffer = await blob.arrayBuffer(); const workbook = XLSX.read(arrayBuffer, { type: 'array' }); const sheetName = versionConfig.selectedSheetName || workbook.SheetNames[0]; if (!sheetName || !workbook.Sheets[sheetName]) { throw new Error(`Sheet "${sheetName || 'default'}" not found.`); } parsedRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" }); addLog(`Data Preview: Parsed ${parsedRows.length} rows from Excel sheet "${sheetName}".`);
@@ -436,9 +436,9 @@ export default function RunDetailsPage() {
         let rowsToAttemptFromConfig: number; if (runDetails.runOnNRows > 0) { rowsToAttemptFromConfig = Math.min(runDetails.runOnNRows, parsedRows.length); } else { rowsToAttemptFromConfig = parsedRows.length; }
         const actualRowsToProcessAndStore = Math.min(rowsToAttemptFromConfig, MAX_ROWS_FOR_PROCESSING); const dataSliceForStorage = parsedRows.slice(0, actualRowsToProcessAndStore);
         if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows !== 0) { addLog(`Data Preview: Requested ${rowsToAttemptFromConfig}, capped at ${MAX_ROWS_FOR_PROCESSING}.`); } else if (rowsToAttemptFromConfig > MAX_ROWS_FOR_PROCESSING && runDetails.runOnNRows === 0) { addLog(`Data Preview: "All rows" (${rowsToAttemptFromConfig}), capped at ${MAX_ROWS_FOR_PROCESSING}.`); }
-        addLog(`Data Preview: Preparing ${dataSliceForStorage.length} rows for processing.`); const sampleForStorage: Array<Record<string, any>> = []; const productParamToOriginalColMap = versionConfig.columnMapping; const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
+        addLog(`Data Preview: Preparing ${dataSliceForStorage.length} rows for processing.`); const sampleForStorage: Array<Record<string, any>> = []; const inputParamToOriginalColMap = versionConfig.columnMapping; const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
         dataSliceForStorage.forEach((originalRow, index) => { const mappedRowForStorage: Record<string, any> = {}; let rowHasAnyMappedData = false; const normalizedOriginalRowKeys: Record<string, string> = {}; Object.keys(originalRow).forEach(key => { normalizedOriginalRowKeys[String(key).trim().toLowerCase()] = key; });
-            for (const productParamName in productParamToOriginalColMap) { const mappedOriginalColName = productParamToOriginalColMap[productParamName]; const normalizedMappedOriginalColName = String(mappedOriginalColName).trim().toLowerCase(); const actualKeyInOriginalRow = normalizedOriginalRowKeys[normalizedMappedOriginalColName]; if (actualKeyInOriginalRow !== undefined) { mappedRowForStorage[productParamName] = originalRow[actualKeyInOriginalRow]; rowHasAnyMappedData = true; } else { mappedRowForStorage[productParamName] = undefined; addLog(`Data Preview: Warn: Row ${index + 1} missing PRODUCT col "${mappedOriginalColName}" for "${productParamName}".`); } }
+            for (const inputParamName in inputParamToOriginalColMap) { const mappedOriginalColName = inputParamToOriginalColMap[inputParamName]; const normalizedMappedOriginalColName = String(mappedOriginalColName).trim().toLowerCase(); const actualKeyInOriginalRow = normalizedOriginalRowKeys[normalizedMappedOriginalColName]; if (actualKeyInOriginalRow !== undefined) { mappedRowForStorage[inputParamName] = originalRow[actualKeyInOriginalRow]; rowHasAnyMappedData = true; } else { mappedRowForStorage[inputParamName] = undefined; addLog(`Data Preview: Warn: Row ${index + 1} missing INPUT col "${mappedOriginalColName}" for "${inputParamName}".`); } }
             if (runDetails.runType === 'GroundTruth') { for (const evalParamId in evalParamIdToGtColMap) { const mappedGtColName = evalParamIdToGtColMap[evalParamId]; const normalizedMappedGtColName = String(mappedGtColName).trim().toLowerCase(); const actualKeyInOriginalRowForGt = normalizedOriginalRowKeys[normalizedMappedGtColName]; if (actualKeyInOriginalRowForGt !== undefined) { mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[actualKeyInOriginalRowForGt]; rowHasAnyMappedData = true; } else { mappedRowForStorage[`_gt_${evalParamId}`] = undefined; addLog(`Data Preview: Warn: Row ${index + 1} missing GT col "${mappedGtColName}" for EVAL ID "${evalParamId}".`); } } }
             if(rowHasAnyMappedData) { sampleForStorage.push(mappedRowForStorage); } else { addLog(`Data Preview: Skipping row ${index + 1} as no mapped data.`); } });
         addLog(`Data Preview: Processed ${sampleForStorage.length} rows for storage.`); const sanitizedSample = sanitizeDataForFirestore(sampleForStorage);
@@ -471,7 +471,7 @@ export default function RunDetailsPage() {
           for (const key in rawRowFromPreview) { if (key.startsWith('_gt_')) { groundTruthDataForRow[key.substring('_gt_'.length)] = String(rawRowFromPreview[key]); } else { inputDataForRow[key] = rawRowFromPreview[key]; } }
           
           let basePromptWithFilledPlaceholders = fetchedPromptTemplateText; 
-          for (const productParamName in inputDataForRow) { basePromptWithFilledPlaceholders = basePromptWithFilledPlaceholders.replace(new RegExp(`{{${productParamName}}}`, 'g'), String(inputDataForRow[productParamName] === null || inputDataForRow[productParamName] === undefined ? "" : inputDataForRow[productParamName])); }
+          for (const inputParamName in inputDataForRow) { basePromptWithFilledPlaceholders = basePromptWithFilledPlaceholders.replace(new RegExp(`{{${inputParamName}}}`, 'g'), String(inputDataForRow[inputParamName] === null || inputDataForRow[inputParamName] === undefined ? "" : inputDataForRow[inputParamName])); }
           
           let structuredCriteriaTextForLLM = ""; 
           if (hasEvalParams) { structuredCriteriaTextForLLM += "\n"; evalParamDetailsForLLM.forEach(ep => { structuredCriteriaTextForLLM += `Parameter ID: ${ep.id}\nParameter Name: ${ep.name}\nDefinition: ${ep.definition}\n`; if (ep.requiresRationale) structuredCriteriaTextForLLM += `IMPORTANT: For this parameter (${ep.name}), you MUST include a 'rationale'.\n`; if (ep.labels && ep.labels.length > 0) { structuredCriteriaTextForLLM += "Labels:\n"; ep.labels.forEach(label => { structuredCriteriaTextForLLM += `  - "${label.name}": ${label.definition || 'No def.'} ${label.example ? `(e.g., "${label.example}")` : ''}\n`; }); } else { structuredCriteriaTextForLLM += " (No specific labels)\n"; } structuredCriteriaTextForLLM += "\n"; }); }
@@ -504,7 +504,7 @@ export default function RunDetailsPage() {
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results"); const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`; XLSX.writeFile(workbook, fileName); toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
   }, [runDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
 
-  const { data: productParametersForSchema = [] } = useQuery<ProductParameterForSchema[], Error>({ queryKey: ['productParametersForSchema', currentUserId], queryFn: () => fetchProductParametersForSchema(currentUserId), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
+  const { data: inputParametersForSchema = [] } = useQuery<InputParameterForSchema[], Error>({ queryKey: ['inputParametersForSchema', currentUserId], queryFn: () => fetchInputParametersForSchema(currentUserId), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
 
   const handleSuggestImprovementsClick = useCallback(async (): Promise<void> => {
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest", description: "Missing data for Ground Truth comparison.", variant: "destructive" }); return; }
@@ -529,12 +529,12 @@ export default function RunDetailsPage() {
         });
       });
       if (mismatchDetails.length === 0) { setSuggestionError("No mismatches found."); setIsLoadingSuggestion(false); return; }
-      const productParamsSchemaString = productParametersForSchema.length > 0 ? "Product Parameters:\n" + productParametersForSchema.map(p => `- ${p.name} (${p.type}): ${p.definition}${p.options ? ` Options: [${p.options.join(', ')}]` : ''}`).join("\n") : "No product params.";
+      const inputParamsSchemaString = inputParametersForSchema.length > 0 ? "Input Parameters:\n" + inputParametersForSchema.map(p => `- ${p.name} (${p.type}): ${p.definition}${p.options ? ` Options: [${p.options.join(', ')}]` : ''}`).join("\n") : "No input params.";
       const evalParamsSchemaString = "Evaluation Parameters Used:\n" + evalParamDetailsForLLM.map(ep => { let schema = `- ID: ${ep.id}, Name: ${ep.name}\n  Definition: ${ep.definition}\n`; if (ep.requiresRationale) schema += `  (Requires Rationale)\n`; if (ep.labels && ep.labels.length > 0) { schema += `  Labels:\n` + ep.labels.map(l => `    - "${l.name}": ${l.definition} ${l.example ? `(e.g., "${l.example}")` : ''}`).join("\n"); } return schema; }).join("\n\n");
-      const flowInput: SuggestRecursivePromptImprovementsInput = { originalPromptTemplate, mismatchDetails, productParametersSchema: productParamsSchemaString, evaluationParametersSchema: evalParamsSchemaString, };
+      const flowInput: SuggestRecursivePromptImprovementsInput = { originalPromptTemplate, mismatchDetails, inputParametersSchema: inputParamsSchemaString, evaluationParametersSchema: evalParamsSchemaString, };
       const result = await suggestRecursivePromptImprovements(flowInput); setSuggestionResult(result);
     } catch (error: any) { console.error("Error suggesting improvements:", error); setSuggestionError(error.message || "Failed to get suggestions."); } finally { setIsLoadingSuggestion(false); }
-  }, [currentUserId, runDetails, evalParamDetailsForLLM, productParametersForSchema]);
+  }, [currentUserId, runDetails, evalParamDetailsForLLM, inputParametersForSchema]);
 
   const handleOpenQuestionDialog = useCallback((item: EvalRunResultItem, paramId: string, rowIndex: number): void => {
     const paramDetail = evalParamDetailsForLLM.find(p => p.id === paramId); const outputData = item.judgeLlmOutput[paramId];
@@ -732,7 +732,7 @@ export default function RunDetailsPage() {
                     <DialogTitle className="flex items-center"><FileTextIcon className="mr-2 h-5 w-5 text-primary" />Full Prompt for First Row</DialogTitle>
                     <DialogDescription>
                         This is the complete prompt that would be sent to the Judge LLM for the first row of your dataset,
-                        including filled product parameters and appended evaluation/summarization criteria.
+                        including filled input parameters and appended evaluation/summarization criteria.
                     </DialogDescription>
                 </DialogHeader>
                 <ScrollArea className="flex-1 my-4 border rounded-md">
