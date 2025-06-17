@@ -12,16 +12,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Bell, LogOut, User, Settings, Sun, Moon, Building } from 'lucide-react'; // Changed LogIn to Building
+import { Bell, LogOut, User, Settings, Sun, Moon, Building } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 // Helper function to generate title from pathname
 const generateTitle = (pathname: string): string => {
+  if (pathname === '/') return 'Select Project'; // New homepage title
   if (pathname === '/dashboard') return 'Dashboard';
-  if (pathname === '/select-project') return 'Select Project'; // Added for /select-project
+  
   const segments = pathname.split('/').filter(Boolean);
-  if (segments.length === 0) return 'EvalFlow';
+  if (segments.length === 0) return 'EvalFlow'; // Should not happen if / is select project
   
   if (segments[0] === 'runs' && segments.length > 1 && segments[1] !== 'new') {
     return `Run Details`;
@@ -34,7 +35,7 @@ const generateTitle = (pathname: string): string => {
 };
 
 
-export function Header({ userId }: { userId: string | null }) { // userId prop is actually project ID for display
+export function Header({ userId }: { userId: string | null }) {
   const pathname = usePathname();
   const pageTitle = generateTitle(pathname);
   const [isDarkTheme, setIsDarkTheme] = useState(false);
@@ -51,13 +52,12 @@ export function Header({ userId }: { userId: string | null }) { // userId prop i
   };
 
   const handleSwitchProject = () => {
-    localStorage.removeItem('currentUserId'); // Key is still currentUserId
-    router.push('/select-project');
+    localStorage.removeItem('currentUserId');
+    router.push('/'); // Redirect to homepage (now select-project)
   };
   
   const getAvatarFallback = (id: string | null) => {
-    if (!id) return 'P'; // Fallback for Project
-    // Create a fallback from the project ID, e.g., the first letter or first two if it's long
+    if (!id) return 'P';
     const parts = id.split('_').map(part => part.charAt(0).toUpperCase());
     if (parts.length > 1) return parts.slice(0,2).join('');
     return id.substring(0, 1).toUpperCase() || 'P';
@@ -65,7 +65,7 @@ export function Header({ userId }: { userId: string | null }) { // userId prop i
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-4 md:px-6 shadow-sm">
-      {(pathname !== '/select-project' && pathname !== '/') && <SidebarTrigger className="md:hidden" />}
+      {pathname !== '/' && <SidebarTrigger className="md:hidden" />}
       <div className="flex-1">
         <h1 className="text-xl font-semibold font-headline">{pageTitle}</h1>
       </div>
@@ -74,7 +74,7 @@ export function Header({ userId }: { userId: string | null }) { // userId prop i
           {isDarkTheme ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </Button>
         
-        {(pathname !== '/select-project' && pathname !== '/') && (
+        {pathname !== '/' && (
           <>
             <Button variant="ghost" size="icon" aria-label="Notifications">
               <Bell className="h-5 w-5" />
@@ -84,23 +84,18 @@ export function Header({ userId }: { userId: string | null }) { // userId prop i
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                   <Avatar className="h-9 w-9">
-                    {/* Avatar uses project ID for placeholder text generation */}
                     <AvatarImage src={`https://placehold.co/100x100.png?text=${getAvatarFallback(userId)}`} alt="Project Avatar" data-ai-hint="building office" />
                     <AvatarFallback>{getAvatarFallback(userId)}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                {userId ? ( // userId here means a project is selected
+                {userId ? (
                   <>
                     <DropdownMenuLabel>
                       <p className="font-medium truncate">Project: {userId}</p>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {/* <DropdownMenuItem onClick={() => router.push('/settings')}> // Settings might be project-specific or global
-                      <User className="mr-2 h-4 w-4" /> 
-                      <span>Profile (Settings)</span> // Revisit this if settings are distinct from project
-                    </DropdownMenuItem> */}
                      <DropdownMenuItem onClick={() => router.push('/settings')}>
                       <Settings className="mr-2 h-4 w-4" />
                       <span>Settings</span>
@@ -112,7 +107,7 @@ export function Header({ userId }: { userId: string | null }) { // userId prop i
                     </DropdownMenuItem>
                   </>
                 ) : (
-                  <DropdownMenuItem onClick={() => router.push('/select-project')}>
+                  <DropdownMenuItem onClick={() => router.push('/')}>
                     <Building className="mr-2 h-4 w-4" />
                     <span>Select Project</span>
                   </DropdownMenuItem>
