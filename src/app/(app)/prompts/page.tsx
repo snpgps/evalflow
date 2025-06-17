@@ -207,27 +207,28 @@ export default function PromptsPage() {
 
         const inputDataHeaderIndex = fullTemplate.indexOf(FIXED_INPUT_DATA_HEADER);
         const inputDataFooterIndex = fullTemplate.indexOf(FIXED_INPUT_DATA_FOOTER);
-        const criteriaHeaderIndex = fullTemplate.indexOf(FIXED_CRITERIA_HEADER);
-
+        
         if (inputDataHeaderIndex !== -1) {
             sysPrompt = fullTemplate.substring(0, inputDataHeaderIndex).trim();
             if (inputDataFooterIndex !== -1 && inputDataFooterIndex > inputDataHeaderIndex) {
                 inputDataSect = fullTemplate.substring(inputDataHeaderIndex + FIXED_INPUT_DATA_HEADER.length, inputDataFooterIndex).trim();
-            } else if (criteriaHeaderIndex !== -1 && criteriaHeaderIndex > inputDataHeaderIndex) {
-                 // If footer is missing but criteria header is present, take content up to criteria header
-                inputDataSect = fullTemplate.substring(inputDataHeaderIndex + FIXED_INPUT_DATA_HEADER.length, criteriaHeaderIndex).trim();
             } else {
-                 // If both footer and criteria header are missing after input header, take rest of string
-                inputDataSect = fullTemplate.substring(inputDataHeaderIndex + FIXED_INPUT_DATA_HEADER.length).trim();
+                // If footer is missing, assume input data section is everything after header until criteria
+                const criteriaHeaderIndex = fullTemplate.indexOf(FIXED_CRITERIA_HEADER);
+                if (criteriaHeaderIndex !== -1 && criteriaHeaderIndex > inputDataHeaderIndex) {
+                    inputDataSect = fullTemplate.substring(inputDataHeaderIndex + FIXED_INPUT_DATA_HEADER.length, criteriaHeaderIndex).trim();
+                } else {
+                    inputDataSect = fullTemplate.substring(inputDataHeaderIndex + FIXED_INPUT_DATA_HEADER.length).trim();
+                }
             }
-        } else if (criteriaHeaderIndex !== -1) {
-            // No input data header, but criteria header exists: assume everything before criteria is system prompt
-            sysPrompt = fullTemplate.substring(0, criteriaHeaderIndex).trim();
-            inputDataSect = defaultInputDataSectionContent; // Reset to default as structure is unclear
         } else {
-            // No markers found, assume entire template might be old system prompt, or new prompt content
-            sysPrompt = fullTemplate; // Could be problematic if it contains unexpected structure
-            inputDataSect = defaultInputDataSectionContent;
+            // No input data header found, try to guess based on criteria header
+            const criteriaHeaderIndex = fullTemplate.indexOf(FIXED_CRITERIA_HEADER);
+            if (criteriaHeaderIndex !== -1) {
+                sysPrompt = fullTemplate.substring(0, criteriaHeaderIndex).trim();
+            } else {
+                sysPrompt = fullTemplate; // Assume entire template is system prompt if no markers
+            }
         }
         
         setSystemPromptContent(sysPrompt);
@@ -251,7 +252,7 @@ export default function PromptsPage() {
     mutationFn: async ({ name, description }) => {
       if (!currentUserId) throw new Error("Project not selected.");
 
-      const fullInitialTemplate = `${defaultSystemPromptContent.trim()}\n${FIXED_INPUT_DATA_HEADER}\n${defaultInputDataSectionContent.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
+      const fullInitialTemplate = `${systemPromptContent.trim()}\n${FIXED_INPUT_DATA_HEADER}\n${inputDataSectionContent.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
 
       const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
         name,
@@ -686,8 +687,16 @@ User's Question: {{UserQuestion}}`
                   disabled={!selectedVersion || updatePromptVersionMutation.isPending}
                 />
               </div>
+              
+              <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
+                {FIXED_INPUT_DATA_HEADER}
+              </div>
+              
               <div>
                  <Label htmlFor="input-data-section-area" className="font-medium text-base">Input Data Section</Label>
+                 <p className="text-xs text-muted-foreground mb-1">
+                    Define how your input data will be presented to the LLM. Use placeholders from the "Input Parameters" sidebar.
+                 </p>
                 <Textarea
                   ref={inputDataTextareaRef}
                   id="input-data-section-area"
@@ -699,15 +708,12 @@ User's Question: {{UserQuestion}}`
                 />
               </div>
               
-              <div className="space-y-2">
-                <Label className="font-medium text-base text-muted-foreground">Fixed System-Appended Sections (Read-Only)</Label>
-                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
-                  {FIXED_INPUT_DATA_HEADER}
-                </div>
-                <p className="text-xs text-muted-foreground pl-1">(Your "Input Data Section" content goes above this marker)</p>
-                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
-                  {FIXED_INPUT_DATA_FOOTER}
-                </div>
+              <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
+                {FIXED_INPUT_DATA_FOOTER}
+              </div>
+              
+              <div className="space-y-2 pt-4 border-t mt-4">
+                <Label className="font-medium text-base text-muted-foreground">System-Appended Instructions & Criteria (Read-Only)</Label>
                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
                   {FIXED_CRITERIA_HEADER}
                 </div>
