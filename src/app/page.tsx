@@ -7,7 +7,7 @@ import { auth } from '@/lib/firebase';
 import { GoogleAuthProvider, signInWithRedirect, onAuthStateChanged, getRedirectResult, type User } from 'firebase/auth';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2 } from 'lucide-react'; // ChromeIcon removed
+import { Loader2, Rocket } from 'lucide-react'; // Rocket imported
 import { toast } from '@/hooks/use-toast';
 
 // Google Logo SVG
@@ -63,7 +63,7 @@ export default function LoginPage() {
       })
       .catch((error) => {
         // Handle Errors here.
-        console.error("LoginPage: Google Sign-In Redirect Error Object:", error);
+        console.error("LoginPage: Google Sign-In Error Object (from getRedirectResult):", error);
         let detailedErrorMessage = `Code: ${error.code || 'N/A'}. Message: ${error.message || "Could not process sign-in redirect."}`;
         if (error.customData) { detailedErrorMessage += ` CustomData: ${JSON.stringify(error.customData)}`; }
         toast({ 
@@ -89,7 +89,7 @@ export default function LoginPage() {
       await signInWithRedirect(auth, provider);
       // Redirect will happen, getRedirectResult will handle the response
     } catch (error: any) {
-      console.error("LoginPage: Google Sign-In Start Error Object:", error);
+      console.error("LoginPage: Google Sign-In Error Object (from signInWithRedirect):", error);
       let detailedErrorMessage = `Code: ${error.code || 'N/A'}. Message: ${error.message || "Could not start Google Sign-In."}`;
       if (error.customData) { detailedErrorMessage += ` CustomData: ${JSON.stringify(error.customData)}`; }
       toast({ 
@@ -117,7 +117,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center space-y-2">
            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 16.5a2.5 2.5 0 1 1-5 0c0 .83.26 1.93.72 2.78.42.77.98 1.52 1.78 2.22a2.5 2.5 0 0 0 3.54 0c.8-.7 1.36-1.45 1.78-2.22.46-.85.72-1.95.72-2.78Z"/><path d="M18 11c.94-.09 1.46-1.24.87-1.99L17 7c-1.6-1.71-4.23-2.02-6.28-.79a5.5 5.5 0 0 0-3.17 3.17c-1.23 2.05-.92 4.68.79 6.28L11 17c.75.59 1.9.07 1.99-.87V11Z"/><path d="M12.15 5.15c1.1-1.18 2.88-1.65 4.35-1.15s2.53 1.88 2.5 3.5c-.02.89-.32 1.75-.85 2.5"/><path d="m12 12.5.47-.51c.4-.43.4-1.11 0-1.54L9 7.5"/></svg>
+            <Rocket className="h-8 w-8" /> {/* Replaced SVG with Rocket icon */}
            </div>
           <CardTitle className="text-3xl font-headline">Welcome to EvalFlow</CardTitle>
           <CardDescription>Please sign in to continue to your projects.</CardDescription>
