@@ -252,7 +252,7 @@ export default function PromptsPage() {
     mutationFn: async ({ name, description }) => {
       if (!currentUserId) throw new Error("Project not selected.");
 
-      const fullInitialTemplate = `${systemPromptContent.trim()}\n${FIXED_INPUT_DATA_HEADER}\n${inputDataSectionContent.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
+      const fullInitialTemplate = `${defaultSystemPromptContent.trim()}\n${FIXED_INPUT_DATA_HEADER}\n${defaultInputDataSectionContent.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
 
       const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
         name,
@@ -688,10 +688,6 @@ User's Question: {{UserQuestion}}`
                 />
               </div>
               
-              <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
-                {FIXED_INPUT_DATA_HEADER}
-              </div>
-              
               <div>
                  <Label htmlFor="input-data-section-area" className="font-medium text-base">Input Data Section</Label>
                  <p className="text-xs text-muted-foreground mb-1">
@@ -707,7 +703,10 @@ User's Question: {{UserQuestion}}`
                   disabled={!selectedVersion || updatePromptVersionMutation.isPending}
                 />
               </div>
-              
+
+              <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
+                {FIXED_INPUT_DATA_HEADER}
+              </div>
               <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground font-mono">
                 {FIXED_INPUT_DATA_FOOTER}
               </div>
