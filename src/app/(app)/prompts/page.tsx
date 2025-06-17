@@ -20,7 +20,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/hooks/use-toast';
-import { fetchPromptTemplates } from '@/lib/promptActions'; 
+import { fetchPromptTemplates } from '@/lib/promptActions';
 import type { SummarizationDefinition } from '@/app/(app)/evaluation-parameters/page';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -34,12 +34,12 @@ export interface ProductParameterForPrompts {
 }
 
 // Firestore-aligned interfaces for Evaluation Parameters
-export interface CategorizationLabelForPrompts { 
+export interface CategorizationLabelForPrompts {
     name: string;
     definition: string;
     example?: string;
 }
-export interface EvalParameterForPrompts { 
+export interface EvalParameterForPrompts {
   id: string;
   name: string;
   definition: string;
@@ -49,15 +49,15 @@ export interface EvalParameterForPrompts {
 
 
 // Interfaces for client-side state and display
-export interface PromptVersion { 
+export interface PromptVersion {
   id: string;
   versionNumber: number;
-  template: string;
+  template: string; // This will store the FULL concatenated template
   notes: string;
   createdAt: string; // ISO String
 }
 
-export interface PromptTemplate { 
+export interface PromptTemplate {
   id: string;
   name: string;
   description: string;
@@ -66,6 +66,20 @@ export interface PromptTemplate {
   createdAt?: string; // ISO String for display
   updatedAt?: string; // ISO String for display
 }
+
+const FIXED_SYSTEM_PROMPT = `You are an impartial and rigorous evaluator of AI-generated outputs. Your task is to judge the quality of responses to a given input based on objective criteria. You must not add new content, speculate, or favor any model. Score only based on how well the response meets the criteria.
+
+Your task is to analyze the provided input data and then perform two types of tasks:
+1.  **Evaluation Labeling**: For each specified Evaluation Parameter, choose the most appropriate label based on its definition and the input data.
+2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.`;
+
+const FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER = `--- DETAILED INSTRUCTIONS & CRITERIA ---
+The prompt will be automatically modified to add the eval & summarisation parameters which you selected for your eval run here. You don't need to add any definition here.`;
+
+const defaultInitialUserEditablePromptTemplate = `--- PRODUCT INPUT DATA ---
+Your input data and definition goes here. Insert the input data here with a definition here. For example, if you're analysing a chatbot, the user chat and metadata that your bot used for the conversation with go here.
+(Use the "Product Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.)
+--- END PRODUCT INPUT DATA ---`;
 
 
 // Fetch Product Parameters
@@ -149,7 +163,7 @@ export default function PromptsPage() {
   const [promptName, setPromptName] = useState('');
   const [promptDescription, setPromptDescription] = useState('');
 
-  const [promptTemplateContent, setPromptTemplateContent] = useState('');
+  const [promptTemplateContent, setPromptTemplateContent] = useState(''); // This now holds ONLY the user-editable part
   const [versionNotes, setVersionNotes] = useState('');
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -232,7 +246,7 @@ export default function PromptsPage() {
     if (!promptsData) {
         setSelectedPrompt(null);
         setSelectedVersion(null);
-        setPromptTemplateContent('');
+        setPromptTemplateContent(defaultInitialUserEditablePromptTemplate); // Default for empty state
         setVersionNotes('');
         return;
     }
@@ -243,39 +257,43 @@ export default function PromptsPage() {
       const currentVersionObj = currentPromptObj.versions.find(v => v.id === selectedVersionId);
       setSelectedVersion(currentVersionObj || null);
       if (currentVersionObj) {
-        setPromptTemplateContent(currentVersionObj.template);
+        // Parse the full template to extract the user-editable part
+        const fullTemplate = currentVersionObj.template;
+        let editablePart = defaultInitialUserEditablePromptTemplate; // Fallback
+
+        if (fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) && fullTemplate.endsWith(FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER)) {
+            const startIndex = FIXED_SYSTEM_PROMPT.length;
+            const endIndex = fullTemplate.length - FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER.length;
+            if (startIndex < endIndex) {
+                editablePart = fullTemplate.substring(startIndex, endIndex).trim();
+            } else { // Handles case where only fixed parts exist or overlap somehow
+                 editablePart = ""; // Or a very minimal placeholder like "--- Your Content Here ---"
+            }
+        } else {
+            // Backward compatibility: if it doesn't fit the new structure, assume the whole thing is editable
+            editablePart = fullTemplate;
+        }
+        setPromptTemplateContent(editablePart);
         setVersionNotes(currentVersionObj.notes);
       } else {
-        setPromptTemplateContent('');
-        setVersionNotes('');
+        // No version selected or prompt has no versions
+        setPromptTemplateContent(defaultInitialUserEditablePromptTemplate);
+        setVersionNotes('Initial version notes');
       }
     } else {
+      // No prompt selected
       setSelectedVersion(null);
-      setPromptTemplateContent('');
+      setPromptTemplateContent(defaultInitialUserEditablePromptTemplate);
       setVersionNotes('');
     }
   }, [promptsData, selectedPromptId, selectedVersionId]);
 
-const defaultInitialPromptTemplate = `You are a judge for Meesho's [Product Name & Description].
-Example: (Remove this example from your prompt)
-'You're a judge for Meesho's Customer Support Voice Bot. This bot helps Meesho App Users answer their question around order status, refund status, and any other questions that the user might have about the Meesho App or Ecosystem.'
-
-Your task is to analyze the provided input data and then perform two types of tasks:
-1.  **Evaluation Labeling**: For each specified Evaluation Parameter, choose the most appropriate label based on its definition and the input data.
-2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.
-
---- PRODUCT INPUT DATA ---
-Your input data and definition goes here. Insert the input data here with a definition here. For example, if you're analysing a chatbot, the user chat and metadata that your bot used for the conversation with go here.
-(Use the "Product Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.)
---- END PRODUCT INPUT DATA ---
-
---- DETAILED INSTRUCTIONS & CRITERIA ---
-The prompt will be automatically modified to add the eval & summarisation parameters which you selected for your eval run here. You don't need to add any definition here.
-`;
 
   const addPromptTemplateMutation = useMutation<string, Error, { name: string; description: string }>({
     mutationFn: async ({ name, description }) => {
       if (!currentUserId) throw new Error("User not identified.");
+
+      const fullInitialTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${defaultInitialUserEditablePromptTemplate}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
 
       const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
         name,
@@ -287,7 +305,7 @@ The prompt will be automatically modified to add the eval & summarisation parame
 
       const initialVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', newPromptRef.id, 'versions'), {
         versionNumber: 1,
-        template: defaultInitialPromptTemplate,
+        template: fullInitialTemplate, // Store the full concatenated template
         notes: 'Initial version',
         createdAt: serverTimestamp(),
       });
@@ -297,7 +315,7 @@ The prompt will be automatically modified to add the eval & summarisation parame
     },
     onSuccess: (newPromptId) => {
       queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
-      setSelectedPromptId(newPromptId); 
+      setSelectedPromptId(newPromptId);
       toast({ title: "Success", description: "Prompt template created." });
       setIsPromptDialogOpen(false);
       resetPromptDialogForm();
@@ -349,14 +367,16 @@ The prompt will be automatically modified to add the eval & summarisation parame
     }
   });
 
-  const addPromptVersionMutation = useMutation<string, Error, { promptId: string; template: string; notes: string }>({
-    mutationFn: async ({ promptId, template, notes }) => {
+  const addPromptVersionMutation = useMutation<string, Error, { promptId: string; userEditableTemplate: string; notes: string }>({
+    mutationFn: async ({ promptId, userEditableTemplate, notes }) => {
       if (!currentUserId || !selectedPrompt) throw new Error("User or prompt not identified.");
 
+      const fullTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${userEditableTemplate}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
       const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
+
       const newVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions'), {
         versionNumber: latestVersionNum + 1,
-        template,
+        template: fullTemplate,
         notes: notes || `New version based on v${selectedVersion?.versionNumber || latestVersionNum}`,
         createdAt: serverTimestamp(),
       });
@@ -368,7 +388,7 @@ The prompt will be automatically modified to add the eval & summarisation parame
     },
     onSuccess: (newVersionId) => {
       queryClient.invalidateQueries({ queryKey: ['promptTemplates', currentUserId] });
-      setSelectedVersionId(newVersionId);
+      setSelectedVersionId(newVersionId); // Select the new version
       toast({ title: "Success", description: "New prompt version created." });
     },
     onError: (error) => {
@@ -376,11 +396,12 @@ The prompt will be automatically modified to add the eval & summarisation parame
     }
   });
 
-  const updatePromptVersionMutation = useMutation<void, Error, { promptId: string; versionId: string; template: string; notes: string }>({
-    mutationFn: async ({ promptId, versionId, template, notes }) => {
+  const updatePromptVersionMutation = useMutation<void, Error, { promptId: string; versionId: string; userEditableTemplate: string; notes: string }>({
+    mutationFn: async ({ promptId, versionId, userEditableTemplate, notes }) => {
       if (!currentUserId) throw new Error("User not identified.");
+      const fullTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${userEditableTemplate}\n\n${FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}`;
       const versionRef = doc(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions', versionId);
-      await updateDoc(versionRef, { template, notes });
+      await updateDoc(versionRef, { template: fullTemplate, notes });
       await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), { updatedAt: serverTimestamp() });
     },
     onSuccess: () => {
@@ -435,41 +456,11 @@ The prompt will be automatically modified to add the eval & summarisation parame
   };
 
   const insertEvaluationParameter = (evalParam: EvalParameterForPrompts) => {
-    let textToInsert = `--- EVALUATION PARAMETER: ${evalParam.name} ---\n`;
-    textToInsert += `ID: ${evalParam.id}\n`;
-    textToInsert += `Definition: ${evalParam.definition}\n`;
-
-    if (evalParam.requiresRationale) {
-      textToInsert += `IMPORTANT: For this parameter (${evalParam.name}), when providing your evaluation, you MUST include a 'rationale' explaining your choice.\n`;
-    }
-    textToInsert += "\n";
-
-    if (evalParam.categorizationLabels && evalParam.categorizationLabels.length > 0) {
-      textToInsert += "Relevant Categorization Labels:\n";
-      evalParam.categorizationLabels.forEach(label => {
-        textToInsert += `  - Label: "${label.name}"\n`;
-        textToInsert += `    Definition: "${label.definition}"\n`;
-        if (label.example && label.example.trim() !== '') {
-          textToInsert += `    Example: "${label.example}"\n`;
-        }
-      });
-    } else {
-      textToInsert += "(No specific categorization labels defined for this parameter)\n";
-    }
-    textToInsert += `--- END EVALUATION PARAMETER: ${evalParam.name} ---\n\n`;
-    insertIntoTextarea(textToInsert);
+    toast({title: "Info", description: "Evaluation Parameter details are automatically appended by the system during eval runs. You don't need to manually insert their full definitions here. Just ensure your prompt instructs the AI to refer to the criteria provided."})
   };
 
   const insertSummarizationDefinition = (summDef: SummarizationDefinition) => {
-    let textToInsert = `--- SUMMARIZATION TASK: ${summDef.name} ---\n`;
-    textToInsert += `ID: ${summDef.id}\n`;
-    textToInsert += `Definition: ${summDef.definition}\n`;
-    if (summDef.example && summDef.example.trim() !== '') {
-        textToInsert += `Example Output Hint: "${summDef.example}"\n`;
-    }
-    textToInsert += `Based on the input, provide a concise summary for "${summDef.name}" that adheres to the above definition. Your summary should be a single block of text.\n`;
-    textToInsert += `--- END SUMMARIZATION TASK: ${summDef.name} ---\n\n`;
-    insertIntoTextarea(textToInsert);
+     toast({title: "Info", description: "Summarization Definition details are automatically appended by the system during eval runs. You don't need to manually insert their full definitions here. Just ensure your prompt instructs the AI to refer to the tasks provided."})
   };
 
 
@@ -481,7 +472,7 @@ The prompt will be automatically modified to add the eval & summarisation parame
     updatePromptVersionMutation.mutate({
       promptId: selectedPrompt.id,
       versionId: selectedVersion.id,
-      template: promptTemplateContent,
+      userEditableTemplate: promptTemplateContent,
       notes: versionNotes
     });
   };
@@ -493,7 +484,7 @@ The prompt will be automatically modified to add the eval & summarisation parame
     }
     addPromptVersionMutation.mutate({
       promptId: selectedPrompt.id,
-      template: promptTemplateContent,
+      userEditableTemplate: promptTemplateContent, // Pass the current editable content
       notes: `New version based on v${selectedVersion?.versionNumber || 'current editor'}`,
     });
   };
@@ -690,7 +681,7 @@ The prompt will be automatically modified to add the eval & summarisation parame
                     <ScrollArea className="flex-1 pr-2 -mr-2">
                       <div className="space-y-3 text-sm py-2">
                           <p>Your prompt should clearly instruct the AI on how to analyze the provided "Product Input Data" and then perform tasks based on the "Detailed Instructions & Criteria" section that the system will provide.</p>
-                          
+
                           <h3 className="font-semibold mt-2">1. Using Product Parameters (Your Inputs):</h3>
                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
                               <li className="break-words">In the "Product Input Data" section of your template, reference parameters you defined in "Schema Definition" using Handlebars-like syntax: <code>{`{{ParameterName}}`}</code>.</li>
@@ -703,15 +694,11 @@ The prompt will be automatically modified to add the eval & summarisation parame
                               <li className="break-words">You do <strong className="text-primary">not</strong> need to manually write out the full definitions for these in your prompt template.</li>
                               <li className="break-words">When you create an "Eval Run", you will select which Evaluation Parameters and Summarization Definitions to include.</li>
                               <li className="break-words">The system will then take your prompt (with product data filled in) and <strong className="text-primary">append</strong> a section containing the full details (ID, Name, Definition, Labels, Examples, Rationale requirement) for each selected Evaluation Parameter and Summarization Definition.</li>
-                              <li className="break-words">Your prompt template should simply have a placeholder or a general instruction for the AI to pay attention to this system-appended section. The default template includes:
-                                  <pre className="bg-muted p-2 rounded-md text-xs my-1 whitespace-pre-wrap overflow-x-auto">
-{`--- DETAILED INSTRUCTIONS & CRITERIA ---
-The prompt will be automatically modified to add the eval & summarisation parameters which you selected for your eval run here. You don't need to add any definition here.`}
-                                  </pre>
+                              <li className="break-words">Your prompt template should simply have a placeholder or a general instruction for the AI to pay attention to this system-appended section. The "Detailed Instructions & Criteria" part of your editor serves this purpose.
                               </li>
                               <li className="break-words">The Judge LLM is <strong className="text-primary">already instructed by the system</strong> (in the `judge-llm-evaluation-flow.ts`) to output a JSON array. You do not need to repeat JSON formatting instructions in your template.</li>
                           </ul>
-                          
+
                           <h3 className="font-semibold mt-2">3. Best Practices for Your Template:</h3>
                           <ul className="list-disc pl-5 space-y-1 text-xs break-words">
                               <li className="break-words"><strong>Be Clear and Specific:</strong> Avoid ambiguity in your instructions.</li>
@@ -733,31 +720,54 @@ The prompt will be automatically modified to add the eval & summarisation parame
           </div>
         </CardHeader>
         <CardContent className="flex-1 p-0 flex flex-col lg:flex-row min-h-0">
-          <div className="flex-1 p-4 flex flex-col min-w-0">
-            <Label htmlFor="prompt-template-area" className="mb-2 font-medium">
-              Prompt Template (Version {selectedVersion?.versionNumber || 'N/A'})
-              {selectedPrompt.currentVersionId === selectedVersionId && <Badge variant="outline" className="ml-2 border-green-500 text-green-600">Active</Badge>}
-            </Label>
-            <Textarea
-              ref={promptTextareaRef}
-              id="prompt-template-area"
-              value={promptTemplateContent}
-              onChange={(e) => setPromptTemplateContent(e.target.value)}
-              placeholder={!selectedVersion && selectedPrompt.versions.length === 0 ? "Create a version to start editing." : "Enter your prompt template here..."}
-              className="flex-1 resize-none font-mono text-sm min-h-[200px] md:min-h-[250px] lg:min-h-[300px]"
-              disabled={!selectedVersion || updatePromptVersionMutation.isPending}
-            />
-            <Label htmlFor="version-notes" className="mt-4 mb-2 font-medium">Version Notes</Label>
-            <Input
-              id="version-notes"
-              value={versionNotes}
-              onChange={(e) => setVersionNotes(e.target.value)}
-              placeholder="Notes for this version (e.g., 'Improved clarity on instructions')"
-              disabled={!selectedVersion || updatePromptVersionMutation.isPending}
-            />
+          <div className="flex-1 p-4 flex flex-col min-w-0 space-y-4">
+            {/* Uneditable System Prompt */}
+            <div>
+              <Label className="font-medium text-base">System Prompt (Uneditable)</Label>
+              <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
+                {FIXED_SYSTEM_PROMPT}
+              </div>
+            </div>
+
+            {/* Editable User Product Input Section */}
+            <div>
+              <Label htmlFor="prompt-template-area" className="font-medium text-base">
+                Your Product Input Data Section (Editable - Version {selectedVersion?.versionNumber || 'N/A'})
+                {selectedPrompt.currentVersionId === selectedVersionId && <Badge variant="outline" className="ml-2 border-green-500 text-green-600">Active</Badge>}
+              </Label>
+              <Textarea
+                ref={promptTextareaRef}
+                id="prompt-template-area"
+                value={promptTemplateContent}
+                onChange={(e) => setPromptTemplateContent(e.target.value)}
+                placeholder={!selectedVersion && selectedPrompt.versions.length === 0 ? "Create a version to start editing." : "Enter your product input structure here..."}
+                className="flex-1 resize-none font-mono text-sm min-h-[150px] md:min-h-[200px] mt-1"
+                disabled={!selectedVersion || updatePromptVersionMutation.isPending}
+              />
+            </div>
+
+            {/* Uneditable Detailed Instructions Placeholder */}
+            <div>
+              <Label className="font-medium text-base">Detailed Instructions & Criteria (System-Appended, Uneditable)</Label>
+              <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
+                {FIXED_DETAILED_INSTRUCTIONS_PLACEHOLDER}
+              </div>
+            </div>
+
+             <div>
+                <Label htmlFor="version-notes" className="mt-2 mb-1 font-medium">Version Notes</Label>
+                <Input
+                id="version-notes"
+                value={versionNotes}
+                onChange={(e) => setVersionNotes(e.target.value)}
+                placeholder="Notes for this version (e.g., 'Improved clarity on instructions')"
+                disabled={!selectedVersion || updatePromptVersionMutation.isPending}
+                />
+            </div>
+
           </div>
           <div className="w-full lg:w-[280px] lg:shrink-0 border-t lg:border-t-0 lg:border-l p-4 bg-muted/20 flex flex-col min-w-0">
-            <ScrollArea className="flex-1"> {/* Added flex-1 here for ScrollArea */}
+            <ScrollArea className="flex-1">
               <div className="mb-4">
                 <h3 className="text-md font-semibold mb-2">Product Parameters</h3>
                 {isLoadingProdParams ? <Skeleton className="h-20 w-full" /> :
@@ -773,7 +783,7 @@ The prompt will be automatically modified to add the eval & summarisation parame
                           <span className="text-sm font-medium truncate min-w-0" title={param.name}>{param.name}</span>
                         </div>
                         <Button onClick={() => insertProductParameter(param.name)} title={`Insert {{${param.name}}}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
-                          Insert
+                          Insert into Your Section
                         </Button>
                         <p className="text-xs text-muted-foreground truncate min-w-0" title={param.description}>{param.description}</p>
                       </Card>
@@ -784,6 +794,7 @@ The prompt will be automatically modified to add the eval & summarisation parame
 
               <div className="pt-4 border-t mb-4">
                 <h3 className="text-md font-semibold mb-2">Evaluation Parameters</h3>
+                 <p className="text-xs text-muted-foreground mb-2">These are appended by the system during runs. You don't insert their full details here.</p>
                 {isLoadingEvalParams ? <Skeleton className="h-20 w-full" /> :
                 fetchEvalParamsError ? <p className="text-xs text-destructive">Error loading evaluation parameters.</p> :
                 evaluationParameters.length === 0 ? (
@@ -796,8 +807,8 @@ The prompt will be automatically modified to add the eval & summarisation parame
                           <Target className="h-4 w-4 text-green-600 shrink-0" />
                           <span className="text-sm font-medium truncate min-w-0" title={param.name}>{param.name}</span>
                         </div>
-                        <Button onClick={() => insertEvaluationParameter(param)} title={`Insert details for ${param.name}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
-                          Insert
+                        <Button onClick={() => insertEvaluationParameter(param)} title={`This will be automatically added if selected in a run`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
+                          Info (System-Added)
                         </Button>
                         <p className="text-xs text-muted-foreground truncate min-w-0" title={param.definition}>{param.definition}</p>
                       </Card>
@@ -808,6 +819,7 @@ The prompt will be automatically modified to add the eval & summarisation parame
 
               <div className="pt-4 border-t">
                 <h3 className="text-md font-semibold mb-2">Summarization Definitions</h3>
+                <p className="text-xs text-muted-foreground mb-2">These are appended by the system during runs. You don't insert their full details here.</p>
                 {isLoadingSummarizationDefs ? <Skeleton className="h-20 w-full" /> :
                 fetchSummarizationDefsError ? <p className="text-xs text-destructive">Error loading summarization definitions.</p> :
                 summarizationDefinitions.length === 0 ? (
@@ -820,8 +832,8 @@ The prompt will be automatically modified to add the eval & summarisation parame
                           <AlignLeft className="h-4 w-4 text-purple-600 shrink-0" />
                           <span className="text-sm font-medium truncate min-w-0" title={def.name}>{def.name}</span>
                         </div>
-                        <Button onClick={() => insertSummarizationDefinition(def)} title={`Insert details for ${def.name}`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
-                          Insert
+                         <Button onClick={() => insertSummarizationDefinition(def)} title={`This will be automatically added if selected in a run`} disabled={!selectedVersion} variant="outline" size="sm" className="w-full mb-1 text-xs h-8 whitespace-normal text-left justify-start px-2">
+                          Info (System-Added)
                         </Button>
                         <p className="text-xs text-muted-foreground truncate min-w-0" title={def.definition}>{def.definition}</p>
                       </Card>
@@ -834,8 +846,8 @@ The prompt will be automatically modified to add the eval & summarisation parame
           </div>
         </CardContent>
         <CardFooter className="border-t pt-4 flex flex-col sm:flex-row justify-end gap-2">
-          <Button variant="outline" onClick={() => navigator.clipboard.writeText(promptTemplateContent)} disabled={!selectedVersion || !promptTemplateContent} className="w-full sm:w-auto">
-            <Copy className="mr-2 h-4 w-4" /> Copy Template
+          <Button variant="outline" onClick={() => { if(promptTemplateContent) navigator.clipboard.writeText(promptTemplateContent); toast({title:"User section copied!"})}} disabled={!selectedVersion || !promptTemplateContent} className="w-full sm:w-auto">
+            <Copy className="mr-2 h-4 w-4" /> Copy User Section
           </Button>
           <Button onClick={handleSaveVersion} disabled={!selectedVersion || updatePromptVersionMutation.isPending} className="w-full sm:w-auto">
             {updatePromptVersionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />} Save Current Version
@@ -862,9 +874,9 @@ The prompt will be automatically modified to add the eval & summarisation parame
             <TooltipProvider delayDuration={100}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => setIsPromptListCollapsed(!isPromptListCollapsed)}
                     className="hidden md:flex"
                     aria-label={isPromptListCollapsed ? "Expand prompt list" : "Collapse prompt list"}
@@ -880,13 +892,13 @@ The prompt will be automatically modified to add the eval & summarisation parame
           </div>
            <Dialog open={isPromptDialogOpen} onOpenChange={(isOpen) => { setIsPromptDialogOpen(isOpen); if(!isOpen) resetPromptDialogForm();}}>
             <DialogTrigger asChild>
-              <Button 
-                size="sm" 
-                className={cn("mt-2 w-full", isPromptListCollapsed && "md:hidden")} 
-                onClick={handleOpenNewPromptDialog} 
+              <Button
+                size="sm"
+                className={cn("mt-2 w-full", isPromptListCollapsed && "md:hidden")}
+                onClick={handleOpenNewPromptDialog}
                 disabled={addPromptTemplateMutation.isPending || updatePromptTemplateMutation.isPending || !currentUserId}
               >
-                <PlusCircle className="mr-2 h-4 w-4" /> 
+                <PlusCircle className="mr-2 h-4 w-4" />
                 <span className={cn(isPromptListCollapsed && "md:hidden")}>New Template</span>
               </Button>
             </DialogTrigger>
@@ -927,4 +939,3 @@ The prompt will be automatically modified to add the eval & summarisation parame
     </div>
   );
 }
-
