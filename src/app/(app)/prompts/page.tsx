@@ -72,15 +72,17 @@ export interface PromptTemplate {
   updatedAt?: string; 
 }
 
-const FIXED_SYSTEM_PROMPT = `You are an impartial and rigorous evaluator of AI-generated outputs. Your task is to judge the quality of responses to a given input based on objective criteria. You must not add new content, speculate, or favor any model. Score only based on how well the response meets the criteria.
-
-Your task is to analyze the provided input data and then perform two types of tasks:
-1.  **Evaluation Labeling**: For each specified Evaluation Parameter, choose the most appropriate label based on its definition and the input data.
-2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.`;
+const FIXED_SYSTEM_PROMPT = `You are an impartial and rigorous evaluator of AI-generated outputs. Your task is to judge the quality of responses to a given input based on objective criteria. You must not add new content, speculate, or favor any model. Score only based on how well the response meets the criteria.`;
 
 const FIXED_INPUT_DATA_HEADER = `--- INPUT DATA ---`; // Renamed from FIXED_PRODUCT_INPUT_HEADER
 const FIXED_INPUT_DATA_FOOTER = `--- END INPUT DATA ---`; // Renamed from FIXED_PRODUCT_INPUT_FOOTER
 const FIXED_CRITERIA_HEADER = `--- DETAILED INSTRUCTIONS & CRITERIA ---`;
+const FIXED_CRITERIA_INSTRUCTIONS_PART = `
+Your task is to analyze the provided input data and then perform two types of tasks:
+1.  **Evaluation Labeling**: For each specified Evaluation Parameter, choose the most appropriate label based on its definition and the input data.
+2.  **Summarization**: For each specified Summarization Task, generate a concise summary based on its definition and the input data.
+`;
+
 
 const defaultInitialUserEditablePromptTemplate = `Your input data and definition goes here. Use the "Input Parameters" sidebar to insert placeholders like {{ParameterName}} for data that will be dynamically filled from your dataset.
 Example:
@@ -214,29 +216,37 @@ export default function PromptsPage() {
         if (startIndex !== -1 && endIndex !== -1 && (startIndex + inputDataStartMarkerWithNewline.length) <= endIndex) {
              editablePart = fullTemplate.substring(startIndex + inputDataStartMarkerWithNewline.length, endIndex).trim();
         } else if (fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) && fullTemplate.includes(FIXED_CRITERIA_HEADER)) {
-             const afterSystemPromptAndHeader = fullTemplate.substring(FIXED_SYSTEM_PROMPT.length + FIXED_INPUT_DATA_HEADER.length).trim();
-             const criteriaStartIndex = afterSystemPromptAndHeader.indexOf(FIXED_INPUT_DATA_FOOTER + '\n\n' + FIXED_CRITERIA_HEADER);
-             if (criteriaStartIndex !== -1) {
-                 editablePart = afterSystemPromptAndHeader.substring(0, criteriaStartIndex).trim();
+             // This fallback logic attempts to find the editable part even if markers are slightly off
+             // Primarily, it should rely on the markers for robust extraction.
+             const systemPromptEndIndex = fullTemplate.indexOf(FIXED_SYSTEM_PROMPT) + FIXED_SYSTEM_PROMPT.length;
+             let potentialContent = fullTemplate.substring(systemPromptEndIndex).trim();
+             
+             if (potentialContent.startsWith(FIXED_INPUT_DATA_HEADER)) {
+                 potentialContent = potentialContent.substring(FIXED_INPUT_DATA_HEADER.length).trim();
+             }
+             
+             const criteriaHeaderIndexInPotential = potentialContent.indexOf(FIXED_INPUT_DATA_FOOTER + '\n\n' + FIXED_CRITERIA_HEADER);
+             if (criteriaHeaderIndexInPotential !== -1) {
+                 editablePart = potentialContent.substring(0, criteriaHeaderIndexInPotential).trim();
              } else {
-                const systemPromptEndIndex = fullTemplate.indexOf(FIXED_SYSTEM_PROMPT) + FIXED_SYSTEM_PROMPT.length;
-                const criteriaHeaderIndex = fullTemplate.lastIndexOf(FIXED_CRITERIA_HEADER);
-                if (systemPromptEndIndex !== -1 && criteriaHeaderIndex !== -1 && systemPromptEndIndex < criteriaHeaderIndex) {
-                    let potentialEditable = fullTemplate.substring(systemPromptEndIndex, criteriaHeaderIndex).trim();
-                    if (potentialEditable.startsWith(FIXED_INPUT_DATA_HEADER)) {
-                        potentialEditable = potentialEditable.substring(FIXED_INPUT_DATA_HEADER.length).trim();
-                    }
-                    if (potentialEditable.endsWith(FIXED_INPUT_DATA_FOOTER)) {
-                        potentialEditable = potentialEditable.substring(0, potentialEditable.length - FIXED_INPUT_DATA_FOOTER.length).trim();
-                    }
-                    editablePart = potentialEditable;
-                } else {
+                // If the exact sequence is not found, make a best guess or default
+                const criteriaHeaderOnlyIndex = potentialContent.lastIndexOf(FIXED_CRITERIA_HEADER);
+                const inputFooterOnlyIndex = potentialContent.lastIndexOf(FIXED_INPUT_DATA_FOOTER);
+
+                if (inputFooterOnlyIndex !== -1 && criteriaHeaderOnlyIndex !== -1 && inputFooterOnlyIndex < criteriaHeaderOnlyIndex) {
+                     editablePart = potentialContent.substring(0, inputFooterOnlyIndex).trim();
+                } else if (inputFooterOnlyIndex !== -1) {
+                     editablePart = potentialContent.substring(0, inputFooterOnlyIndex).trim();
+                }
+                 else {
                     editablePart = defaultInitialUserEditablePromptTemplate; 
                 }
              }
         } else if (!fullTemplate.startsWith(FIXED_SYSTEM_PROMPT) || !fullTemplate.includes(FIXED_CRITERIA_HEADER)) {
+            // If it's a very old template or completely custom, assume the whole thing is editable
             editablePart = fullTemplate;
         }
+
 
         setPromptTemplateContent(editablePart);
         setVersionNotes(currentVersionObj.notes);
@@ -256,7 +266,7 @@ export default function PromptsPage() {
     mutationFn: async ({ name, description }) => {
       if (!currentUserId) throw new Error("Project not selected.");
 
-      const fullInitialTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${defaultInitialUserEditablePromptTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}`;
+      const fullInitialTemplate = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${defaultInitialUserEditablePromptTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
 
       const newPromptRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates'), {
         name,
@@ -334,7 +344,7 @@ export default function PromptsPage() {
     mutationFn: async ({ promptId, userEditableTemplate, notes }) => {
       if (!currentUserId || !selectedPrompt) throw new Error("Project or prompt not identified.");
 
-      const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}`;
+      const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
       const latestVersionNum = Math.max(0, ...selectedPrompt.versions.map(v => v.versionNumber));
 
       const newVersionRef = await addDoc(collection(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions'), {
@@ -362,7 +372,7 @@ export default function PromptsPage() {
   const updatePromptVersionMutation = useMutation<void, Error, { promptId: string; versionId: string; userEditableTemplate: string; notes: string }>({
     mutationFn: async ({ promptId, versionId, userEditableTemplate, notes }) => {
       if (!currentUserId) throw new Error("Project not selected.");
-      const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}`;
+      const fullTemplateToSave = `${FIXED_SYSTEM_PROMPT}\n\n${FIXED_INPUT_DATA_HEADER}\n${userEditableTemplate.trim()}\n${FIXED_INPUT_DATA_FOOTER}\n\n${FIXED_CRITERIA_HEADER}\n${FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}`;
       const versionRef = doc(db, 'users', currentUserId, 'promptTemplates', promptId, 'versions', versionId);
       await updateDoc(versionRef, { template: fullTemplateToSave, notes });
       await updateDoc(doc(db, 'users', currentUserId, 'promptTemplates', promptId), { updatedAt: serverTimestamp() });
@@ -632,13 +642,13 @@ export default function PromptsPage() {
                                         <li>Example: <pre className="bg-muted p-1 rounded-sm text-[10px] my-0.5 whitespace-pre-wrap break-words">User Query: {`{{UserQuery}}`}{`\n`}Previous Turn: {`{{BotResponse}}`}</pre></li>
                                     </ul>
                                 </li>
-                                <li><strong className="font-medium">Detailed Instructions & Criteria:</strong> This section's header (<code>{FIXED_CRITERIA_HEADER}</code>) is fixed. During an eval run, the system appends the detailed definitions of your selected Evaluation Parameters and Summarization Tasks here.</li>
+                                <li><strong className="font-medium">Detailed Instructions & Criteria:</strong> This section's header (<code>{FIXED_CRITERIA_HEADER}</code>) and the general task instructions are fixed. During an eval run, the system appends the specific definitions of your selected Evaluation Parameters and Summarization Tasks here.</li>
                             </ol>
                             
                             <h3 className="font-semibold mt-2">Key Points:</h3>
                             <ul className="list-disc pl-5 space-y-1 text-xs break-words">
                                 <li className="break-words">You <strong className="text-primary">only edit the content for your Input Data</strong> in the main textarea.</li>
-                                <li className="break-words">The system handles the overall structure (System Prompt, data markers, criteria header) and dynamically adds the specific criteria definitions during evaluation runs.</li>
+                                <li className="break-words">The system handles the overall structure (System Prompt, data markers, criteria header, task instructions) and dynamically adds the specific criteria definitions during evaluation runs.</li>
                                 <li className="break-words">The Judge LLM is already instructed by the system (via the fixed System Prompt and backend flow logic) to output a JSON array containing its judgments and summaries.</li>
                             </ul>
                         </div>
@@ -704,7 +714,10 @@ export default function PromptsPage() {
                 <Label className="font-medium text-base">Detailed Instructions & Criteria</Label>
                 <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
                   {FIXED_CRITERIA_HEADER}
-                  <p className="text-xs italic mt-1">(The system will append selected evaluation parameter and summarization definitions here during a run.)</p>
+                </div>
+                <div className="mt-1 p-3 rounded-md bg-muted/50 border text-sm whitespace-pre-wrap text-muted-foreground">
+                  {FIXED_CRITERIA_INSTRUCTIONS_PART.trim()}
+                  <p className="text-xs italic mt-2">(The system will append selected evaluation parameter and summarization definitions below these instructions during a run.)</p>
                 </div>
               </div>
             </div>
