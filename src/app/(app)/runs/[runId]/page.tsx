@@ -735,11 +735,13 @@ export default function RunDetailsPage() {
                         including filled input parameters and appended evaluation/summarization criteria.
                     </DialogDescription>
                 </DialogHeader>
-                <ScrollArea className="flex-1 min-h-0 my-4 mx-6 border rounded-md">
-                    <pre className="text-xs whitespace-pre-wrap p-4">
-                        {firstRowFullPrompt || (isLoadingPromptTemplate ? "Loading prompt template..." : "Prompt could not be constructed. Check configuration and data.")}
-                    </pre>
-                </ScrollArea>
+                <div className="flex-grow min-h-0 my-4 mx-6 border rounded-md">
+                    <ScrollArea className="h-full w-full">
+                        <pre className="text-xs whitespace-pre-wrap p-4">
+                            {firstRowFullPrompt || (isLoadingPromptTemplate ? "Loading prompt template..." : "Prompt could not be constructed. Check configuration and data.")}
+                        </pre>
+                    </ScrollArea>
+                </div>
                 <DialogFooter className="p-6 pt-4 border-t mt-auto flex-shrink-0">
                     <Button onClick={() => setIsFullPromptDialogVisible(false)}>Close</Button>
                 </DialogFooter>
