@@ -4,7 +4,7 @@
 import React, { type FC } from 'react'; 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Play, Loader2, DatabaseZap, Wand2, Download, FileSearch, Tags, ClockIcon, CheckCheckIcon, CalendarDaysIcon, FileText as FileTextIcon } from "lucide-react"; // Changed InfoIcon to FileTextIcon
+import { Play, Loader2, DatabaseZap, Wand2, Download, FileSearch, Tags, ClockIcon, CheckCheckIcon, CalendarDaysIcon, FileText as FileTextIcon } from "lucide-react";
 import type { Timestamp } from 'firebase/firestore';
 import type { EvalRun } from '@/app/(app)/runs/[runId]/page';
 import { Badge } from '@/components/ui/badge';
