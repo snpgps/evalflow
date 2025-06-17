@@ -29,7 +29,7 @@ const fetchProjects = async (): Promise<Project[]> => {
     const actualProjectId = db.app.options.projectId;
     console.log(`fetchProjects: Firestore instance is configured for project ID: ${actualProjectId}`);
     if (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID !== actualProjectId) {
-        console.warn(`fetchProjects: Mismatch! Environment NEXT_PUBLIC_FIREBASE_PROJECT_ID is ${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}, but Firestore instance is using ${actualProjectId}.`);
+        console.warn(`fetchProjects: Mismatch! Environment NEXT_PUBLIC_FIREBASE_PROJECT_ID is ${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}, but Firestore instance is using ${actualProjectId}. Ensure your .env.local is correct and the build picked it up.`);
     }
   } catch (e) {
     console.warn("fetchProjects: Could not retrieve projectId from db instance options.", e);
@@ -49,7 +49,7 @@ const fetchProjects = async (): Promise<Project[]> => {
     }
     const projects = usersSnapshot.docs.map(doc => ({
       id: doc.id,
-      name: `Project: ${doc.id}`
+      name: `Project: ${doc.id}` // Displaying the ID as the project name
     }));
     console.log("fetchProjects: Successfully mapped projects:", projects.map(p=>p.id));
     return projects;
@@ -78,7 +78,7 @@ function SelectProjectPageComponent() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedProjectId) {
-      localStorage.setItem('currentUserId', selectedProjectId);
+      localStorage.setItem('currentUserId', selectedProjectId); // Storing as currentUserId
       router.push('/dashboard');
     } else {
       toast({ title: "Selection Required", description: "Please select a project to continue.", variant: "destructive" });
@@ -133,11 +133,16 @@ function SelectProjectPageComponent() {
                   <p className="font-medium">No projects found. This could be due to:</p>
                   <ul className="list-disc list-inside pl-4">
                     <li>No project/user documents currently exist in the Firestore 'users' collection.</li>
-                    <li>Firestore security rules are preventing access to list
-                        documents in the 'users' collection. Ensure your rules allow read
-                        access (e.g., <code>{`match /users/{userId} { allow read: if true; }`}</code> for open access, or a more specific rule).
+                    <li>
+                      An incorrect Firebase project configuration. 
+                      <strong> Check your browser's developer console</strong> for logs from `firebase.ts` and `page.tsx (fetchProjects)`. 
+                      Compare the logged 'Project ID' with the Project ID shown in your Firebase Console (where you see your 'users' data). They MUST match. 
+                      Verify your `NEXT_PUBLIC_FIREBASE_PROJECT_ID` environment variable.
                     </li>
-                    <li>An incorrect Firebase project configuration in your application's environment variables. (Check browser console for Firebase config details).</li>
+                    <li>
+                      Firestore security rules are preventing access to list documents in the 'users' collection. 
+                      Ensure your rules allow `list` access (e.g., <code>{`match /users/{userId} { allow list: if true; }`}</code> or <code>{`allow read: if true;`}</code> for open access).
+                    </li>
                   </ul>
                   <p className="mt-1">Please check your Firebase project setup, data, and security rules. You might need to refresh this page after making changes.</p>
                 </div>
