@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { PlusCircle, Edit2, Trash2, PlugZap, AlertTriangle, Loader2, PlayIcon, Send } from "lucide-react"; // Removed Eye, EyeOff
+import { PlusCircle, Edit2, Trash2, PlugZap, AlertTriangle, Loader2, PlayIcon, Send } from "lucide-react"; 
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { db } from '@/lib/firebase';
@@ -23,11 +23,10 @@ import { testGoogleAIConnection, type TestGoogleAIConnectionInput, type TestGoog
 import { testDirectOpenAIClient, type TestDirectOpenAIClientInput, type TestDirectOpenAIClientOutput } from '@/ai/flows/test-direct-openai-client-flow'; 
 
 interface ModelConnector {
-  id: string; // Firestore document ID
+  id: string; 
   name: string;
   provider: 'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Anthropic' | 'Other';
-  // apiKey: string; // Removed apiKey
-  config: string; // JSON string for other configurations, will include "model" if selected
+  config: string; 
   createdAt?: Timestamp;
 }
 
@@ -97,11 +96,9 @@ export default function ModelConnectorsPage() {
 
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
   const [editingConnector, setEditingConnector] = useState<ModelConnector | null>(null);
-  // const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({}); // Removed showApiKey state
 
   const [connectorName, setConnectorName] = useState('');
   const [provider, setProvider] = useState<'OpenAI' | 'Vertex AI' | 'Azure OpenAI' | 'Local LLM' | 'Anthropic' | 'Other'>('OpenAI');
-  // const [apiKey, setApiKey] = useState(''); // Removed apiKey state
   const [config, setConfig] = useState('{}');
   const [selectedModelForDropdown, setSelectedModelForDropdown] = useState('');
 
@@ -207,7 +204,7 @@ export default function ModelConnectorsPage() {
         toast({title: "Project Not Selected", description: "Please select a project first.", variant: "destructive"});
         return;
     }
-    if (!connectorName.trim()) { // Removed apiKey trim check
+    if (!connectorName.trim()) { 
         toast({title: "Validation Error", description: "Connector Name is required.", variant: "destructive"});
         return;
     }
@@ -221,15 +218,14 @@ export default function ModelConnectorsPage() {
       return;
     }
 
-    const connectorData: Omit<ModelConnector, 'id' | 'createdAt'> = { // Type adjusted
+    const connectorData: Omit<ModelConnector, 'id' | 'createdAt'> = { 
       name: connectorName.trim(),
       provider,
-      // apiKey: apiKey.trim(), // Removed apiKey
       config: finalConfig,
     };
 
     if (editingConnector) {
-      updateConnectorMutation.mutate({ ...(connectorData as any), id: editingConnector.id }); // Cast to any to satisfy payload type temporarily
+      updateConnectorMutation.mutate({ ...(connectorData as any), id: editingConnector.id }); 
     } else {
       addConnectorMutation.mutate({ ...connectorData, createdAt: serverTimestamp() });
     }
@@ -238,7 +234,6 @@ export default function ModelConnectorsPage() {
   const resetForm = () => {
     setConnectorName('');
     setProvider('OpenAI');
-    // setApiKey(''); // Removed apiKey reset
     setConfig('{}');
     setSelectedModelForDropdown('');
     setEditingConnector(null);
@@ -248,7 +243,6 @@ export default function ModelConnectorsPage() {
     setEditingConnector(connector);
     setConnectorName(connector.name);
     setProvider(connector.provider);
-    // setApiKey(connector.apiKey); // Removed apiKey set
     const loadedConfig = connector.config || '{}';
     setConfig(loadedConfig);
 
@@ -303,10 +297,6 @@ export default function ModelConnectorsPage() {
     resetForm();
     setIsFormDialogOpen(true);
   };
-
-  // const toggleApiKeyVisibility = (id: string) => { // Removed API key visibility toggle
-  //   setShowApiKey(prev => ({ ...prev, [id]: !prev[id] }));
-  // };
 
   const getGenkitModelId = (connector: ModelConnector | null): string | undefined => {
     if (!connector || !connector.config) return undefined;
@@ -491,12 +481,6 @@ export default function ModelConnectorsPage() {
                      <p className="text-xs text-muted-foreground mt-1">The selected model will be set as <code className="bg-muted p-0.5 rounded-sm">"model": "..."</code> in the JSON configuration.</p>
                   </div>
                 )}
-
-                {/* API Key Input Removed */}
-                {/* <div>
-                  <Label htmlFor="conn-api-key">API Key</Label>
-                  <Input id="conn-api-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Enter API Key" required />
-                </div> */}
                 <div>
                   <Label htmlFor="conn-config">Additional Configuration (JSON)</Label>
                   <Textarea
@@ -556,9 +540,7 @@ export default function ModelConnectorsPage() {
                 <TableRow>
                   <TableHead className="w-1/3 sm:w-1/4">Name</TableHead>
                   <TableHead className="hidden sm:table-cell w-1/4">Provider</TableHead>
-                  {/* API Key Column Removed */}
-                  {/* <TableHead className="w-2/5 sm:w-1/3">API Key</TableHead> */}
-                  <TableHead className="w-1/3 sm:w-1/4">Configuration</TableHead> {/* Adjusted width */}
+                  <TableHead className="w-1/3 sm:w-1/4">Configuration</TableHead>
                   <TableHead className="text-right w-[110px] sm:w-[130px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -577,16 +559,7 @@ export default function ModelConnectorsPage() {
                     <TableRow key={conn.id} className="hover:bg-muted/50">
                       <TableCell className="font-medium truncate" title={conn.name}>{conn.name}</TableCell>
                       <TableCell className="hidden sm:table-cell truncate" title={conn.provider}>{conn.provider}</TableCell>
-                      {/* API Key Cell Removed */}
-                      {/* <TableCell className="truncate">
-                        <div className="flex items-center">
-                          <span className="truncate">{showApiKey[conn.id] ? conn.apiKey : '••••••••••••••••'}</span>
-                          <Button variant="ghost" size="icon" onClick={() => toggleApiKeyVisibility(conn.id)} className="ml-1 sm:ml-2 h-7 w-7 shrink-0">
-                            {showApiKey[conn.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </Button>
-                        </div>
-                      </TableCell> */}
-                      <TableCell className="text-sm text-muted-foreground truncate" title={conn.config}>{conn.config || '{}'}</TableCell> {/* Adjusted to show full config, or hidden on smaller screens */}
+                      <TableCell className="text-sm text-muted-foreground truncate" title={conn.config}>{conn.config || '{}'}</TableCell>
                       <TableCell className="text-right">
                           <div className="flex justify-end items-center gap-0">
                             {(canTestGoogleAI || canTestAnthropicDirect || canTestOpenAIDirect) && (
@@ -716,4 +689,3 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
-
