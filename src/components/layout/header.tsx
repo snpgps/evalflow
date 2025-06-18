@@ -170,10 +170,12 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
                       <span>Rename Current Project</span>
                     </DropdownMenuItem>
                   )}
-                   <DropdownMenuItem onClick={() => router.push('/settings')}>
+                  {/* Removed Settings DropdownMenuItem 
+                  <DropdownMenuItem onClick={() => router.push('/settings')}>
                     <Settings className="mr-2 h-4 w-4" />
                     <span>Settings</span>
                   </DropdownMenuItem>
+                  */}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut}>
                     <LogOut className="mr-2 h-4 w-4" />
