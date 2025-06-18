@@ -8,17 +8,17 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building, Loader2, AlertTriangle, PlusCircle, Edit2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Building, Loader2, AlertTriangle, PlusCircle } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useQuery, useMutation, QueryClient, QueryClientProvider, useQueryClient as useTanstackQueryClientHook } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface Project {
-  id: string; // This is the Firestore document ID
-  displayName: string; // This is the user-facing, editable name
+  id: string; 
+  displayName: string; 
 }
 
 const fetchProjects = async (): Promise<Project[]> => {
@@ -44,7 +44,7 @@ const fetchProjects = async (): Promise<Project[]> => {
       const data = doc.data();
       return {
         id: doc.id,
-        displayName: data.projectName || doc.id // Fallback to ID if projectName is not set
+        displayName: data.projectName || doc.id 
       };
     });
     console.log("fetchProjects (select-project page): Successfully mapped projects:", projects.map(p=> `${p.id} (${p.displayName})`));
@@ -61,17 +61,13 @@ const fetchProjects = async (): Promise<Project[]> => {
 const queryClientTanstack = new QueryClient();
 
 function SelectProjectPageComponentInternal() {
-  const [selectedProjectIdState, setSelectedProjectIdState] = useState(''); // Renamed to avoid conflict with prop
+  const [selectedProjectIdState, setSelectedProjectIdState] = useState(''); 
   const [newProjectIdInput, setNewProjectIdInput] = useState('');
   const [newProjectDisplayNameInput, setNewProjectDisplayNameInput] = useState('');
   const [isCreateProjectDialogOpen, setIsCreateProjectDialogOpen] = useState(false);
   
-  const [isEditProjectNameDialogOpen, setIsEditProjectNameDialogOpen] = useState(false);
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [currentProjectDisplayNameInput, setCurrentProjectDisplayNameInput] = useState('');
-
   const router = useRouter();
-  const tanstackQueryClientHook = useTanstackQueryClientHook(); // Renamed hook usage
+  const tanstackQueryClientHook = useTanstackQueryClientHook(); 
   const [authUid, setAuthUid] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
@@ -104,11 +100,12 @@ function SelectProjectPageComponentInternal() {
         createdAt: serverTimestamp(),
       });
     },
-    onSuccess: (_, { projectId }) => {
-      toast({ title: "Project Created", description: `Project "${projectId}" successfully created.` });
+    onSuccess: (_, { projectId, displayName }) => {
+      toast({ title: "Project Created", description: `Project "${displayName}" (ID: ${projectId}) successfully created.` });
       tanstackQueryClientHook.invalidateQueries({ queryKey: ['projects'] });
       setSelectedProjectIdState(projectId);
       localStorage.setItem('currentUserId', projectId);
+      localStorage.setItem('currentProjectDisplayName', displayName); 
       setIsCreateProjectDialogOpen(false);
       setNewProjectIdInput('');
       setNewProjectDisplayNameInput('');
@@ -119,31 +116,16 @@ function SelectProjectPageComponentInternal() {
     },
   });
 
-  const updateProjectNameMutation = useMutation<void, Error, { projectId: string; newDisplayName: string }>({
-    mutationFn: async ({ projectId, newDisplayName }) => {
-      if (!db) throw new Error("Database not initialized.");
-      const projectDocRef = doc(db, 'users', projectId);
-      await updateDoc(projectDocRef, {
-        projectName: newDisplayName
-      });
-    },
-    onSuccess: () => {
-      toast({ title: "Project Name Updated" });
-      tanstackQueryClientHook.invalidateQueries({ queryKey: ['projects'] });
-      setIsEditProjectNameDialogOpen(false);
-      setEditingProject(null);
-      setCurrentProjectDisplayNameInput('');
-    },
-    onError: (updateError) => {
-      toast({ title: "Error Updating Project Name", description: updateError.message, variant: "destructive" });
-    }
-  });
-
-
   const handleSelectProjectSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedProjectIdState) {
+      const selectedProject = availableProjects.find(p => p.id === selectedProjectIdState);
       localStorage.setItem('currentUserId', selectedProjectIdState);
+      if (selectedProject) {
+        localStorage.setItem('currentProjectDisplayName', selectedProject.displayName);
+      } else {
+        localStorage.removeItem('currentProjectDisplayName'); // Should not happen if selection is from list
+      }
       router.push('/dashboard');
     } else {
       toast({ title: "Selection Required", description: "Please select a project to continue.", variant: "destructive" });
@@ -158,22 +140,6 @@ function SelectProjectPageComponentInternal() {
     }
     createProjectMutation.mutate({ projectId: newProjectIdInput.trim(), displayName: newProjectDisplayNameInput.trim() });
   };
-
-  const openEditProjectNameDialog = (project: Project) => {
-    setEditingProject(project);
-    setCurrentProjectDisplayNameInput(project.displayName);
-    setIsEditProjectNameDialogOpen(true);
-  };
-
-  const handleEditProjectNameSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingProject || !currentProjectDisplayNameInput.trim()) {
-      toast({ title: "Display Name Required", description: "Please enter a display name.", variant: "destructive" });
-      return;
-    }
-    updateProjectNameMutation.mutate({ projectId: editingProject.id, newDisplayName: currentProjectDisplayNameInput.trim() });
-  };
-
 
   if (isAuthLoading) {
     return (
@@ -292,58 +258,8 @@ function SelectProjectPageComponentInternal() {
               </DialogContent>
             </Dialog>
           </div>
-
-          {availableProjects.length > 0 && !isLoading && !error && (
-            <div className="mt-6 pt-6 border-t">
-              <h3 className="text-base font-semibold mb-3">Manage Project Names</h3>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {availableProjects.map((project) => (
-                  <Card key={project.id} className="p-3 flex items-center justify-between bg-muted/30">
-                    <div>
-                      <p className="font-medium text-sm">{project.displayName}</p>
-                      <p className="text-xs text-muted-foreground">ID: {project.id}</p>
-                    </div>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditProjectNameDialog(project)}>
-                      <Edit2 className="h-4 w-4" />
-                    </Button>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          )}
-
         </CardContent>
       </Card>
-
-      <Dialog open={isEditProjectNameDialogOpen} onOpenChange={setIsEditProjectNameDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Project Display Name</DialogTitle>
-            <DialogDescription>
-              Change the display name for project ID: <code className="font-mono bg-muted px-1 rounded-sm">{editingProject?.id}</code>. The Project ID itself cannot be changed.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleEditProjectNameSubmit} className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="edit-project-display-name">New Display Name</Label>
-              <Input
-                id="edit-project-display-name"
-                value={currentProjectDisplayNameInput}
-                onChange={(e) => setCurrentProjectDisplayNameInput(e.target.value)}
-                required
-              />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => {setIsEditProjectNameDialogOpen(false); setEditingProject(null); setCurrentProjectDisplayNameInput('');}}>Cancel</Button>
-              <Button type="submit" disabled={updateProjectNameMutation.isPending || !currentProjectDisplayNameInput.trim()}>
-                {updateProjectNameMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Display Name
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       <p className="mt-8 text-center text-sm text-muted-foreground">
         Each project represents a distinct workspace for your evaluations.
       </p>
@@ -358,5 +274,4 @@ export default function SelectProjectPage() {
     </QueryClientProvider>
   );
 }
-
     
