@@ -35,14 +35,24 @@ type ModelConnectorUpdatePayload = Partial<Omit<ModelConnector, 'id' | 'createdA
 
 const VERTEX_AI_MODELS = [
   "gemini-2.5-pro",
+  "gemini-2.5-pro-preview-tts",
   "gemini-2.5-flash",
   "gemini-2.0-pro",
   "gemini-2.0-flash",
+  "gemini-2.0-flash-preview-image-generation",
+  "gemini-2.0-flash-lite",
+  "gemini-2.0-flash-live-001",
   "gemini-1.5-pro-latest",
+  "gemini-1.5-pro",
   "gemini-1.5-flash-latest",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
   "gemini-pro", 
   "gemini-pro-vision",
   "gemini-1.0-pro-001",
+  "gemini-embedding-exp",
+  "imagen-3.0-generate-002",
+  "veo-2.0-generate-001",
 ];
 const OPENAI_MODELS = [
   "gpt-4o",
@@ -686,4 +696,3 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
-
