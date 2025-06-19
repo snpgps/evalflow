@@ -12,9 +12,8 @@ import {
   FileText,
   PlayCircle,
   Lightbulb,
-  // Settings, // Removed
-  // Users, // Removed
-  // LifeBuoy, // Removed
+  PanelLeftClose, 
+  PanelRightOpen
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -25,6 +24,9 @@ import {
 } from '@/components/ui/sidebar';
 import { Separator } from '@/components/ui/separator';
 import { Logo } from './logo';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -37,15 +39,9 @@ const navItems = [
   { href: '/insights', label: 'AI Insights', icon: Lightbulb },
 ];
 
-// const settingsItems = [ // Array removed as items are removed
-//   { href: '/settings', label: 'Settings', icon: Settings },
-//   { href: '/team', label: 'Team', icon: Users },
-//   { href: '/help', label: 'Help & Support', icon: LifeBuoy },
-// ]
-
 export function SidebarNav() {
   const pathname = usePathname();
-  const { state, isMobile, setOpenMobile } = useSidebar();
+  const { state, isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const isCollapsed = state === 'collapsed';
 
   const handleLinkClick = () => {
@@ -81,30 +77,32 @@ export function SidebarNav() {
         ))}
       </SidebarMenu>
       
-      {/* Removed settings items section */}
-      {/* 
-      <Separator className="my-2" />
-      <SidebarMenu className="px-2 pb-2">
-         {settingsItems.map((item) => (
-          <SidebarMenuItem key={item.href}>
-            <Link href={item.href} legacyBehavior passHref>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname.startsWith(item.href)}
-                tooltip={isCollapsed ? item.label : undefined}
-                className="justify-start"
-                onClick={handleLinkClick}
-              >
-                <a>
-                  <item.icon className="h-5 w-5" />
-                  {!isCollapsed && <span>{item.label}</span>}
-                </a>
-              </SidebarMenuButton>
-            </Link>
-          </SidebarMenuItem>
-        ))}
-      </SidebarMenu> 
-      */}
+      {!isMobile && (
+        <div className={cn(
+          "mt-auto border-t border-sidebar-border flex",
+          isCollapsed ? "justify-center" : "justify-end",
+          "p-2" 
+        )}>
+          <TooltipProvider delayDuration={100}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleSidebar}
+                  aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  className="h-8 w-8"
+                >
+                  {isCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" align="center">
+                <p>{isCollapsed ? "Expand sidebar" : "Collapse sidebar"}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      )}
     </div>
   );
 }

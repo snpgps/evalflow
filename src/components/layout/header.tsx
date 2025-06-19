@@ -1,7 +1,6 @@
 
 'use client';
 
-import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -15,7 +14,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LogOut, User, Settings, Sun, Moon, Building, ExternalLink, Edit2, Loader2, PanelLeft } from 'lucide-react'; // Added PanelLeft just in case, though SidebarTrigger should provide it
+import { LogOut, User, Sun, Moon, Building, ExternalLink, Edit2, Loader2 } from 'lucide-react'; 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 import { auth, db } from '@/lib/firebase';
@@ -67,7 +66,7 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
     if (storedProjectName) {
         setCurrentProjectStoredName(storedProjectName);
     }
-  }, [selectedProjectId]); // Re-check display name if project ID changes
+  }, [selectedProjectId]); 
 
   const toggleTheme = () => {
     document.documentElement.classList.toggle('dark');
@@ -113,7 +112,7 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
       toast({ title: "Project Name Updated", description: `Project display name changed to "${variables.newDisplayName}".` });
       localStorage.setItem('currentProjectDisplayName', variables.newDisplayName);
       setCurrentProjectStoredName(variables.newDisplayName);
-      queryClientHook.invalidateQueries({ queryKey: ['projects'] }); // Invalidate projects list on select-project page
+      queryClientHook.invalidateQueries({ queryKey: ['projects'] }); 
       setIsRenameProjectDialogOpen(false);
     },
     onError: (updateError) => {
@@ -134,7 +133,7 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
   return (
     <>
       <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-4 md:px-6 shadow-sm">
-        {!isPublicPage && <SidebarTrigger />} 
+        {/* SidebarTrigger removed from here */}
         <div className="flex-1">
           <h1 className="text-xl font-semibold font-headline">{pageTitle}</h1>
         </div>
