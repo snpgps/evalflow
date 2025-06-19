@@ -75,6 +75,7 @@ export interface EvalRun {
   selectedSummarizationDefIds?: string[];
   selectedSummarizationDefNames?: string[];
   selectedContextDocumentIds?: string[];
+  selectedVisibleInputParamNames?: string[]; 
   runOnNRows: number;
   concurrencyLimit?: number;
   progress?: number;
@@ -558,9 +559,21 @@ export default function RunDetailsPage() {
 
       runDetails.results.forEach(item => {
         const row: Record<string, any> = {};
+        
+        // Add selected visible input parameters first
+        if (runDetails.selectedVisibleInputParamNames && runDetails.selectedVisibleInputParamNames.length > 0) {
+            runDetails.selectedVisibleInputParamNames.forEach(paramName => {
+                row[paramName] = item.inputData[paramName] !== undefined && item.inputData[paramName] !== null ? String(item.inputData[paramName]) : '';
+            });
+        }
+        
+        // Add all other input data keys used in prompt (original logic, but avoid duplication)
         sortedInputDataKeys.forEach(key => {
-          row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : '';
+          if (!runDetails.selectedVisibleInputParamNames || !runDetails.selectedVisibleInputParamNames.includes(key)){
+             row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : '';
+          }
         });
+
 
         if (Array.isArray(evalParamDetailsForLLM)) {
           evalParamDetailsForLLM.forEach(paramDetail => {
@@ -580,7 +593,7 @@ export default function RunDetailsPage() {
         if (Array.isArray(summarizationDefDetailsForLLM)) {
           summarizationDefDetailsForLLM.forEach(summDefDetail => {
             const output = item.judgeLlmOutput[summDefDetail.id];
-            row[`${String(summDefDetail.name)} - LLM Summary`] = output?.generatedSummary || (output?.error ? 'ERROR' : 'N/A');
+            row[`${String(summDefDetail.name)} - LLM Summary`] = output?.generatedSummary || (output?.error ? <span className="text-destructive">ERROR: {output.error}</span> : 'N/A');
             if (output?.error) row[`${String(summDefDetail.name)} - LLM Error`] = output.error;
           });
         }

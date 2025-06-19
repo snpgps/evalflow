@@ -67,6 +67,7 @@ interface EvalRun {
   selectedContextDocumentIds?: string[];
   selectedSummarizationDefIds?: string[]; 
   selectedSummarizationDefNames?: string[]; 
+  selectedVisibleInputParamNames?: string[];
 
 
   runOnNRows: number;
@@ -85,6 +86,7 @@ type NewEvalRunPayload = Omit<EvalRun, 'id' | 'createdAt' | 'updatedAt' | 'compl
   updatedAt: FieldValue;
   status: 'Pending';
   userId: string;
+  selectedVisibleInputParamNames?: string[];
 };
 
 const GEMINI_CONTEXT_CACHING_MODELS = ["gemini-1.5-pro-latest", "gemini-1.5-flash-latest"];
@@ -184,13 +186,13 @@ const fetchEvalRuns = async (userId: string | null): Promise<EvalRun[]> => {
 
 
 export default function EvalRunsPage() {
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null); // Variable name kept as currentUserId
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null); 
   const [isLoadingUserId, setIsLoadingUserId] = useState(true);
   const queryClient = useQueryClient();
   const router = useRouter();
 
   useEffect(() => {
-    const storedProjectId = localStorage.getItem('currentUserId'); // Key kept as currentUserId
+    const storedProjectId = localStorage.getItem('currentUserId'); 
     setCurrentUserId(storedProjectId || null);
     setIsLoadingUserId(false);
   }, []);
@@ -235,7 +237,7 @@ export default function EvalRunsPage() {
 
   const [isNewRunDialogOpen, setIsNewRunDialogOpen] = useState(false);
   const [newRunName, setNewRunName] = useState('');
-  const [newRunType, setNewRunType] = useState<'Product' | 'GroundTruth'>('Product'); // "Product" term
+  const [newRunType, setNewRunType] = useState<'Product' | 'GroundTruth'>('Product');
   const [selectedDatasetId, setSelectedDatasetId] = useState('');
   const [selectedDatasetVersionId, setSelectedDatasetVersionId] = useState('');
   const [selectedConnectorId, setSelectedConnectorId] = useState('');
@@ -246,6 +248,8 @@ export default function EvalRunsPage() {
   const [selectedSummarizationDefIds, setSelectedSummarizationDefIds] = useState<string[]>([]);
   const [runOnNRows, setRunOnNRows] = useState<number>(0); 
   const [newRunConcurrencyLimit, setNewRunConcurrencyLimit] = useState<number>(3);
+  const [selectedVisibleInputParamNamesForNewRun, setSelectedVisibleInputParamNamesForNewRun] = useState<string[]>([]);
+
 
   const [showContextDocSelector, setShowContextDocSelector] = useState(false);
 
@@ -385,6 +389,7 @@ export default function EvalRunsPage() {
       selectedSummarizationDefIds: selectedSummarizationDefIds, 
       selectedSummarizationDefNames: selSummarizationDefs.map(sd => sd.name), 
       selectedContextDocumentIds: showContextDocSelector ? selectedContextDocIds : [],
+      selectedVisibleInputParamNames: selectedVisibleInputParamNamesForNewRun,
       runOnNRows: Number(runOnNRows) || 0, concurrencyLimit: Number(newRunConcurrencyLimit) || 3,
     };
     addEvalRunMutation.mutate(newRunData);
@@ -393,7 +398,7 @@ export default function EvalRunsPage() {
   const resetNewRunForm = () => {
     setNewRunName(''); setNewRunType('Product'); setSelectedDatasetId(''); setSelectedDatasetVersionId(''); setSelectedConnectorId('');
     setSelectedPromptId(''); setSelectedPromptVersionId(''); setSelectedEvalParamIds([]); setSelectedContextDocIds([]);
-    setSelectedSummarizationDefIds([]);
+    setSelectedSummarizationDefIds([]); setSelectedVisibleInputParamNamesForNewRun([]);
     setRunOnNRows(0); setNewRunConcurrencyLimit(3); setShowContextDocSelector(false);
   };
 
@@ -443,6 +448,7 @@ export default function EvalRunsPage() {
     
     setSelectedEvalParamIds([...runToDuplicate.selectedEvalParamIds]);
     setSelectedSummarizationDefIds([...(runToDuplicate.selectedSummarizationDefIds || [])]);
+    setSelectedVisibleInputParamNamesForNewRun([...(runToDuplicate.selectedVisibleInputParamNames || [])]);
     setSelectedContextDocIds([...(runToDuplicate.selectedContextDocumentIds || [])]);
     setRunOnNRows(runToDuplicate.runOnNRows);
     setNewRunConcurrencyLimit(runToDuplicate.concurrencyLimit);
@@ -483,6 +489,10 @@ export default function EvalRunsPage() {
   const selectedDatasetForVersions = datasets?.find(d => d.id === selectedDatasetId);
   const selectedDatasetVersionForWarnings = selectedDatasetForVersions?.versions.find(v => v.id === selectedDatasetVersionId);
   const foundPromptTemplate = selectedPromptId ? promptTemplates?.find(p => p.id === selectedPromptId) : undefined;
+
+  const availableInputParamsForVisibilitySelection = selectedDatasetVersionForWarnings?.columnMapping
+    ? Object.keys(selectedDatasetVersionForWarnings.columnMapping)
+    : [];
 
 
   if (isLoadingUserId) return <div className="p-4 md:p-6"><Skeleton className="h-32 w-full"/></div>;
@@ -571,8 +581,36 @@ export default function EvalRunsPage() {
 
                           <TabsContent value="data_model" className="mt-0">
                             <div className="space-y-4">
-                              <div> <Label htmlFor="run-dataset">Dataset</Label> <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId('');}} required> <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger> <SelectContent>{datasets?.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent> </Select> </div>
-                              {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length > 0 && ( <div> <Label htmlFor="run-dataset-version">Dataset Version</Label> <Select value={selectedDatasetVersionId} onValueChange={setSelectedDatasetVersionId} required> <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger> <SelectContent>{selectedDatasetForVersions.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent> </Select> {selectedDatasetVersionForWarnings && (!selectedDatasetVersionForWarnings.columnMapping || Object.keys(selectedDatasetVersionForWarnings.columnMapping).length === 0) && ( <p className="text-xs text-destructive mt-1">Warning: No Input Parameters mapped.</p> )} {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings && !(selectedDatasetVersionForWarnings.groundTruthMapping && Object.keys(selectedDatasetVersionForWarnings.groundTruthMapping).length > 0) && selectedEvalParamIds.length > 0 && ( <p className="text-xs text-amber-600 mt-1">Warning: GT run with Eval Params, but no GT columns mapped.</p> )} </div> )}
+                              <div> <Label htmlFor="run-dataset">Dataset</Label> <Select value={selectedDatasetId} onValueChange={(value) => {setSelectedDatasetId(value); setSelectedDatasetVersionId(''); setSelectedVisibleInputParamNamesForNewRun([]);}} required> <SelectTrigger id="run-dataset"><SelectValue placeholder="Select dataset" /></SelectTrigger> <SelectContent>{datasets?.map(ds => <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>)}</SelectContent> </Select> </div>
+                              {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length > 0 && ( 
+                                <>
+                                  <div> <Label htmlFor="run-dataset-version">Dataset Version</Label> <Select value={selectedDatasetVersionId} onValueChange={(value) => {setSelectedDatasetVersionId(value); setSelectedVisibleInputParamNamesForNewRun([]);}} required> <SelectTrigger id="run-dataset-version"><SelectValue placeholder="Select version" /></SelectTrigger> <SelectContent>{selectedDatasetForVersions.versions.sort((a,b) => b.versionNumber - a.versionNumber).map(v => <SelectItem key={v.id} value={v.id}>v{v.versionNumber} - {v.fileName || 'Unnamed version'}</SelectItem>)}</SelectContent> </Select> {selectedDatasetVersionForWarnings && (!selectedDatasetVersionForWarnings.columnMapping || Object.keys(selectedDatasetVersionForWarnings.columnMapping).length === 0) && ( <p className="text-xs text-destructive mt-1">Warning: No Input Parameters mapped for this version.</p> )} {newRunType === 'GroundTruth' && selectedDatasetVersionForWarnings && !(selectedDatasetVersionForWarnings.groundTruthMapping && Object.keys(selectedDatasetVersionForWarnings.groundTruthMapping).length > 0) && selectedEvalParamIds.length > 0 && ( <p className="text-xs text-amber-600 mt-1">Warning: GT run with Eval Params, but no GT columns mapped for this version.</p> )} </div>
+                                  {selectedDatasetVersionId && availableInputParamsForVisibilitySelection.length > 0 && (
+                                    <div className="space-y-1 pt-2 border-t">
+                                      <Label>Visible Input Columns in Results (Optional)</Label>
+                                      <p className="text-xs text-muted-foreground">Select input parameters (from dataset mapping) to display as separate columns in the results table.</p>
+                                      <ScrollArea className="h-32 rounded-md border bg-muted/30 p-2">
+                                        <div className="space-y-2">
+                                          {availableInputParamsForVisibilitySelection.map(paramName => (
+                                            <div key={`vis-ip-${paramName}`} className="flex items-center space-x-2">
+                                              <Checkbox
+                                                id={`vis-ip-check-${paramName}`}
+                                                checked={selectedVisibleInputParamNamesForNewRun.includes(paramName)}
+                                                onCheckedChange={(checked) => {
+                                                  setSelectedVisibleInputParamNamesForNewRun(prev =>
+                                                    checked ? [...prev, paramName] : prev.filter(name => name !== paramName)
+                                                  );
+                                                }}
+                                              />
+                                              <Label htmlFor={`vis-ip-check-${paramName}`} className="font-normal">{paramName}</Label>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </ScrollArea>
+                                    </div>
+                                  )}
+                                </>
+                              )}
                               {selectedDatasetId && selectedDatasetForVersions && selectedDatasetForVersions.versions.length === 0 && ( <p className="text-xs text-muted-foreground mt-1">This dataset has no versions.</p> )}
                               <div><Label htmlFor="run-connector">Model Connector (Judge LLM)</Label> <Select value={selectedConnectorId} onValueChange={setSelectedConnectorId} required> <SelectTrigger id="run-connector"><SelectValue placeholder="Select model connector" /></SelectTrigger> <SelectContent>{modelConnectors?.map(mc => <SelectItem key={mc.id} value={mc.id}>{mc.name} ({mc.provider})</SelectItem>)}</SelectContent> </Select> </div>
                             </div>
@@ -723,3 +761,4 @@ export default function EvalRunsPage() {
     </div>
   );
 }
+
