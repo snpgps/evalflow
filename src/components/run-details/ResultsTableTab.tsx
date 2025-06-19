@@ -220,7 +220,7 @@ const OriginalResultsTableTab: FC<ResultsTableTabProps> = ({
                     <TableRow key={`result-${index}`}>
                       {runDetails.selectedVisibleInputParamNames && runDetails.selectedVisibleInputParamNames.length > 0 &&
                         runDetails.selectedVisibleInputParamNames.map(paramName => (
-                          <TableCell key={`vis-cell-${index}-${paramName}`} className="text-xs align-top max-w-[120px] sm:max-w-[150px] truncate" title={String(item.inputData[paramName])}>
+                          <TableCell key={`vis-cell-${index}-${paramName}`} className="text-xs align-top whitespace-pre-wrap" title={String(item.inputData[paramName])}>
                             {String(item.inputData[paramName] ?? 'N/A')}
                           </TableCell>
                         ))
@@ -257,5 +257,6 @@ const OriginalResultsTableTab: FC<ResultsTableTabProps> = ({
 };
 
 export const ResultsTableTab = React.memo(OriginalResultsTableTab);
+
 
 
