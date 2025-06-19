@@ -535,7 +535,7 @@ export default function ModelConnectorsPage() {
               <p className="text-sm">Click "Add New Connector" to get started.</p>
             </div>
           ) : (
-            <Table className="table-fixed">
+            <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-1/3 sm:w-1/4">Name</TableHead>
@@ -689,3 +689,6 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
+
+
+    
