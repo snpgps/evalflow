@@ -40,11 +40,9 @@ const VERTEX_AI_MODELS = [
   "gemini-2.0-flash",
   "gemini-1.5-pro-latest",
   "gemini-1.5-flash-latest",
-  "gemini-1.0-pro",
+  "gemini-pro", 
+  "gemini-pro-vision",
   "gemini-1.0-pro-001",
-  "gemini-1.0-pro-vision",
-  "text-bison",
-  "chat-bison",
 ];
 const OPENAI_MODELS = [
   "gpt-4o",
@@ -688,3 +686,4 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
+
