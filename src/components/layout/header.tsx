@@ -15,7 +15,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { LogOut, User, Settings, Sun, Moon, Building, ExternalLink, Edit2, Loader2 } from 'lucide-react';
+import { LogOut, User, Settings, Sun, Moon, Building, ExternalLink, Edit2, Loader2, PanelLeft } from 'lucide-react'; // Added PanelLeft just in case, though SidebarTrigger should provide it
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 import { auth, db } from '@/lib/firebase';
@@ -134,7 +134,7 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
   return (
     <>
       <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-4 md:px-6 shadow-sm">
-        {!isPublicPage && <SidebarTrigger className="md:hidden" />}
+        {!isPublicPage && <SidebarTrigger />} 
         <div className="flex-1">
           <h1 className="text-xl font-semibold font-headline">{pageTitle}</h1>
         </div>
@@ -170,12 +170,6 @@ export function Header({ authUid, selectedProjectId }: { authUid: string | null,
                       <span>Rename Current Project</span>
                     </DropdownMenuItem>
                   )}
-                  {/* Removed Settings DropdownMenuItem 
-                  <DropdownMenuItem onClick={() => router.push('/settings')}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    <span>Settings</span>
-                  </DropdownMenuItem>
-                  */}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut}>
                     <LogOut className="mr-2 h-4 w-4" />
