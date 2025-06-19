@@ -36,6 +36,8 @@ type ModelConnectorUpdatePayload = Partial<Omit<ModelConnector, 'id' | 'createdA
 const VERTEX_AI_MODELS = [
   "gemini-2.5-pro",
   "gemini-2.5-flash",
+  "gemini-2.0-pro",
+  "gemini-2.0-flash",
   "gemini-1.5-pro-latest",
   "gemini-1.5-flash-latest",
   "gemini-1.0-pro",
@@ -539,12 +541,7 @@ export default function ModelConnectorsPage() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-1/3 sm:w-1/4">Name</TableHead>
-                  <TableHead className="hidden sm:table-cell w-1/4">Provider</TableHead>
-                  <TableHead className="w-1/3 sm:w-1/4">Configuration</TableHead>
-                  <TableHead className="text-right w-[110px] sm:w-[130px]">Actions</TableHead>
-                </TableRow>
+                <TableRow><TableHead className="w-1/3 sm:w-1/4">Name</TableHead><TableHead className="hidden sm:table-cell w-1/4">Provider</TableHead><TableHead className="w-1/3 sm:w-1/4">Configuration</TableHead><TableHead className="text-right w-[110px] sm:w-[130px]">Actions</TableHead></TableRow>
               </TableHeader>
               <TableBody>
                 {connectors.map((conn) => {
