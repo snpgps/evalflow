@@ -531,8 +531,60 @@ export default function RunDetailsPage() {
           }
           const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [], summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [], parameterIdsRequiringRationale: parameterIdsRequiringRationale, modelName: runDetails.modelIdentifierForGenkit || undefined, modelConnectorProvider: runDetails.modelConnectorProvider, modelConnectorConfigString: runDetails.modelConnectorConfigString, };
           const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex }; if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
-          try { addLog(`Sending row ${overallRowIndex + 1} to Judge LLM (Provider: ${runDetails.modelConnectorProvider || 'Genkit Default'})...`); const judgeOutput = await judgeLlmEvaluation(genkitInput); addLog(`Row ${overallRowIndex + 1} responded.`); itemResultShell.judgeLlmOutput = judgeOutput;
-          } catch(flowError: any) { addLog(`Error in Judge LLM flow for row ${overallRowIndex + 1}: ${flowError.message}`, "error"); const errorOutputForAllParams: Record<string, { chosenLabel?: string | null; generatedSummary?: string | null; error?: string }> = {}; runDetails.selectedEvalParamIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: flowError.message || 'Unknown LLM error.' }; }); runDetails.selectedSummarizationDefIds?.forEach(paramId => { errorOutputForAllParams[paramId] = { generatedSummary: 'ERROR: LLM processing error.', error: flowError.message || 'Unknown LLM error.' }; }); itemResultShell.judgeLlmOutput = errorOutputForAllParams; }
+          
+          try {
+            addLog(`Sending row ${overallRowIndex + 1} to Judge LLM (Provider: ${runDetails.modelConnectorProvider || 'Genkit Default'})...`);
+            let judgeOutput = await judgeLlmEvaluation(genkitInput);
+
+            const initialAttemptFailed = Object.values(judgeOutput).some(
+                (output: any) => output?.error || 
+                                 (output?.chosenLabel && typeof output.chosenLabel === 'string' && output.chosenLabel.startsWith('ERROR_')) ||
+                                 (output?.generatedSummary && typeof output.generatedSummary === 'string' && output.generatedSummary.startsWith('ERROR:'))
+            );
+
+            if (initialAttemptFailed) {
+                addLog(`Initial attempt for row ${overallRowIndex + 1} failed. Retrying once...`);
+                try {
+                    judgeOutput = await judgeLlmEvaluation(genkitInput); // Retry
+                    
+                    const retryAttemptFailed = Object.values(judgeOutput).some(
+                        (output: any) => output?.error ||
+                                         (output?.chosenLabel && typeof output.chosenLabel === 'string' && output.chosenLabel.startsWith('ERROR_')) ||
+                                         (output?.generatedSummary && typeof output.generatedSummary === 'string' && output.generatedSummary.startsWith('ERROR:'))
+                    );
+
+                    if (retryAttemptFailed) {
+                        addLog(`Retry for row ${overallRowIndex + 1} also failed. Storing error result.`, "error");
+                    } else {
+                        addLog(`Row ${overallRowIndex + 1} retry successful.`);
+                    }
+                } catch (retryFlowError: any) {
+                    addLog(`Exception during retry for row ${overallRowIndex + 1}: ${retryFlowError.message}`, "error");
+                    const errorOutputForAllParamsRetry: Record<string, { chosenLabel?: string | null; generatedSummary?: string | null; error?: string }> = {};
+                    (runDetails.selectedEvalParamIds || []).forEach(paramId => {
+                        errorOutputForAllParamsRetry[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: `Retry flow exception: ${retryFlowError.message || 'Unknown LLM error.'}` };
+                    });
+                    (runDetails.selectedSummarizationDefIds || []).forEach(paramId => {
+                        errorOutputForAllParamsRetry[paramId] = { generatedSummary: 'ERROR: LLM processing exception after retry.', error: `Retry flow exception: ${retryFlowError.message || 'Unknown LLM error.'}` };
+                    });
+                    judgeOutput = errorOutputForAllParamsRetry;
+                }
+            } else {
+                addLog(`Row ${overallRowIndex + 1} responded successfully on first attempt.`);
+            }
+            itemResultShell.judgeLlmOutput = judgeOutput;
+
+          } catch(flowError: any) { // Catch unhandled exceptions from the first call
+            addLog(`Unhandled exception in Judge LLM flow for row ${overallRowIndex + 1} (initial attempt): ${flowError.message}`, "error");
+            const errorOutputForAllParamsInitial: Record<string, { chosenLabel?: string | null; generatedSummary?: string | null; error?: string }> = {};
+            (runDetails.selectedEvalParamIds || []).forEach(paramId => {
+                errorOutputForAllParamsInitial[paramId] = { chosenLabel: 'ERROR_PROCESSING_ROW', error: `Initial flow exception: ${flowError.message || 'Unknown LLM error.'}` };
+            });
+            (runDetails.selectedSummarizationDefIds || []).forEach(paramId => {
+                errorOutputForAllParamsInitial[paramId] = { generatedSummary: 'ERROR: LLM processing exception.', error: `Initial flow exception: ${flowError.message || 'Unknown LLM error.'}` };
+            });
+            itemResultShell.judgeLlmOutput = errorOutputForAllParamsInitial;
+          }
           return itemResultShell;
         });
         const settledBatchResults = await Promise.all(batchPromises); settledBatchResults.forEach(itemWithIndex => { const { originalIndex, ...resultItem } = itemWithIndex; collectedResults.push(resultItem as EvalRunResultItem); });
