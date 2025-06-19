@@ -32,8 +32,7 @@ import { RunConfigTab } from '@/components/run-details/RunConfigTab';
 import { ResultsTableTab } from '@/components/run-details/ResultsTableTab';
 import { ImprovementSuggestionDialog } from '@/components/run-details/ImprovementSuggestionDialog';
 import { QuestionJudgmentDialog } from '@/components/run-details/QuestionJudgmentDialog';
-import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab'; // Added this import
-// ... (rest of the interfaces and functions from the original file)
+import { MetricsBreakdownTab } from '@/components/run-details/MetricsBreakdownTab'; 
 
 // Constants for prompt construction, mirroring those in prompts/page.tsx
 const FIXED_CRITERIA_HEADER = "--- DETAILED INSTRUCTIONS & CRITERIA ---";
@@ -546,13 +545,64 @@ export default function RunDetailsPage() {
   }, [currentUserId, runId, runDetails, updateRunMutation, evalParamDetailsForLLM, summarizationDefDetailsForLLM, addLog]);
 
   const handleDownloadResults = useCallback((): void => {
-    if (!runDetails || !runDetails.results || runDetails.results.length === 0 ) { toast({ title: "No Results", description: "No results to download.", variant: "destructive" }); return; }
-    const dataForExcel: any[] = []; const inputDataKeys = new Set<string>(); runDetails.results.forEach(item => { Object.keys(item.inputData).forEach(key => inputDataKeys.add(key)); }); const sortedInputDataKeys = Array.from(inputDataKeys).sort();
-    runDetails.results.forEach(item => { const row: Record<string, any> = {}; sortedInputDataKeys.forEach(key => { row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : ''; });
-      evalParamDetailsForLLM?.forEach(paramDetail => { const output = item.judgeLlmOutput[paramDetail.id]; row[`${paramDetail.name} - LLM Label`] = output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A'); if (runDetails.runType === 'GroundTruth') { const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A'; row[`${paramDetail.name} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A'; const llmLabel = output?.chosenLabel; row[`${paramDetail.name} - Match`] = (llmLabel && gtValue !== 'N/A' && !output?.error && String(llmLabel).trim().toLowerCase() === String(gtValue).trim().toLowerCase()) ? 'Yes' : 'No'; } row[`${paramDetail.name} - LLM Rationale`] = output?.rationale || ''; if(output?.error) row[`${paramDetail.name} - LLM Error`] = output.error; });
-      summarizationDefDetailsForLLM?.forEach(summDefDetail => { const output = item.judgeLlmOutput[summDefDetail.id]; row[`${summDefDetail.name} - LLM Summary`] = output?.generatedSummary || (output?.error ? 'ERROR' : 'N/A'); if(output?.error) row[`${summDefDetail.name} - LLM Error`] = output.error; });
-      dataForExcel.push(row); });
-    const worksheet = XLSX.utils.json_to_sheet(dataForExcel); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results"); const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0,8)}.xlsx`; XLSX.writeFile(workbook, fileName); toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
+    if (!runDetails || !runDetails.results || runDetails.results.length === 0) {
+      toast({ title: "No Results", description: "No results to download.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const dataForExcel: any[] = [];
+      const inputDataKeys = new Set<string>();
+      runDetails.results.forEach(item => { Object.keys(item.inputData).forEach(key => inputDataKeys.add(key)); });
+      const sortedInputDataKeys = Array.from(inputDataKeys).sort();
+
+      runDetails.results.forEach(item => {
+        const row: Record<string, any> = {};
+        sortedInputDataKeys.forEach(key => {
+          row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : '';
+        });
+
+        if (Array.isArray(evalParamDetailsForLLM)) {
+          evalParamDetailsForLLM.forEach(paramDetail => {
+            const output = item.judgeLlmOutput[paramDetail.id];
+            row[`${String(paramDetail.name)} - LLM Label`] = output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A');
+            if (runDetails.runType === 'GroundTruth') {
+              const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A';
+              row[`${String(paramDetail.name)} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A';
+              const llmLabel = output?.chosenLabel;
+              row[`${String(paramDetail.name)} - Match`] = (llmLabel && gtValue !== 'N/A' && !output?.error && String(llmLabel).trim().toLowerCase() === String(gtValue).trim().toLowerCase()) ? 'Yes' : 'No';
+            }
+            row[`${String(paramDetail.name)} - LLM Rationale`] = output?.rationale || '';
+            if (output?.error) row[`${String(paramDetail.name)} - LLM Error`] = output.error;
+          });
+        }
+
+        if (Array.isArray(summarizationDefDetailsForLLM)) {
+          summarizationDefDetailsForLLM.forEach(summDefDetail => {
+            const output = item.judgeLlmOutput[summDefDetail.id];
+            row[`${String(summDefDetail.name)} - LLM Summary`] = output?.generatedSummary || (output?.error ? 'ERROR' : 'N/A');
+            if (output?.error) row[`${String(summDefDetail.name)} - LLM Error`] = output.error;
+          });
+        }
+        dataForExcel.push(row);
+      });
+      
+      if (dataForExcel.length === 0) {
+        toast({ title: "No Data to Export", description: "After processing, no data was available for export.", variant: "default" });
+        return;
+      }
+
+      const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results");
+      const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0, 8)}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
+
+    } catch (error: any) {
+      console.error("Error generating Excel file:", error);
+      toast({ title: "Download Error", description: `Failed to generate Excel file: ${error.message || 'Unknown error'}`, variant: "destructive" });
+    }
   }, [runDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
 
   const { data: inputParametersForSchema = [] } = useQuery<InputParameterForSchema[], Error>({ queryKey: ['inputParametersForSchema', currentUserId], queryFn: () => fetchInputParametersForSchema(currentUserId), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
@@ -801,3 +851,5 @@ export default function RunDetailsPage() {
   return pageJSX;
 }
 
+
+    
