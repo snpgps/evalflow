@@ -34,6 +34,8 @@ type ModelConnectorCreationPayload = Omit<ModelConnector, 'id' | 'createdAt'> & 
 type ModelConnectorUpdatePayload = Partial<Omit<ModelConnector, 'id' | 'createdAt'>> & { id: string };
 
 const VERTEX_AI_MODELS = [
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
   "gemini-1.5-pro-latest",
   "gemini-1.5-flash-latest",
   "gemini-1.0-pro",
@@ -689,6 +691,3 @@ export default function ModelConnectorsPage() {
     </div>
   );
 }
-
-
-    
