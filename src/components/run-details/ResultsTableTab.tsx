@@ -15,6 +15,10 @@ import type { EvalRun, EvalRunResultItem, EvalParamDetailForPrompt, Summarizatio
 // Helper component for formatted input data display (from previous step)
 const FormattedInputDataDisplay: FC<{ data: Record<string, any> }> = ({ data }) => {
   const dataKeys = Object.keys(data);
+  if (dataKeys.length === 0) {
+    return <pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm text-[10px]">{"{/* No relevant input data for prompt */}"}</pre>;
+  }
+
   let isLikelyConversational = false;
   const conversationalPairs = [
     ['user', 'bot'], ['User', 'Bot'],
@@ -72,6 +76,36 @@ const FormattedInputDataDisplay: FC<{ data: Record<string, any> }> = ({ data }) 
   return <pre className="whitespace-pre-wrap bg-muted/30 p-1 rounded-sm text-[10px]">{JSON.stringify(data, null, 2)}</pre>;
 };
 
+const getFilteredInputDataForDisplay = (
+  inputData: Record<string, any>,
+  templateText: string | null | undefined
+): Record<string, any> => {
+  if (!templateText) {
+    return inputData; // Fallback: show all input data if template is not available
+  }
+  const filteredData: Record<string, any> = {};
+  const placeholderRegex = /{{(.*?)}}/g;
+  let match;
+  const placeholdersInTemplate = new Set<string>();
+
+  while ((match = placeholderRegex.exec(templateText)) !== null) {
+    placeholdersInTemplate.add(match[1].trim());
+  }
+
+  if (placeholdersInTemplate.size === 0) {
+    // If template has no placeholders, it might be a general prompt.
+    // Show all inputData as it might all be relevant context.
+    return inputData;
+  }
+
+  for (const key in inputData) {
+    if (placeholdersInTemplate.has(key)) {
+      filteredData[key] = inputData[key];
+    }
+  }
+  return filteredData;
+};
+
 
 export interface ResultsTableTabProps {
   runDetails: EvalRun;
@@ -91,19 +125,19 @@ interface TableColumn {
   id: string;
   header: string;
   type: 'visibleInput' | 'fullInput' | 'evalParam' | 'summaryDef';
-  paramId?: string; // For evalParam and summaryDef, this is the ID of the parameter/definition
+  paramId?: string; 
 }
 
 const OriginalResultsTableTab: FC<ResultsTableTabProps> = ({
   runDetails, filteredResultsToDisplay, evalParamDetailsForLLM, summarizationDefDetailsForLLM,
   filterStates, onFilterChange, onOpenQuestionDialog, onDownloadResults, canDownloadResults,
-  promptTemplateText, selectedVisibleInputParamNames
+  promptTemplateText, 
 }) => {
 
   const allTableColumns = useMemo((): TableColumn[] => {
     const columns: TableColumn[] = [];
-    if (selectedVisibleInputParamNames && selectedVisibleInputParamNames.length > 0) {
-      selectedVisibleInputParamNames.forEach(paramName => {
+    if (runDetails.selectedVisibleInputParamNames && runDetails.selectedVisibleInputParamNames.length > 0) {
+      runDetails.selectedVisibleInputParamNames.forEach(paramName => {
         columns.push({ id: `vis_input_${paramName}`, header: paramName, type: 'visibleInput' });
       });
     }
@@ -116,14 +150,14 @@ const OriginalResultsTableTab: FC<ResultsTableTabProps> = ({
       columns.push({ id: `summ_${summDef.id}`, header: `${summDef.name} (Summary)`, type: 'summaryDef', paramId: summDef.id });
     });
     return columns;
-  }, [selectedVisibleInputParamNames, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
+  }, [runDetails.selectedVisibleInputParamNames, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
 
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const initialVisibility: Record<string, boolean> = {};
     allTableColumns.forEach(col => {
-      initialVisibility[col.id] = true; // All columns visible by default
+      initialVisibility[col.id] = true; 
     });
     setColumnVisibility(initialVisibility);
   }, [allTableColumns]);
@@ -138,23 +172,6 @@ const OriginalResultsTableTab: FC<ResultsTableTabProps> = ({
         }
     });
     return Array.from(labels).sort();
-  };
-
-  const getFilteredInputDataForCell = (inputData: Record<string, any>, templateText: string | null | undefined): Record<string, any> => {
-    if (!templateText) return inputData;
-    const filteredData: Record<string, any> = {};
-    const placeholderRegex = /{{(.*?)}}/g;
-    let match;
-    const placeholdersInTemplate = new Set<string>();
-    while ((match = placeholderRegex.exec(templateText)) !== null) {
-        placeholdersInTemplate.add(match[1].trim());
-    }
-    for (const key in inputData) {
-        if (placeholdersInTemplate.has(key)) {
-            filteredData[key] = inputData[key];
-        }
-    }
-    return Object.keys(filteredData).length > 0 ? filteredData : inputData;
   };
 
   const visibleColumns = useMemo(() => {
@@ -330,3 +347,4 @@ const OriginalResultsTableTab: FC<ResultsTableTabProps> = ({
 };
 
 export const ResultsTableTab = React.memo(OriginalResultsTableTab);
+
