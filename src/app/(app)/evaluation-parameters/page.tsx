@@ -348,10 +348,17 @@ export default function EvaluationParametersPage() {
     addContextDocMutation.mutate({ payload, file: contextDocFile });
   };
 
+  const handleDeleteContextDoc = (docToDelete: ContextDocument) => {
+    if (!currentUserId) return;
+    if (confirm('Are you sure you want to delete this context document and its associated file? This action cannot be undone.')) {
+      deleteContextDocMutation.mutate(docToDelete);
+    }
+  };
+
   const handleSubmitSummarizationDefForm = (e: FormEvent) => {
     e.preventDefault();
     if (!currentUserId || !summarizationDefName.trim() || !summarizationDefDefinition.trim()) { toast({title: "Validation Error", description: "Name and Definition are required.", variant: "destructive"}); return; }
-    const defData = { name: summarizationDefName.trim(), definition: summarizationDefDefinition.trim(), example: summarizationDefExample.trim() };
+    const defData = { name: summarizationDefName.trim(), definition: summarizationDefDefinition.trim(), example: summarizationDefExample.trim() || '' };
     if (editingSummarizationDef) {
       updateSummarizationDefMutation.mutate({ id: editingSummarizationDef.id, ...defData });
     } else {
