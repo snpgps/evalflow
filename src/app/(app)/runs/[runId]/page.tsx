@@ -379,7 +379,6 @@ export default function RunDetailsPage() {
       return fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
     },
     enabled: !!currentUserId && !!runDetails?.promptId && !!runDetails?.promptVersionId,
-    staleTime: Infinity,
   });
 
 
@@ -393,7 +392,6 @@ export default function RunDetailsPage() {
       return details;
     },
     enabled: !!currentUserId && !!runDetails?.selectedEvalParamIds && runDetails.selectedEvalParamIds.length > 0,
-    staleTime: Infinity,
   });
 
   const { data: summarizationDefDetailsForLLM = [], isLoading: isLoadingSummarizationDefsForLLMHook } = useQuery<SummarizationDefDetailForPrompt[], Error>({
@@ -406,7 +404,6 @@ export default function RunDetailsPage() {
         return details;
     },
     enabled: !!currentUserId && !!runDetails?.selectedSummarizationDefIds && runDetails.selectedSummarizationDefIds.length > 0,
-    staleTime: Infinity,
   });
 
  useEffect(() => {
@@ -426,7 +423,6 @@ export default function RunDetailsPage() {
     queryKey: ['selectedContextDocDetails', currentUserId, runDetails?.selectedContextDocumentIds?.join(',')],
     queryFn: () => { if (!currentUserId || !runDetails?.selectedContextDocumentIds || !runDetails.selectedContextDocumentIds || runDetails.selectedContextDocumentIds.length === 0) return []; return fetchContextDocumentDetailsForRun(currentUserId, runDetails.selectedContextDocumentIds); },
     enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
-    staleTime: Infinity,
   });
 
   const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; } >({
@@ -918,3 +914,4 @@ export default function RunDetailsPage() {
 
 
     
+
