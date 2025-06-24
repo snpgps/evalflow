@@ -14,6 +14,7 @@ export interface MetricsBreakdownTabProps {
 }
 
 const CustomizedLabel: FC<any> = ({ x, y, width, payload }) => {
+  if (!payload) return null; // Defensive check to prevent crash if payload is undefined
   const { percentage } = payload;
   if (percentage === undefined || width < 25) { // Hide label if bar is too small
     return null;
