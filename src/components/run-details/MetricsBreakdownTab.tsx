@@ -13,18 +13,20 @@ export interface MetricsBreakdownTabProps {
   metricsBreakdownData: ParameterChartData[];
 }
 
-const CustomizedLabel: FC<any> = ({ x, y, width, payload }) => {
-  if (!payload) return null; // Defensive check to prevent crash if payload is undefined
-  const { percentage } = payload;
+const CustomizedLabel: FC<any> = (props) => {
+  const { x, y, width, height, percentage } = props;
+
   if (percentage === undefined || width < 25) { // Hide label if bar is too small
     return null;
   }
+  
   return (
-    <text x={x + width - 5} y={y + 10} fill="hsl(var(--card-foreground))" textAnchor="end" dominantBaseline="middle" fontSize={10} fontWeight="500">
+    <text x={x + width - 5} y={y + height / 2} fill="hsl(var(--card-foreground))" textAnchor="end" dominantBaseline="middle" fontSize={10} fontWeight="500">
       {percentage.toFixed(1)}%
     </text>
   );
 };
+
 
 const OriginalMetricsBreakdownTab: FC<MetricsBreakdownTabProps> = ({ runDetails, metricsBreakdownData }) => {
   return (
