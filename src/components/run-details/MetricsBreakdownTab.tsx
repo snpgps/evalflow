@@ -14,11 +14,14 @@ export interface MetricsBreakdownTabProps {
 }
 
 const CustomizedLabel: FC<any> = (props) => {
-  const { x, y, width, height, percentage } = props;
+  const { x, y, width, height, payload } = props;
 
-  if (percentage === undefined || width < 25) { // Hide label if bar is too small
+  // Defensive check: ensure payload and percentage exist and bar is wide enough
+  if (!payload || typeof payload.percentage !== 'number' || width < 25) {
     return null;
   }
+
+  const percentage = payload.percentage as number;
   
   return (
     <text x={x + width - 5} y={y + height / 2} fill="hsl(var(--card-foreground))" textAnchor="end" dominantBaseline="middle" fontSize={10} fontWeight="500">
