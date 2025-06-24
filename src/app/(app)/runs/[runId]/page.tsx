@@ -127,7 +127,7 @@ export interface QuestioningItemContext {
 export interface ParameterChartData {
   parameterId: string;
   parameterName: string;
-  data: Array<{ labelName: string; count: number }>;
+  data: Array<{ labelName: string; count: number; percentage?: number }>;
   accuracy?: number;
   totalCompared?: number;
 }
@@ -441,15 +441,63 @@ export default function RunDetailsPage() {
   useEffect(() => {
     if (runDetails?.results && runDetails.results.length > 0 && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) {
       const newComputedMetrics: ParameterChartData[] = evalParamDetailsForLLM.map(paramDetail => {
-        const labelCounts: Record<string, number> = {}; if (paramDetail.labels && Array.isArray(paramDetail.labels)) { paramDetail.labels.forEach(label => { if (label && typeof label.name === 'string') labelCounts[label.name] = 0; }); }
-        labelCounts['ERROR_PROCESSING_ROW'] = 0; let correctCountForParam = 0; let totalComparedForParam = 0;
-        runDetails.results!.forEach(resultItem => { if (resultItem.judgeLlmOutput && typeof resultItem.judgeLlmOutput === 'object') { const llmOutputForParam = resultItem.judgeLlmOutput[paramDetail.id]; if (llmOutputForParam?.chosenLabel && typeof llmOutputForParam.chosenLabel === 'string') { const chosenLabel = llmOutputForParam.chosenLabel; labelCounts[chosenLabel] = (labelCounts[chosenLabel] || 0) + 1; if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth && !llmOutputForParam.error) { const gtLabel = resultItem.groundTruth[paramDetail.id]; if (gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '') { totalComparedForParam++; if (String(chosenLabel).trim().toLowerCase() === String(gtLabel).trim().toLowerCase()) { correctCountForParam++; } } } } else if (llmOutputForParam?.error) { labelCounts['ERROR_PROCESSING_ROW'] = (labelCounts['ERROR_PROCESSING_ROW'] || 0) + 1; } } });
-        const chartDataEntries = Object.entries(labelCounts).map(([labelName, count]) => ({ labelName, count })).filter(item => item.count > 0 || (paramDetail.labels && paramDetail.labels.some(l => l.name === item.labelName)) || item.labelName === 'ERROR_PROCESSING_ROW');
+        const labelCounts: Record<string, number> = {};
+        if (paramDetail.labels && Array.isArray(paramDetail.labels)) {
+          paramDetail.labels.forEach(label => { if (label && typeof label.name === 'string') labelCounts[label.name] = 0; });
+        }
+        labelCounts['ERROR_PROCESSING_ROW'] = 0;
+        let correctCountForParam = 0;
+        let totalComparedForParam = 0;
+        let totalLabelsForParam = 0;
+
+        runDetails.results!.forEach(resultItem => {
+          if (resultItem.judgeLlmOutput && typeof resultItem.judgeLlmOutput === 'object') {
+            const llmOutputForParam = resultItem.judgeLlmOutput[paramDetail.id];
+            if (llmOutputForParam?.chosenLabel && typeof llmOutputForParam.chosenLabel === 'string') {
+              const chosenLabel = llmOutputForParam.chosenLabel;
+              labelCounts[chosenLabel] = (labelCounts[chosenLabel] || 0) + 1;
+              if (!llmOutputForParam.error) {
+                totalLabelsForParam++;
+              }
+              if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth && !llmOutputForParam.error) {
+                const gtLabel = resultItem.groundTruth[paramDetail.id];
+                if (gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '') {
+                  totalComparedForParam++;
+                  if (String(chosenLabel).trim().toLowerCase() === String(gtLabel).trim().toLowerCase()) {
+                    correctCountForParam++;
+                  }
+                }
+              }
+            } else if (llmOutputForParam?.error) {
+              labelCounts['ERROR_PROCESSING_ROW'] = (labelCounts['ERROR_PROCESSING_ROW'] || 0) + 1;
+            }
+          }
+        });
+
+        const chartDataEntries = Object.entries(labelCounts).map(([labelName, count]) => {
+          const percentage = totalLabelsForParam > 0 && labelName !== 'ERROR_PROCESSING_ROW'
+            ? (count / totalLabelsForParam) * 100
+            : undefined;
+          return { labelName, count, percentage };
+        }).filter(item => item.count > 0 || (paramDetail.labels && paramDetail.labels.some(l => l.name === item.labelName)) || item.labelName === 'ERROR_PROCESSING_ROW');
+
         const paramAccuracy = runDetails.runType === 'GroundTruth' && totalComparedForParam > 0 ? (correctCountForParam / totalComparedForParam) * 100 : undefined;
-        return { parameterId: paramDetail.id, parameterName: paramDetail.name, data: chartDataEntries.sort((a, b) => b.count - a.count), accuracy: paramAccuracy, totalCompared: runDetails.runType === 'GroundTruth' ? totalComparedForParam : undefined, };
+        return {
+          parameterId: paramDetail.id,
+          parameterName: paramDetail.name,
+          data: chartDataEntries.sort((a, b) => b.count - a.count),
+          accuracy: paramAccuracy,
+          totalCompared: runDetails.runType === 'GroundTruth' ? totalComparedForParam : undefined,
+        };
       });
-      if (JSON.stringify(newComputedMetrics) !== JSON.stringify(metricsBreakdownData)) { setMetricsBreakdownData(newComputedMetrics); }
-    } else { if (metricsBreakdownData.length > 0) { setMetricsBreakdownData([]); } }
+      if (JSON.stringify(newComputedMetrics) !== JSON.stringify(metricsBreakdownData)) {
+        setMetricsBreakdownData(newComputedMetrics);
+      }
+    } else {
+      if (metricsBreakdownData.length > 0) {
+        setMetricsBreakdownData([]);
+      }
+    }
   }, [runDetails, evalParamDetailsForLLM, metricsBreakdownData]);
 
   const handleFetchAndPreviewData = useCallback(async (): Promise<void> => {
@@ -911,7 +959,3 @@ export default function RunDetailsPage() {
   );
   return pageJSX;
 }
-
-
-    
-

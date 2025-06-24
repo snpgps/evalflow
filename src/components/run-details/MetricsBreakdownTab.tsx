@@ -3,7 +3,7 @@
 
 import React, { type FC } from 'react'; // Imported React
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip as RechartsTooltip, Bar as RechartsBar } from 'recharts';
+import { BarChart as RechartsBarChartElement, CartesianGrid, XAxis, YAxis, Tooltip as RechartsTooltip, Bar as RechartsBar, LabelList } from 'recharts';
 import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { BarChartHorizontalBig, CheckCheck, Info } from "lucide-react";
 import type { EvalRun, ParameterChartData } from '@/app/(app)/runs/[runId]/page';
@@ -12,6 +12,18 @@ export interface MetricsBreakdownTabProps {
   runDetails: EvalRun;
   metricsBreakdownData: ParameterChartData[];
 }
+
+const CustomizedLabel: FC<any> = ({ x, y, width, payload }) => {
+  const { percentage } = payload;
+  if (percentage === undefined || width < 25) { // Hide label if bar is too small
+    return null;
+  }
+  return (
+    <text x={x + width - 5} y={y + 10} fill="hsl(var(--card-foreground))" textAnchor="end" dominantBaseline="middle" fontSize={10} fontWeight="500">
+      {percentage.toFixed(1)}%
+    </text>
+  );
+};
 
 const OriginalMetricsBreakdownTab: FC<MetricsBreakdownTabProps> = ({ runDetails, metricsBreakdownData }) => {
   return (
@@ -29,7 +41,15 @@ const OriginalMetricsBreakdownTab: FC<MetricsBreakdownTabProps> = ({ runDetails,
           <CardContent>
             {paramChart.data.length === 0 ? ( <p className="text-muted-foreground">No data recorded for this parameter.</p> ) : (
               <ChartContainer config={{ count: { label: "Count" } }} className="w-full" style={{ height: `${Math.max(150, paramChart.data.length * 40 + 60)}px` }}>
-                <RechartsBarChartElement data={paramChart.data} layout="vertical" margin={{ right: 30, left: 70, top: 5, bottom: 20 }}> <CartesianGrid strokeDasharray="3 3" /> <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} /> <YAxis dataKey="labelName" type="category" width={120} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={0} /> <RechartsTooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} /> <RechartsBar dataKey="count" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} barSize={20} /> </RechartsBarChartElement>
+                <RechartsBarChartElement data={paramChart.data} layout="vertical" margin={{ right: 30, left: 70, top: 5, bottom: 20 }}> 
+                    <CartesianGrid strokeDasharray="3 3" /> 
+                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} /> 
+                    <YAxis dataKey="labelName" type="category" width={120} tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} interval={0} /> 
+                    <RechartsTooltip content={<ChartTooltipContent />} cursor={{ fill: 'hsl(var(--muted))' }} /> 
+                    <RechartsBar dataKey="count" fill="hsl(var(--chart-1))" radius={[0, 4, 4, 0]} barSize={20}>
+                        <LabelList content={<CustomizedLabel />} />
+                    </RechartsBar> 
+                </RechartsBarChartElement>
               </ChartContainer>
             )}
           </CardContent>
