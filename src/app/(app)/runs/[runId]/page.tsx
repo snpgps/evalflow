@@ -959,7 +959,7 @@ export default function RunDetailsPage() {
             summarizationDefDetailsForLLM={summarizationDefDetailsForLLM}
             filterStates={filterStates}
             onFilterChange={handleFilterChange}
-            onOpenQuestionDialog={onOpenQuestionDialog}
+            onOpenQuestionDialog={handleOpenQuestionDialog}
             onDownloadResults={handleDownloadResults}
             canDownloadResults={canDownloadResults}
             promptTemplateText={promptTemplateTextForRun}
