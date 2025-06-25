@@ -475,7 +475,7 @@ export default function RunDetailsPage() {
     enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
   });
 
-  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt' | 'results' | 'errorMessage' | 'previewedDatasetSample' | 'totalRowsInDataset'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; previewedDatasetSample?: FieldValue | any[]; totalRowsInDataset?: number | FieldValue; errorMessage?: string | FieldValue;} >({
+  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt' | 'results' | 'previewedDatasetSample' | 'totalRowsInDataset' | 'errorMessage'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; previewedDatasetSample?: FieldValue | any[]; totalRowsInDataset?: number | FieldValue; errorMessage?: string | FieldValue;} >({
     mutationFn: async (updatePayload) => {
       if (!currentUserId) throw new Error("Project not selected.");
       const { id, ...dataFromPayload } = updatePayload; const updateForFirestore: Record<string, any> = {};
