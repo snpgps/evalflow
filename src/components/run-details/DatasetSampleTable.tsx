@@ -18,14 +18,15 @@ const OriginalDatasetSampleTable: FC<DatasetSampleTableProps> = ({ displayedPrev
   if (displayedPreviewData.length === 0) return null;
 
   const rowsForUITable = displayedPreviewData.slice(0, MAX_ROWS_FOR_UI_PREVIEW);
+  const totalRowsAvailableForRun = runDetails.totalRowsInDataset ?? displayedPreviewData.length;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Dataset Sample Preview (Input Data Only)</CardTitle>
         <CardDescription>
-          Showing {rowsForUITable.length === displayedPreviewData.length ? displayedPreviewData.length : `top ${rowsForUITable.length} of ${displayedPreviewData.length}`} rows for preview.
-          The run is configured to process {runDetails.runOnNRows === 0 ? `all ${displayedPreviewData.length}` : `${Math.min(runDetails.runOnNRows, displayedPreviewData.length)}`} rows from the dataset.
+          Showing {rowsForUITable.length} of {totalRowsAvailableForRun} rows for preview.
+          The run is configured to process {runDetails.runOnNRows === 0 ? `all ${totalRowsAvailableForRun}` : `${Math.min(runDetails.runOnNRows, totalRowsAvailableForRun)}`} rows from the dataset.
           Ground truth data (if any) is used internally.
         </CardDescription>
       </CardHeader>

@@ -82,6 +82,7 @@ export interface EvalRun {
   progress?: number;
   results?: EvalRunResultItem[]; // Kept for backward compatibility with old runs
   previewedDatasetSample?: Array<Record<string, any>>;
+  totalRowsInDataset?: number;
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
   userId?: string;
@@ -473,7 +474,7 @@ export default function RunDetailsPage() {
     enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
   });
 
-  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; previewedDatasetSample?: FieldValue | any[]; } >({
+  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; previewedDatasetSample?: FieldValue | any[]; totalRowsInDataset?: number | FieldValue;} >({
     mutationFn: async (updatePayload) => {
       if (!currentUserId) throw new Error("Project not selected.");
       const { id, ...dataFromPayload } = updatePayload; const updateForFirestore: Record<string, any> = {};
@@ -548,56 +549,154 @@ export default function RunDetailsPage() {
     }
   }, [effectiveRunDetails, evalParamDetailsForLLM, metricsBreakdownData]);
 
+  const fetchAndParseFullDataset = useCallback(async (
+    userId: string, 
+    run: EvalRun
+  ): Promise<Array<Record<string, any>>> => {
+      if (!run || !userId || !run.datasetId || !run.datasetVersionId) {
+          throw new Error("Dataset configuration is missing in run details.");
+      }
+      
+      addLog("Data Processing: Fetching dataset version config...");
+      const versionConfig = await fetchDatasetVersionConfig(userId, run.datasetId, run.datasetVersionId);
+      if (!versionConfig || !versionConfig.storagePath || !versionConfig.columnMapping) {
+          throw new Error("Dataset version config (storage path or mapping) is incomplete.");
+      }
+
+      addLog(`Data Processing: Downloading file from ${versionConfig.storagePath}...`);
+      const fileRef = storageRef(storage, versionConfig.storagePath);
+      const blob = await getBlob(fileRef);
+
+      let parsedRows: Array<Record<string, any>> = [];
+      const fileName = versionConfig.storagePath.split('/').pop()?.toLowerCase() || '';
+      if (fileName.endsWith('.xlsx')) {
+          const arrayBuffer = await blob.arrayBuffer();
+          const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+          const sheetName = versionConfig.selectedSheetName || workbook.SheetNames[0];
+          if (!sheetName || !workbook.Sheets[sheetName]) {
+              throw new Error(`Sheet "${sheetName || 'default'}" not found in Excel file.`);
+          }
+          parsedRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+      } else if (fileName.endsWith('.csv')) {
+          const text = await blob.text();
+          const lines = text.split(/\r\n|\n|\r/).filter(line => line.trim() !== '');
+          if (lines.length < 1) return []; // Empty or header-only file
+          const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+          for (let i = 1; i < lines.length; i++) {
+              const values = lines[i].split(',').map(v => v.replace(/^"|"$/g, '').trim());
+              const rowObject: Record<string, any> = {};
+              headers.forEach((header, index) => { rowObject[header] = values[index] || ""; });
+              parsedRows.push(rowObject);
+          }
+      } else {
+          throw new Error("Unsupported file type for processing.");
+      }
+
+      addLog(`Data Processing: Parsed ${parsedRows.length} total rows from file.`);
+      
+      const actualRowsToProcess = run.runOnNRows > 0 ? parsedRows.slice(0, run.runOnNRows) : parsedRows;
+      
+      addLog(`Data Processing: Mapping ${actualRowsToProcess.length} rows based on config...`);
+      const mappedData: Array<Record<string, any>> = [];
+      const inputParamToOriginalColMap = versionConfig.columnMapping;
+      const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
+
+      actualRowsToProcess.forEach((originalRow) => {
+          const mappedRow: Record<string, any> = {};
+          let rowHasAnyMappedData = false;
+          const normalizedOriginalRowKeys: Record<string, string> = {};
+          Object.keys(originalRow).forEach(key => { normalizedOriginalRowKeys[String(key).trim().toLowerCase()] = key; });
+
+          for (const inputParamName in inputParamToOriginalColMap) {
+              const mappedOriginalColName = inputParamToOriginalColMap[inputParamName];
+              const normalizedMappedOriginalColName = String(mappedOriginalColName).trim().toLowerCase();
+              const actualKeyInOriginalRow = normalizedOriginalRowKeys[normalizedMappedOriginalColName];
+              if (actualKeyInOriginalRow !== undefined) {
+                  mappedRow[inputParamName] = originalRow[actualKeyInOriginalRow];
+                  rowHasAnyMappedData = true;
+              } else {
+                  mappedRow[inputParamName] = undefined;
+              }
+          }
+          
+          if (run.runType === 'GroundTruth') {
+              for (const evalParamId in evalParamIdToGtColMap) {
+                  const mappedGtColName = evalParamIdToGtColMap[evalParamId];
+                  const normalizedMappedGtColName = String(mappedGtColName).trim().toLowerCase();
+                  const actualKeyInOriginalRowForGt = normalizedOriginalRowKeys[normalizedMappedGtColName];
+                  if (actualKeyInOriginalRowForGt !== undefined) {
+                      mappedRow[`_gt_${evalParamId}`] = originalRow[actualKeyInOriginalRowForGt];
+                      rowHasAnyMappedData = true;
+                  } else {
+                      mappedRow[`_gt_${evalParamId}`] = undefined;
+                  }
+              }
+          }
+          if (rowHasAnyMappedData) {
+              mappedData.push(mappedRow);
+          }
+      });
+
+      addLog(`Data Processing: Final mapped row count is ${mappedData.length}.`);
+      return mappedData;
+  }, [addLog]);
+
   const handleFetchAndPreviewData = useCallback(async (): Promise<void> => {
-    if (!runDetails || !currentUserId || !runDetails.datasetId || !runDetails.datasetVersionId) { toast({ title: "Configuration Missing", description: "Dataset or version ID missing.", variant: "destructive" }); return; }
-    setIsPreviewDataLoading(true); setPreviewDataError(null); setSimulationLog([]); addLog("Data Preview: Start.");
-    try {
-        addLog("Data Preview: Fetching dataset version config..."); const versionConfig = await fetchDatasetVersionConfig(currentUserId, runDetails.datasetId, runDetails.datasetVersionId);
-        if (!versionConfig || !versionConfig.storagePath || !versionConfig.columnMapping || Object.keys(versionConfig.columnMapping).length === 0) { throw new Error("Dataset version config (storage path or input column mapping) incomplete."); }
-        addLog(`Data Preview: Storage path: ${versionConfig.storagePath}`); addLog(`Data Preview: Input Column mapping: ${JSON.stringify(versionConfig.columnMapping)}`); if (versionConfig.groundTruthMapping && Object.keys(versionConfig.groundTruthMapping).length > 0) { addLog(`Data Preview: Ground Truth Mapping: ${JSON.stringify(versionConfig.groundTruthMapping)}`); } else if (runDetails.runType === 'GroundTruth') { addLog(`Data Preview: Warning: GT Run, but no GT mapping.`); } if (versionConfig.selectedSheetName) addLog(`Data Preview: Selected sheet: ${versionConfig.selectedSheetName}`);
-        addLog("Data Preview: Downloading dataset file..."); const fileRef = storageRef(storage, versionConfig.storagePath); const blob = await getBlob(fileRef); addLog(`Data Preview: File downloaded (${(blob.size / (1024*1024)).toFixed(2)} MB). Parsing...`);
-        let parsedRows: Array<Record<string, any>> = []; const fileName = versionConfig.storagePath.split('/').pop()?.toLowerCase() || '';
-        if (fileName.endsWith('.xlsx')) { const arrayBuffer = await blob.arrayBuffer(); const workbook = XLSX.read(arrayBuffer, { type: 'array' }); const sheetName = versionConfig.selectedSheetName || workbook.SheetNames[0]; if (!sheetName || !workbook.Sheets[sheetName]) { throw new Error(`Sheet "${sheetName || 'default'}" not found.`); } parsedRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" }); addLog(`Data Preview: Parsed ${parsedRows.length} rows from Excel sheet "${sheetName}".`);
-        } else if (fileName.endsWith('.csv')) { const text = await blob.text(); const lines = text.split(/\r\n|\n|\r/).filter(line => line.trim() !== ''); if (lines.length < 1) throw new Error("CSV file empty or no header."); const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim()); for (let i = 1; i < lines.length; i++) { const values = lines[i].split(',').map(v => v.replace(/^"|"$/g, '').trim()); const rowObject: Record<string, any> = {}; headers.forEach((header, index) => { rowObject[header] = values[index] || ""; }); parsedRows.push(rowObject); } addLog(`Data Preview: Parsed ${parsedRows.length} rows from CSV.`);
-        } else { throw new Error("Unsupported file type for preview."); }
-        if (parsedRows.length === 0) { addLog("Data Preview: No data rows found."); updateRunMutation.mutate({ id: runId, previewedDatasetSample: [], status: 'DataPreviewed', results: [] }); toast({ title: "No Data", description: "Parsed file contained no data rows." }); setIsPreviewDataLoading(false); return; }
-        
-        let actualRowsToProcessAndStore: number;
-        if (runDetails.runOnNRows > 0) {
-            actualRowsToProcessAndStore = Math.min(runDetails.runOnNRows, parsedRows.length);
-            addLog(`Data Preview: Configured to run on first ${runDetails.runOnNRows} rows. Will process ${actualRowsToProcessAndStore} from available ${parsedRows.length}.`);
-        } else {
-            actualRowsToProcessAndStore = parsedRows.length;
-            addLog(`Data Preview: Configured to run on all rows. Will process ${actualRowsToProcessAndStore} from available ${parsedRows.length}.`);
+      if (!runDetails || !currentUserId) {
+        toast({ title: "Configuration Missing", description: "Cannot fetch data without run details.", variant: "destructive" });
+        return;
+      }
+      setIsPreviewDataLoading(true); setPreviewDataError(null); setSimulationLog([]); addLog("Data Preview: Start.");
+      try {
+        const fullMappedData = await fetchAndParseFullDataset(currentUserId, runDetails);
+        if (fullMappedData.length === 0) {
+            addLog("Data Preview: No data rows found after parsing and mapping.");
+            updateRunMutation.mutate({ id: runId, previewedDatasetSample: [], totalRowsInDataset: 0, status: 'DataPreviewed' });
+            toast({ title: "No Data", description: "Parsed file contained no data rows or no data could be mapped." });
+            return;
         }
+
+        const uiPreviewSample = fullMappedData.slice(0, 10);
+        const sanitizedPreview = sanitizeDataForFirestore(uiPreviewSample);
         
-        const dataSliceForStorage = parsedRows.slice(0, actualRowsToProcessAndStore);
-        addLog(`Data Preview: Preparing ${dataSliceForStorage.length} rows for processing and storage.`); 
-        
-        const sampleForStorage: Array<Record<string, any>> = []; const inputParamToOriginalColMap = versionConfig.columnMapping; const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
-        dataSliceForStorage.forEach((originalRow, index) => { const mappedRowForStorage: Record<string, any> = {}; let rowHasAnyMappedData = false; const normalizedOriginalRowKeys: Record<string, string> = {}; Object.keys(originalRow).forEach(key => { normalizedOriginalRowKeys[String(key).trim().toLowerCase()] = key; });
-            for (const inputParamName in inputParamToOriginalColMap) { const mappedOriginalColName = inputParamToOriginalColMap[inputParamName]; const normalizedMappedOriginalColName = String(mappedOriginalColName).trim().toLowerCase(); const actualKeyInOriginalRow = normalizedOriginalRowKeys[normalizedMappedOriginalColName]; if (actualKeyInOriginalRow !== undefined) { mappedRowForStorage[inputParamName] = originalRow[actualKeyInOriginalRow]; rowHasAnyMappedData = true; } else { mappedRowForStorage[inputParamName] = undefined; addLog(`Data Preview: Warn: Row ${index + 1} missing INPUT col "${mappedOriginalColName}" for "${inputParamName}".`); } }
-            if (runDetails.runType === 'GroundTruth') { for (const evalParamId in evalParamIdToGtColMap) { const mappedGtColName = evalParamIdToGtColMap[evalParamId]; const normalizedMappedGtColName = String(mappedGtColName).trim().toLowerCase(); const actualKeyInOriginalRowForGt = normalizedOriginalRowKeys[normalizedMappedGtColName]; if (actualKeyInOriginalRowForGt !== undefined) { mappedRowForStorage[`_gt_${evalParamId}`] = originalRow[actualKeyInOriginalRowForGt]; rowHasAnyMappedData = true; } else { mappedRowForStorage[`_gt_${evalParamId}`] = undefined; addLog(`Data Preview: Warn: Row ${index + 1} missing GT col "${mappedGtColName}" for EVAL ID "${evalParamId}".`); } } }
-            if(rowHasAnyMappedData) { sampleForStorage.push(mappedRowForStorage); } else { addLog(`Data Preview: Skipping row ${index + 1} as no mapped data.`); } });
-        addLog(`Data Preview: Processed ${sampleForStorage.length} rows for storage.`); const sanitizedSample = sanitizeDataForFirestore(sampleForStorage);
-        updateRunMutation.mutate({ id: runId, previewedDatasetSample: sanitizedSample, status: 'DataPreviewed', results: [] });
-        toast({ title: "Data Preview Ready", description: `${sanitizedSample.length} rows fetched.`});
-    } catch (error: any) { addLog(`Data Preview: Error: ${error.message}`, "error"); setPreviewDataError(error.message); toast({ title: "Preview Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `Data preview failed: ${error.message}` });
-    } finally { setIsPreviewDataLoading(false); }
-  }, [currentUserId, runId, runDetails, updateRunMutation, addLog]);
+        updateRunMutation.mutate({
+            id: runId,
+            previewedDatasetSample: sanitizedPreview,
+            totalRowsInDataset: fullMappedData.length,
+            status: 'DataPreviewed',
+            results: [],
+            errorMessage: deleteField(), // Clear any previous error
+        });
+        toast({ title: "Data Preview Ready", description: `${fullMappedData.length} rows fetched and ready for processing.` });
+      } catch (error: any) {
+        addLog(`Data Preview: Error: ${error.message}`, "error");
+        setPreviewDataError(error.message);
+        toast({ title: "Preview Error", description: error.message, variant: "destructive" });
+        updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `Data preview failed: ${error.message}` });
+      } finally {
+        setIsPreviewDataLoading(false);
+      }
+  }, [currentUserId, runId, runDetails, updateRunMutation, addLog, fetchAndParseFullDataset]);
+
 
   const simulateRunExecution = useCallback(async (): Promise<void> => {
     const hasEvalParams = evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0; const hasSummarizationDefs = summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0;
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) { const errorMsg = "Missing config or no eval/summarization params."; toast({ title: "Cannot start", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return; }
-    if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start", description: "No dataset sample.", variant: "destructive"}); addLog("Error: No previewed data.", "error"); return; }
+    
     updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [], firstRowFullPrompt: runDetails.firstRowFullPrompt || '' }); 
     setSimulationLog([]); addLog("LLM task init.");
     try {
+      addLog("Fetching and parsing full dataset for execution...");
+      const datasetToProcess = await fetchAndParseFullDataset(currentUserId, runDetails);
+      if (!datasetToProcess || datasetToProcess.length === 0) {
+        throw new Error("No data could be processed from the dataset file after parsing and mapping.");
+      }
+      
       const fetchedPromptTemplateString = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
       if (!fetchedPromptTemplateString) throw new Error("Failed to fetch prompt template.");
       addLog(`Fetched prompt (v${runDetails.promptVersionNumber}).`); if(hasEvalParams) addLog(`Using ${evalParamDetailsForLLM.length} eval params.`); if(hasSummarizationDefs) addLog(`Using ${summarizationDefDetailsForLLM.length} summarization defs.`);
       if (runDetails.modelConnectorProvider === 'Anthropic' || runDetails.modelConnectorProvider === 'OpenAI') { addLog(`Using direct ${runDetails.modelConnectorProvider} client via config: ${runDetails.modelConnectorConfigString || 'N/A'}`); } else if(runDetails.modelIdentifierForGenkit) { addLog(`Using Genkit model: ${runDetails.modelIdentifierForGenkit}`); } else { addLog(`Warn: No Genkit model ID. Using Genkit default.`); }
-      const datasetToProcess = runDetails.previewedDatasetSample; const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
+      const rowsToProcess = datasetToProcess.length; const effectiveConcurrencyLimit = Math.max(1, runDetails.concurrencyLimit || 3); addLog(`Starting LLM tasks for ${rowsToProcess} rows with concurrency: ${effectiveConcurrencyLimit}.`);
       const parameterIdsRequiringRationale = hasEvalParams ? evalParamDetailsForLLM.filter(ep => ep.requiresRationale).map(ep => ep.id) : [];
       
       let firstRowPromptAlreadySet = !!runDetails.firstRowFullPrompt;
@@ -705,11 +804,12 @@ export default function RunDetailsPage() {
           status: 'Completed',
           progress: 100, 
           completedAt: serverTimestamp(),
-          previewedDatasetSample: deleteField() // Clear preview data to save space
+          previewedDatasetSample: deleteField(),
+          totalRowsInDataset: deleteField(),
       });
       toast({ title: "LLM Tasks Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
     } catch (error: any) { addLog(`Error during LLM tasks: ${error.message}`, "error"); console.error("LLM Task Error: ", error); toast({ title: "LLM Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM task failed: ${error.message}`, previewedDatasetSample: deleteField() }); }
-  }, [currentUserId, runId, runDetails, updateRunMutation, evalParamDetailsForLLM, summarizationDefDetailsForLLM, addLog]);
+  }, [currentUserId, runId, runDetails, updateRunMutation, evalParamDetailsForLLM, summarizationDefDetailsForLLM, addLog, fetchAndParseFullDataset]);
 
   const handleDownloadResults = useCallback((): void => {
     if (!effectiveRunDetails || !effectiveRunDetails.results || effectiveRunDetails.results.length === 0) {
@@ -894,7 +994,7 @@ export default function RunDetailsPage() {
   const previewTableHeaders: string[] = displayedPreviewData.length > 0 ? Object.keys(displayedPreviewData[0]).filter(k => !k.startsWith('_gt_')) : [];
   const isRunTerminal: boolean = runDetails?.status === 'Completed' || false;
   const canFetchData: boolean = runDetails?.status === 'Pending' || runDetails?.status === 'Failed' || runDetails?.status === 'DataPreviewed';
-  const isRunReadyForProcessing_flag: boolean = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed' && !!runDetails.previewedDatasetSample && runDetails.previewedDatasetSample.length > 0);
+  const isRunReadyForProcessing_flag: boolean = runDetails?.status === 'DataPreviewed' || (runDetails?.status === 'Failed');
   const dependenciesLoadedForRunStart_flag: boolean = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
   const hasParamsOrDefsForRunStart_flag: boolean = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
   const canStartLLMTask: boolean = isRunReadyForProcessing_flag && dependenciesLoadedForRunStart_flag && hasParamsOrDefsForRunStart_flag;
