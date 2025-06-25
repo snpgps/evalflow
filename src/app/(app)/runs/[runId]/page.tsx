@@ -89,6 +89,20 @@ export interface EvalRun {
   firstRowFullPrompt?: string; 
 }
 
+// New specific type for update payloads to handle FieldValue types correctly
+interface EvalRunUpdatePayload {
+  id: string;
+  status?: 'Completed' | 'Running' | 'Pending' | 'Failed' | 'Processing' | 'DataPreviewed';
+  updatedAt?: FieldValue;
+  completedAt?: FieldValue;
+  progress?: number;
+  results?: EvalRunResultItem[] | FieldValue;
+  previewedDatasetSample?: Array<Record<string, any>> | FieldValue;
+  totalRowsInDataset?: number | FieldValue;
+  errorMessage?: string | FieldValue;
+  firstRowFullPrompt?: string;
+}
+
 export interface DatasetVersionConfig {
     storagePath?: string;
     columnMapping?: Record<string, string>; 
@@ -177,6 +191,8 @@ const sanitizeDataForFirestore = (data: any): any => {
   return data;
 };
 
+let staticAddLog: (message: string, type?: 'info' | 'error') => void = () => {};
+
 const fetchEvalRunDetails = async (userId: string | null, runId: string): Promise<EvalRun | null> => {
   if (!userId) return null;
   const runDocRef = doc(db, 'users', userId, 'evaluationRuns', runId);
@@ -186,9 +202,6 @@ const fetchEvalRunDetails = async (userId: string | null, runId: string): Promis
   }
   return null;
 };
-
-// A global addLog function to avoid passing it down constantly
-let staticAddLog: (message: string, type?: 'info' | 'error') => void = () => {};
 
 // New function to fetch results from the subcollection
 const fetchRunResults = async (userId: string | null, runId: string): Promise<EvalRunResultItem[]> => {
@@ -475,24 +488,34 @@ export default function RunDetailsPage() {
     enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
   });
 
-  const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & {
-    id: string;
-    updatedAt?: FieldValue;
-    completedAt?: FieldValue;
-    previewedDatasetSample?: any[] | FieldValue;
-    totalRowsInDataset?: number | FieldValue;
-    errorMessage?: string | FieldValue;
-  }>({
+  const updateRunMutation = useMutation<void, Error, EvalRunUpdatePayload>({
     mutationFn: async (updatePayload) => {
       if (!currentUserId) throw new Error("Project not selected.");
-      const { id, ...dataFromPayload } = updatePayload; const updateForFirestore: Record<string, any> = {};
-      for (const key in dataFromPayload) { if (Object.prototype.hasOwnProperty.call(dataFromPayload, key)) { const value = (dataFromPayload as any)[key]; if (value !== undefined) { updateForFirestore[key] = value; } } }
-      updateForFirestore.updatedAt = serverTimestamp(); if (updatePayload.completedAt) { updateForFirestore.completedAt = updatePayload.completedAt; }
-      if (updatePayload.firstRowFullPrompt !== undefined) { updateForFirestore.firstRowFullPrompt = updatePayload.firstRowFullPrompt; } 
-      const runDocRef = doc(db, 'users', currentUserId, 'evaluationRuns', id); await updateDoc(runDocRef, updateForFirestore);
+      const { id, ...dataToUpdate } = updatePayload;
+      const payloadWithTimestamp: Record<string, any> = {
+        ...dataToUpdate,
+        updatedAt: serverTimestamp(),
+      };
+      
+      const runDocRef = doc(db, 'users', currentUserId, 'evaluationRuns', id);
+      await updateDoc(runDocRef, payloadWithTimestamp);
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['evalRunDetails', currentUserId, runId] }); queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] }); },
-    onError: (error) => { toast({ title: "Error updating run", description: error.message, variant: "destructive" }); if(runDetails?.status === 'Processing' || runDetails?.status === 'Running') { const errorUpdatePayload: Partial<EvalRun> & { id: string } = { id: runId, status: 'Failed', errorMessage: `Update during run failed: ${error.message}` }; if (errorUpdatePayload.errorMessage === undefined) { errorUpdatePayload.errorMessage = "Undefined error occurred during update."; } updateRunMutation.mutate(errorUpdatePayload as any); } if(isPreviewDataLoading) setIsPreviewDataLoading(false); }
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['evalRunDetails', currentUserId, runId] });
+      queryClient.invalidateQueries({ queryKey: ['evalRuns', currentUserId] });
+    },
+    onError: (error) => {
+      toast({ title: "Error updating run", description: error.message, variant: "destructive" });
+      if(runDetails?.status === 'Processing' || runDetails?.status === 'Running') {
+        const errorUpdatePayload: EvalRunUpdatePayload = {
+            id: runId,
+            status: 'Failed',
+            errorMessage: `Update during run failed: ${error.message}`
+        };
+        updateRunMutation.mutate(errorUpdatePayload);
+      }
+      if(isPreviewDataLoading) setIsPreviewDataLoading(false);
+    }
   });
 
   useEffect(() => {
@@ -673,7 +696,7 @@ export default function RunDetailsPage() {
             totalRowsInDataset: fullMappedData.length,
             status: 'DataPreviewed',
             results: [],
-            errorMessage: deleteField(), // Clear any previous error
+            errorMessage: deleteField(),
         });
         toast({ title: "Data Preview Ready", description: `${fullMappedData.length} rows fetched and ready for processing.` });
       } catch (error: any) {
@@ -799,12 +822,12 @@ export default function RunDetailsPage() {
         addLog(`Batch ${batchStartIndex + 1}-${batchEndIndex} results committed to subcollection.`);
 
         const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
-        const updateData: Partial<EvalRun> & { id: string } = {
+        const updateData: EvalRunUpdatePayload = {
              id: runId,
              progress: currentProgress, 
              status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing'
         };
-        updateRunMutation.mutate(updateData as any);
+        updateRunMutation.mutate(updateData);
       }
       addLog("LLM tasks complete.");
       updateRunMutation.mutate({ 
