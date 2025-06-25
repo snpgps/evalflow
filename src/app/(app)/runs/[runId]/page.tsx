@@ -475,7 +475,14 @@ export default function RunDetailsPage() {
     enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
   });
 
-  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt' | 'results' | 'previewedDatasetSample' | 'totalRowsInDataset' | 'errorMessage'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; previewedDatasetSample?: FieldValue | any[]; totalRowsInDataset?: number | FieldValue; errorMessage?: string | FieldValue;} >({
+  const updateRunMutation = useMutation<void, Error, Partial<EvalRun> & {
+    id: string;
+    updatedAt?: FieldValue;
+    completedAt?: FieldValue;
+    previewedDatasetSample?: any[] | FieldValue;
+    totalRowsInDataset?: number | FieldValue;
+    errorMessage?: string | FieldValue;
+  }>({
     mutationFn: async (updatePayload) => {
       if (!currentUserId) throw new Error("Project not selected.");
       const { id, ...dataFromPayload } = updatePayload; const updateForFirestore: Record<string, any> = {};
@@ -792,7 +799,7 @@ export default function RunDetailsPage() {
         addLog(`Batch ${batchStartIndex + 1}-${batchEndIndex} results committed to subcollection.`);
 
         const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
-        const updateData: Partial<Omit<EvalRun, 'updatedAt' | 'completedAt' | 'results'>> & { id: string } = {
+        const updateData: Partial<EvalRun> & { id: string } = {
              id: runId,
              progress: currentProgress, 
              status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing'
