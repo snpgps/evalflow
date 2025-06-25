@@ -187,15 +187,18 @@ const fetchEvalRunDetails = async (userId: string | null, runId: string): Promis
   return null;
 };
 
+// A global addLog function to avoid passing it down constantly
+let staticAddLog: (message: string, type?: 'info' | 'error') => void = () => {};
+
 // New function to fetch results from the subcollection
 const fetchRunResults = async (userId: string | null, runId: string): Promise<EvalRunResultItem[]> => {
     if (!userId) return [];
-    addLog(`Fetching results from subcollection for run ${runId}...`);
+    staticAddLog(`Fetching results from subcollection for run ${runId}...`);
     const resultsCollectionRef = collection(db, 'users', userId, 'evaluationRuns', runId, 'results');
     const q = query(resultsCollectionRef, orderBy('originalIndex', 'asc')); 
     try {
         const snapshot = await getDocs(q);
-        addLog(`Fetched ${snapshot.size} result documents from subcollection.`);
+        staticAddLog(`Fetched ${snapshot.size} result documents from subcollection.`);
         return snapshot.docs.map(doc => doc.data() as EvalRunResultItem);
     } catch (error) {
         // Firestore creates single-field indexes automatically. If this fails, it's likely a permissions issue.
@@ -328,8 +331,6 @@ const fetchContextDocumentDetailsForRun = async (userId: string | null, docIds: 
     return details;
 };
 
-// A global addLog function to avoid passing it down constantly
-let staticAddLog: (message: string, type?: 'info' | 'error') => void = () => {};
 
 // Main Page Component
 export default function RunDetailsPage() {
@@ -435,9 +436,9 @@ export default function RunDetailsPage() {
     queryKey: ['evalParamDetailsForLLM', currentUserId, runDetails?.selectedEvalParamIds?.join(',')],
     queryFn: async () => {
       if (!currentUserId || !runDetails?.selectedEvalParamIds || runDetails.selectedEvalParamIds.length === 0) return [];
-      addLog("Fetching evaluation parameter details for LLM/UI...");
+      staticAddLog("Fetching evaluation parameter details for LLM/UI...");
       const details = await fetchEvaluationParameterDetailsForPrompt(currentUserId, runDetails.selectedEvalParamIds);
-      addLog(`Fetched ${details.length} evaluation parameter details.`);
+      staticAddLog(`Fetched ${details.length} evaluation parameter details.`);
       return details;
     },
     enabled: !!currentUserId && !!runDetails?.selectedEvalParamIds && runDetails.selectedEvalParamIds.length > 0,
@@ -447,9 +448,9 @@ export default function RunDetailsPage() {
     queryKey: ['summarizationDefDetailsForLLM', currentUserId, runDetails?.selectedSummarizationDefIds?.join(',')],
     queryFn: async () => {
         if (!currentUserId || !runDetails?.selectedSummarizationDefIds || !runDetails.selectedSummarizationDefIds || runDetails.selectedSummarizationDefIds.length === 0) return [];
-        addLog("Fetching summarization definition details for LLM/UI...");
+        staticAddLog("Fetching summarization definition details for LLM/UI...");
         const details = await fetchSummarizationDefDetailsForPrompt(currentUserId, runDetails.selectedSummarizationDefIds);
-        addLog(`Fetched ${details.length} summarization definition details.`);
+        staticAddLog(`Fetched ${details.length} summarization definition details.`);
         return details;
     },
     enabled: !!currentUserId && !!runDetails?.selectedSummarizationDefIds && runDetails.selectedSummarizationDefIds.length > 0,
@@ -557,13 +558,13 @@ export default function RunDetailsPage() {
           throw new Error("Dataset configuration is missing in run details.");
       }
       
-      addLog("Data Processing: Fetching dataset version config...");
+      staticAddLog("Data Processing: Fetching dataset version config...");
       const versionConfig = await fetchDatasetVersionConfig(userId, run.datasetId, run.datasetVersionId);
       if (!versionConfig || !versionConfig.storagePath || !versionConfig.columnMapping) {
           throw new Error("Dataset version config (storage path or mapping) is incomplete.");
       }
 
-      addLog(`Data Processing: Downloading file from ${versionConfig.storagePath}...`);
+      staticAddLog(`Data Processing: Downloading file from ${versionConfig.storagePath}...`);
       const fileRef = storageRef(storage, versionConfig.storagePath);
       const blob = await getBlob(fileRef);
 
@@ -592,11 +593,11 @@ export default function RunDetailsPage() {
           throw new Error("Unsupported file type for processing.");
       }
 
-      addLog(`Data Processing: Parsed ${parsedRows.length} total rows from file.`);
+      staticAddLog(`Data Processing: Parsed ${parsedRows.length} total rows from file.`);
       
       const actualRowsToProcess = run.runOnNRows > 0 ? parsedRows.slice(0, run.runOnNRows) : parsedRows;
       
-      addLog(`Data Processing: Mapping ${actualRowsToProcess.length} rows based on config...`);
+      staticAddLog(`Data Processing: Mapping ${actualRowsToProcess.length} rows based on config...`);
       const mappedData: Array<Record<string, any>> = [];
       const inputParamToOriginalColMap = versionConfig.columnMapping;
       const evalParamIdToGtColMap = versionConfig.groundTruthMapping || {};
@@ -637,9 +638,9 @@ export default function RunDetailsPage() {
           }
       });
 
-      addLog(`Data Processing: Final mapped row count is ${mappedData.length}.`);
+      staticAddLog(`Data Processing: Final mapped row count is ${mappedData.length}.`);
       return mappedData;
-  }, [addLog]);
+  }, [staticAddLog]);
 
   const handleFetchAndPreviewData = useCallback(async (): Promise<void> => {
       if (!runDetails || !currentUserId) {
