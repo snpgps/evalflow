@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ScrollArea } from '@/components/ui/scroll-area'; 
 
 import { db, storage } from '@/lib/firebase';
-import { doc, getDoc, getDocs, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp, type FieldValue, query, orderBy } from 'firebase/firestore';
+import { doc, getDoc, getDocs, updateDoc, Timestamp, type DocumentData, collection, writeBatch, serverTimestamp, type FieldValue, query, orderBy, deleteField } from 'firebase/firestore';
 import { ref as storageRef, getBlob } from 'firebase/storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
@@ -47,6 +47,7 @@ export interface EvalRunResultItem {
   inputData: Record<string, any>;
   judgeLlmOutput: Record<string, { chosenLabel?: string | null; generatedSummary?: string | null; rationale?: string | null; error?: string }>;
   groundTruth?: Record<string, string>;
+  originalIndex?: number; // Added for sorting results from subcollection
 }
 
 export interface EvalRun {
@@ -79,7 +80,7 @@ export interface EvalRun {
   runOnNRows: number;
   concurrencyLimit?: number;
   progress?: number;
-  results?: EvalRunResultItem[];
+  results?: EvalRunResultItem[]; // Kept for backward compatibility with old runs
   previewedDatasetSample?: Array<Record<string, any>>;
   summaryMetrics?: Record<string, any>;
   errorMessage?: string;
@@ -183,6 +184,28 @@ const fetchEvalRunDetails = async (userId: string | null, runId: string): Promis
     return { id: runDocSnap.id, ...runDocSnap.data() } as EvalRun;
   }
   return null;
+};
+
+// New function to fetch results from the subcollection
+const fetchRunResults = async (userId: string | null, runId: string): Promise<EvalRunResultItem[]> => {
+    if (!userId) return [];
+    addLog(`Fetching results from subcollection for run ${runId}...`);
+    const resultsCollectionRef = collection(db, 'users', userId, 'evaluationRuns', runId, 'results');
+    const q = query(resultsCollectionRef, orderBy('originalIndex', 'asc')); 
+    try {
+        const snapshot = await getDocs(q);
+        addLog(`Fetched ${snapshot.size} result documents from subcollection.`);
+        return snapshot.docs.map(doc => doc.data() as EvalRunResultItem);
+    } catch (error) {
+        // Firestore creates single-field indexes automatically. If this fails, it's likely a permissions issue.
+        console.error("Error fetching run results subcollection. This might require a manual index in Firestore if you've changed the query, or it could be a permissions issue.", error);
+        toast({
+            title: "Error Fetching Results",
+            description: "Could not fetch results from the subcollection. Check console for details.",
+            variant: "destructive"
+        });
+        return [];
+    }
 };
 
 const fetchDatasetVersionConfig = async (userId: string | null, datasetId: string, versionId: string): Promise<DatasetVersionConfig | null> => {
@@ -304,6 +327,9 @@ const fetchContextDocumentDetailsForRun = async (userId: string | null, docIds: 
     return details;
 };
 
+// A global addLog function to avoid passing it down constantly
+let staticAddLog: (message: string, type?: 'info' | 'error') => void = () => {};
+
 // Main Page Component
 export default function RunDetailsPage() {
   const reactParams = useParams();
@@ -353,16 +379,21 @@ export default function RunDetailsPage() {
     }
   };
 
-  useEffect(() => {
-    const storedProjectId = localStorage.getItem('currentUserId'); 
-    setCurrentUserId(storedProjectId || null);
-    setIsLoadingUserId(false);
-  }, []);
-
   const addLog = useCallback((message: string, type: 'info' | 'error' = 'info'): void => {
     const logEntry = `${new Date().toLocaleTimeString()}: ${type === 'error' ? 'ERROR: ' : ''}${message}`;
     if (type === 'error') { console.error(logEntry); } else { console.log(logEntry); }
     setSimulationLog(prev => [...prev, logEntry].slice(-100));
+  }, []);
+  
+  useEffect(() => {
+    staticAddLog = addLog;
+  }, [addLog]);
+
+
+  useEffect(() => {
+    const storedProjectId = localStorage.getItem('currentUserId'); 
+    setCurrentUserId(storedProjectId || null);
+    setIsLoadingUserId(false);
   }, []);
 
   const { data: runDetails, isLoading: isLoadingRunDetails, error: fetchRunError, refetch: refetchRunDetails } = useQuery<EvalRun | null, Error>({
@@ -371,6 +402,23 @@ export default function RunDetailsPage() {
     enabled: !!currentUserId && !!runId && !isLoadingUserId,
     refetchInterval: (query) => { const data = query.state.data as EvalRun | null; return (data?.status === 'Running' || data?.status === 'Processing') ? 5000 : false; },
   });
+
+  const { data: runResults, isLoading: isLoadingRunResults, error: fetchRunResultsError } = useQuery<EvalRunResultItem[], Error>({
+    queryKey: ['evalRunResults', currentUserId, runId],
+    queryFn: () => fetchRunResults(currentUserId, runId),
+    enabled: !!runDetails && runDetails.status === 'Completed' && (!runDetails.results || runDetails.results.length === 0),
+    refetchOnWindowFocus: false,
+  });
+
+  const effectiveRunDetails = useMemo(() => {
+    if (!runDetails) return null;
+    // Prioritize results from subcollection if available, otherwise use embedded for backward compatibility
+    const effectiveResults = runResults && runResults.length > 0 ? runResults : (runDetails.results || []);
+    return {
+        ...runDetails,
+        results: effectiveResults,
+    };
+  }, [runDetails, runResults]);
 
   const { data: promptTemplateTextForRun, isLoading: isLoadingPromptTemplate } = useQuery<string | null, Error>({
     queryKey: ['promptTemplateTextForRun', currentUserId, runDetails?.promptId, runDetails?.promptVersionId],
@@ -425,7 +473,7 @@ export default function RunDetailsPage() {
     enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
   });
 
-  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; } >({
+  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; previewedDatasetSample?: FieldValue | any[]; } >({
     mutationFn: async (updatePayload) => {
       if (!currentUserId) throw new Error("Project not selected.");
       const { id, ...dataFromPayload } = updatePayload; const updateForFirestore: Record<string, any> = {};
@@ -439,7 +487,7 @@ export default function RunDetailsPage() {
   });
 
   useEffect(() => {
-    if (runDetails?.results && runDetails.results.length > 0 && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) {
+    if (effectiveRunDetails?.results && effectiveRunDetails.results.length > 0 && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) {
       const newComputedMetrics: ParameterChartData[] = evalParamDetailsForLLM.map(paramDetail => {
         const labelCounts: Record<string, number> = {};
         if (paramDetail.labels && Array.isArray(paramDetail.labels)) {
@@ -450,7 +498,7 @@ export default function RunDetailsPage() {
         let totalComparedForParam = 0;
         let totalLabelsForParam = 0;
 
-        runDetails.results!.forEach(resultItem => {
+        effectiveRunDetails.results!.forEach(resultItem => {
           if (resultItem.judgeLlmOutput && typeof resultItem.judgeLlmOutput === 'object') {
             const llmOutputForParam = resultItem.judgeLlmOutput[paramDetail.id];
             if (llmOutputForParam?.chosenLabel && typeof llmOutputForParam.chosenLabel === 'string') {
@@ -459,7 +507,7 @@ export default function RunDetailsPage() {
               if (!llmOutputForParam.error) {
                 totalLabelsForParam++;
               }
-              if (runDetails.runType === 'GroundTruth' && resultItem.groundTruth && !llmOutputForParam.error) {
+              if (effectiveRunDetails.runType === 'GroundTruth' && resultItem.groundTruth && !llmOutputForParam.error) {
                 const gtLabel = resultItem.groundTruth[paramDetail.id];
                 if (gtLabel !== undefined && gtLabel !== null && String(gtLabel).trim() !== '') {
                   totalComparedForParam++;
@@ -481,13 +529,13 @@ export default function RunDetailsPage() {
           return { labelName, count, percentage };
         }).filter(item => item.count > 0 || (paramDetail.labels && paramDetail.labels.some(l => l.name === item.labelName)) || item.labelName === 'ERROR_PROCESSING_ROW');
 
-        const paramAccuracy = runDetails.runType === 'GroundTruth' && totalComparedForParam > 0 ? (correctCountForParam / totalComparedForParam) * 100 : undefined;
+        const paramAccuracy = effectiveRunDetails.runType === 'GroundTruth' && totalComparedForParam > 0 ? (correctCountForParam / totalComparedForParam) * 100 : undefined;
         return {
           parameterId: paramDetail.id,
           parameterName: paramDetail.name,
           data: chartDataEntries.sort((a, b) => b.count - a.count),
           accuracy: paramAccuracy,
-          totalCompared: runDetails.runType === 'GroundTruth' ? totalComparedForParam : undefined,
+          totalCompared: effectiveRunDetails.runType === 'GroundTruth' ? totalComparedForParam : undefined,
         };
       });
       if (JSON.stringify(newComputedMetrics) !== JSON.stringify(metricsBreakdownData)) {
@@ -498,7 +546,7 @@ export default function RunDetailsPage() {
         setMetricsBreakdownData([]);
       }
     }
-  }, [runDetails, evalParamDetailsForLLM, metricsBreakdownData]);
+  }, [effectiveRunDetails, evalParamDetailsForLLM, metricsBreakdownData]);
 
   const handleFetchAndPreviewData = useCallback(async (): Promise<void> => {
     if (!runDetails || !currentUserId || !runDetails.datasetId || !runDetails.datasetVersionId) { toast({ title: "Configuration Missing", description: "Dataset or version ID missing.", variant: "destructive" }); return; }
@@ -543,7 +591,7 @@ export default function RunDetailsPage() {
     if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || (!hasEvalParams && !hasSummarizationDefs) ) { const errorMsg = "Missing config or no eval/summarization params."; toast({ title: "Cannot start", description: errorMsg, variant: "destructive" }); addLog(errorMsg, "error"); return; }
     if (!runDetails.previewedDatasetSample || runDetails.previewedDatasetSample.length === 0) { toast({ title: "Cannot start", description: "No dataset sample.", variant: "destructive"}); addLog("Error: No previewed data.", "error"); return; }
     updateRunMutation.mutate({ id: runId, status: 'Processing', progress: 0, results: [], firstRowFullPrompt: runDetails.firstRowFullPrompt || '' }); 
-    setSimulationLog([]); addLog("LLM task init."); let collectedResults: EvalRunResultItem[] = [];
+    setSimulationLog([]); addLog("LLM task init.");
     try {
       const fetchedPromptTemplateString = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId);
       if (!fetchedPromptTemplateString) throw new Error("Failed to fetch prompt template.");
@@ -574,7 +622,7 @@ export default function RunDetailsPage() {
              firstRowPromptAlreadySet = true;
           }
           const genkitInput: JudgeLlmEvaluationInput = { fullPromptText: fullPromptForLLM, evaluationParameterIds: hasEvalParams ? evalParamDetailsForLLM.map(ep => ep.id) : [], summarizationParameterIds: hasSummarizationDefs ? summarizationDefDetailsForLLM.map(sd => sd.id) : [], parameterIdsRequiringRationale: parameterIdsRequiringRationale, modelName: runDetails.modelIdentifierForGenkit || undefined, modelConnectorProvider: runDetails.modelConnectorProvider, modelConnectorConfigString: runDetails.modelConnectorConfigString, };
-          const itemResultShell: any = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex }; if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { itemResultShell.groundTruth = groundTruthDataForRow; }
+          const resultShell: EvalRunResultItem = { inputData: inputDataForRow, judgeLlmOutput: {}, originalIndex: overallRowIndex }; if (runDetails.runType === 'GroundTruth' && Object.keys(groundTruthDataForRow).length > 0) { resultShell.groundTruth = groundTruthDataForRow; }
           
           try {
             addLog(`Sending row ${overallRowIndex + 1} to Judge LLM (Provider: ${runDetails.modelConnectorProvider || 'Genkit Default'})...`);
@@ -616,7 +664,7 @@ export default function RunDetailsPage() {
             } else {
                 addLog(`Row ${overallRowIndex + 1} responded successfully on first attempt.`);
             }
-            itemResultShell.judgeLlmOutput = judgeOutput;
+            resultShell.judgeLlmOutput = judgeOutput;
 
           } catch(flowError: any) { // Catch unhandled exceptions from the first call
             addLog(`Unhandled exception in Judge LLM flow for row ${overallRowIndex + 1} (initial attempt): ${flowError.message}`, "error");
@@ -627,22 +675,44 @@ export default function RunDetailsPage() {
             (runDetails.selectedSummarizationDefIds || []).forEach(paramId => {
                 errorOutputForAllParamsInitial[paramId] = { generatedSummary: 'ERROR: LLM processing exception.', error: `Initial flow exception: ${flowError.message || 'Unknown LLM error.'}` };
             });
-            itemResultShell.judgeLlmOutput = errorOutputForAllParamsInitial;
+            resultShell.judgeLlmOutput = errorOutputForAllParamsInitial;
           }
-          return itemResultShell;
+          return resultShell;
         });
-        const settledBatchResults = await Promise.all(batchPromises); settledBatchResults.forEach(itemWithIndex => { const { originalIndex, ...resultItem } = itemWithIndex; collectedResults.push(resultItem as EvalRunResultItem); });
-        addLog(`Batch ${batchStartIndex + 1}-${batchEndIndex} processed. ${settledBatchResults.length} results.`); const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
-        const updateData: Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; } = { id: runId, progress: currentProgress, results: sanitizeDataForFirestore(collectedResults), status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing' };
         
-        updateRunMutation.mutate(updateData);
+        const settledBatchResults = await Promise.all(batchPromises);
+        const batchForFirestore = writeBatch(db);
+        settledBatchResults.forEach(resultItem => {
+          if (!currentUserId) return;
+          const resultDocRef = doc(collection(db, 'users', currentUserId, 'evaluationRuns', runId, 'results'));
+          batchForFirestore.set(resultDocRef, sanitizeDataForFirestore(resultItem));
+        });
+        
+        await batchForFirestore.commit();
+        addLog(`Batch ${batchStartIndex + 1}-${batchEndIndex} results committed to subcollection.`);
+
+        const currentProgress = Math.round(((batchEndIndex) / rowsToProcess) * 100);
+        const updateData: Partial<Omit<EvalRun, 'updatedAt' | 'completedAt' | 'results'>> & { id: string } = {
+             id: runId,
+             progress: currentProgress, 
+             status: (batchEndIndex) === rowsToProcess ? 'Completed' : 'Processing'
+        };
+        updateRunMutation.mutate(updateData as any);
       }
-      addLog("LLM tasks complete."); updateRunMutation.mutate({ id: runId, status: 'Completed', results: sanitizeDataForFirestore(collectedResults), progress: 100, completedAt: serverTimestamp() }); toast({ title: "LLM Tasks Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
-    } catch (error: any) { addLog(`Error during LLM tasks: ${error.message}`, "error"); console.error("LLM Task Error: ", error); toast({ title: "LLM Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM task failed: ${error.message}`, results: sanitizeDataForFirestore(collectedResults) }); }
+      addLog("LLM tasks complete.");
+      updateRunMutation.mutate({ 
+          id: runId, 
+          status: 'Completed',
+          progress: 100, 
+          completedAt: serverTimestamp(),
+          previewedDatasetSample: deleteField() // Clear preview data to save space
+      });
+      toast({ title: "LLM Tasks Complete", description: `Run "${runDetails.name}" processed ${rowsToProcess} rows.` });
+    } catch (error: any) { addLog(`Error during LLM tasks: ${error.message}`, "error"); console.error("LLM Task Error: ", error); toast({ title: "LLM Error", description: error.message, variant: "destructive" }); updateRunMutation.mutate({ id: runId, status: 'Failed', errorMessage: `LLM task failed: ${error.message}`, previewedDatasetSample: deleteField() }); }
   }, [currentUserId, runId, runDetails, updateRunMutation, evalParamDetailsForLLM, summarizationDefDetailsForLLM, addLog]);
 
   const handleDownloadResults = useCallback((): void => {
-    if (!runDetails || !runDetails.results || runDetails.results.length === 0) {
+    if (!effectiveRunDetails || !effectiveRunDetails.results || effectiveRunDetails.results.length === 0) {
       toast({ title: "No Results", description: "No results to download.", variant: "destructive" });
       return;
     }
@@ -650,22 +720,22 @@ export default function RunDetailsPage() {
     try {
       const dataForExcel: any[] = [];
       const inputDataKeys = new Set<string>();
-      runDetails.results.forEach(item => { Object.keys(item.inputData).forEach(key => inputDataKeys.add(key)); });
+      effectiveRunDetails.results.forEach(item => { Object.keys(item.inputData).forEach(key => inputDataKeys.add(key)); });
       const sortedInputDataKeys = Array.from(inputDataKeys).sort();
 
-      runDetails.results.forEach(item => {
+      effectiveRunDetails.results.forEach(item => {
         const row: Record<string, any> = {};
         
         // Add selected visible input parameters first
-        if (runDetails.selectedVisibleInputParamNames && runDetails.selectedVisibleInputParamNames.length > 0) {
-            runDetails.selectedVisibleInputParamNames.forEach(paramName => {
+        if (effectiveRunDetails.selectedVisibleInputParamNames && effectiveRunDetails.selectedVisibleInputParamNames.length > 0) {
+            effectiveRunDetails.selectedVisibleInputParamNames.forEach(paramName => {
                 row[paramName] = item.inputData[paramName] !== undefined && item.inputData[paramName] !== null ? String(item.inputData[paramName]) : '';
             });
         }
         
         // Add all other input data keys used in prompt (original logic, but avoid duplication)
         sortedInputDataKeys.forEach(key => {
-          if (!runDetails.selectedVisibleInputParamNames || !runDetails.selectedVisibleInputParamNames.includes(key)){
+          if (!effectiveRunDetails.selectedVisibleInputParamNames || !effectiveRunDetails.selectedVisibleInputParamNames.includes(key)){
              row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : '';
           }
         });
@@ -675,7 +745,7 @@ export default function RunDetailsPage() {
           evalParamDetailsForLLM.forEach(paramDetail => {
             const output = item.judgeLlmOutput[paramDetail.id];
             row[`${String(paramDetail.name)} - LLM Label`] = output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A');
-            if (runDetails.runType === 'GroundTruth') {
+            if (effectiveRunDetails.runType === 'GroundTruth') {
               const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A';
               row[`${String(paramDetail.name)} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A';
               const llmLabel = output?.chosenLabel;
@@ -704,7 +774,7 @@ export default function RunDetailsPage() {
       const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Eval Results");
-      const fileName = `eval_run_${runDetails.name.replace(/\s+/g, '_')}_${runDetails.id.substring(0, 8)}.xlsx`;
+      const fileName = `eval_run_${effectiveRunDetails.name.replace(/\s+/g, '_')}_${effectiveRunDetails.id.substring(0, 8)}.xlsx`;
       XLSX.writeFile(workbook, fileName);
       toast({ title: "Download Started", description: `Results downloading as ${fileName}.` });
 
@@ -712,17 +782,17 @@ export default function RunDetailsPage() {
       console.error("Error generating Excel file:", error);
       toast({ title: "Download Error", description: `Failed to generate Excel file: ${error.message || 'Unknown error'}`, variant: "destructive" });
     }
-  }, [runDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
+  }, [effectiveRunDetails, evalParamDetailsForLLM, summarizationDefDetailsForLLM]);
 
   const { data: inputParametersForSchema = [] } = useQuery<InputParameterForSchema[], Error>({ queryKey: ['inputParametersForSchema', currentUserId], queryFn: () => fetchInputParametersForSchema(currentUserId), enabled: !!currentUserId && (isSuggestionDialogOpen || isQuestionDialogVisible) });
 
   const handleSuggestImprovementsClick = useCallback(async (): Promise<void> => {
-    if (!runDetails || !currentUserId || !runDetails.promptId || !runDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !runDetails.results) { toast({ title: "Cannot Suggest", description: "Missing data for Ground Truth comparison.", variant: "destructive" }); return; }
+    if (!effectiveRunDetails || !currentUserId || !effectiveRunDetails.promptId || !effectiveRunDetails.promptVersionId || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0 || !effectiveRunDetails.results) { toast({ title: "Cannot Suggest", description: "Missing data for Ground Truth comparison.", variant: "destructive" }); return; }
     setIsLoadingSuggestion(true); setSuggestionError(null); setSuggestionResult(null); setIsSuggestionDialogOpen(true);
     try {
-      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt.");
+      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, effectiveRunDetails.promptId, effectiveRunDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt.");
       const mismatchDetails: MismatchDetail[] = [];
-      runDetails.results.forEach(item => {
+      effectiveRunDetails.results.forEach(item => {
         evalParamDetailsForLLM.forEach(paramDetail => {
           const llmOutput = item.judgeLlmOutput[paramDetail.id];
           const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined;
@@ -744,7 +814,7 @@ export default function RunDetailsPage() {
       const flowInput: SuggestRecursivePromptImprovementsInput = { originalPromptTemplate, mismatchDetails, inputParametersSchema: inputParamsSchemaString, evaluationParametersSchema: evalParamsSchemaString, };
       const result = await suggestRecursivePromptImprovements(flowInput); setSuggestionResult(result);
     } catch (error: any) { console.error("Error suggesting improvements:", error); setSuggestionError(error.message || "Failed to get suggestions."); } finally { setIsLoadingSuggestion(false); }
-  }, [currentUserId, runDetails, evalParamDetailsForLLM, inputParametersForSchema]);
+  }, [currentUserId, effectiveRunDetails, evalParamDetailsForLLM, inputParametersForSchema]);
 
   const handleOpenQuestionDialog = useCallback((item: EvalRunResultItem, paramId: string, rowIndex: number): void => {
     const paramDetail = evalParamDetailsForLLM.find(p => p.id === paramId); const outputData = item.judgeLlmOutput[paramId];
@@ -754,28 +824,28 @@ export default function RunDetailsPage() {
   }, [evalParamDetailsForLLM]);
 
   const handleSubmitQuestionAnalysis = useCallback(async (): Promise<void> => {
-    if (!questioningItemData || !currentUserId || !runDetails?.promptId || !runDetails?.promptVersionId) { setJudgmentAnalysisError("Missing data for analysis."); return; }
+    if (!questioningItemData || !currentUserId || !effectiveRunDetails?.promptId || !effectiveRunDetails?.promptVersionId) { setJudgmentAnalysisError("Missing data for analysis."); return; }
     setIsAnalyzingJudgment(true); setJudgmentAnalysisError(null); setJudgmentAnalysisResult(null);
     try {
-      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, runDetails.promptId, runDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt.");
+      const originalPromptTemplate = await fetchPromptVersionText(currentUserId, effectiveRunDetails.promptId, effectiveRunDetails.promptVersionId); if (!originalPromptTemplate) throw new Error("Failed to fetch original prompt.");
       const inputForFlow: AnalyzeJudgmentDiscrepancyInput = { inputData: questioningItemData.inputData, evaluationParameterName: questioningItemData.paramName, evaluationParameterDefinition: questioningItemData.paramDefinition, evaluationParameterLabels: questioningItemData.paramLabels, judgeLlmChosenLabel: questioningItemData.judgeLlmOutput.chosenLabel, judgeLlmRationale: questioningItemData.judgeLlmOutput.rationale ?? undefined, groundTruthLabel: questioningItemData.groundTruthLabel, userQuestion: userQuestionText, originalPromptTemplate: originalPromptTemplate, };
       const analysisOutput = await analyzeJudgmentDiscrepancy(inputForFlow); setJudgmentAnalysisResult(analysisOutput);
     } catch (error: any) { console.error("Error analyzing judgment:", error); setJudgmentAnalysisError(error.message || "Failed to get analysis."); } finally { setIsAnalyzingJudgment(false); }
-  }, [currentUserId, runDetails, questioningItemData, userQuestionText]);
+  }, [currentUserId, effectiveRunDetails, questioningItemData, userQuestionText]);
 
-  const hasMismatches = useMemo((): boolean => { if (runDetails?.runType !== 'GroundTruth' || !runDetails.results || !evalParamDetailsForLLM) return false; return runDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase(); }) ); }, [runDetails, evalParamDetailsForLLM]);
+  const hasMismatches = useMemo((): boolean => { if (effectiveRunDetails?.runType !== 'GroundTruth' || !effectiveRunDetails.results || !evalParamDetailsForLLM) return false; return effectiveRunDetails.results.some(item => evalParamDetailsForLLM.some(paramDetail => { const llmOutput = item.judgeLlmOutput[paramDetail.id]; const gtLabel = item.groundTruth ? item.groundTruth[paramDetail.id] : undefined; return gtLabel !== undefined && llmOutput && llmOutput.chosenLabel && !llmOutput?.error && String(llmOutput.chosenLabel).trim().toLowerCase() !== String(gtLabel).trim().toLowerCase(); }) ); }, [effectiveRunDetails, evalParamDetailsForLLM]);
 
   const handleFilterChange = useCallback((paramId: string, filterType: 'matchMismatch' | 'label', value: FilterValueMatchMismatch | FilterValueSelectedLabel): void => {
     setFilterStates(prev => { const currentParamState = prev[paramId] || { matchMismatch: 'all', selectedLabel: 'all' }; return { ...prev, [paramId]: { ...currentParamState, [filterType]: value, } }; });
   }, []);
 
   const filteredResultsToDisplay = useMemo((): EvalRunResultItem[] => {
-    if (!runDetails?.results) return [];
+    if (!effectiveRunDetails?.results) return [];
     if (Object.keys(filterStates).length === 0 || !evalParamDetailsForLLM || evalParamDetailsForLLM.length === 0) {
-      return runDetails.results;
+      return effectiveRunDetails.results;
     }
 
-    return runDetails.results.filter(item => {
+    return effectiveRunDetails.results.filter(item => {
       for (const paramId in filterStates) {
         if (!evalParamDetailsForLLM.find(ep => ep.id === paramId)) {
           continue; 
@@ -785,7 +855,7 @@ export default function RunDetailsPage() {
         const llmOutput = item.judgeLlmOutput?.[paramId];
 
         let passesGtFilter = true;
-        if (runDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') {
+        if (effectiveRunDetails.runType === 'GroundTruth' && currentParamFilters.matchMismatch !== 'all') {
           const gtDbValue = item.groundTruth?.[paramId];
           const hasValidLlmOutputForComparison = llmOutput && typeof llmOutput.chosenLabel === 'string' && !llmOutput.error;
           const hasValidGtForComparison = gtDbValue !== undefined && gtDbValue !== null && String(gtDbValue).trim() !== '';
@@ -817,7 +887,7 @@ export default function RunDetailsPage() {
       }
       return true; 
     });
-  }, [runDetails?.results, runDetails?.runType, filterStates, evalParamDetailsForLLM]);
+  }, [effectiveRunDetails?.results, effectiveRunDetails?.runType, filterStates, evalParamDetailsForLLM]);
 
 
 
@@ -829,22 +899,22 @@ export default function RunDetailsPage() {
   const dependenciesLoadedForRunStart_flag: boolean = !isLoadingRunDetails && !isLoadingEvalParamsForLLMHook && !isLoadingSummarizationDefsForLLMHook;
   const hasParamsOrDefsForRunStart_flag: boolean = (evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0) || (summarizationDefDetailsForLLM && summarizationDefDetailsForLLM.length > 0);
   const canStartLLMTask: boolean = isRunReadyForProcessing_flag && dependenciesLoadedForRunStart_flag && hasParamsOrDefsForRunStart_flag;
-  const hasResultsForDownload_flag: boolean = runDetails?.status === 'Completed' && Array.isArray(runDetails.results) && runDetails.results.length > 0;
+  const hasResultsForDownload_flag: boolean = effectiveRunDetails?.status === 'Completed' && Array.isArray(effectiveRunDetails.results) && effectiveRunDetails.results.length > 0;
   const canDownloadResults: boolean = hasResultsForDownload_flag;
-  const canSuggestImprovements: boolean = runDetails?.status === 'Completed' && runDetails.runType === 'GroundTruth' && !!runDetails?.results && Array.isArray(runDetails.results) && runDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
+  const canSuggestImprovements: boolean = effectiveRunDetails?.status === 'Completed' && effectiveRunDetails.runType === 'GroundTruth' && !!effectiveRunDetails?.results && Array.isArray(effectiveRunDetails.results) && effectiveRunDetails.results.length > 0 && hasMismatches && evalParamDetailsForLLM && evalParamDetailsForLLM.length > 0;
   const showProgressArea = isPreviewDataLoading || (runDetails?.status === 'Running' || runDetails?.status === 'Processing') || runDetails?.errorMessage || simulationLog.length > 0 || previewDataError;
 
 
   if (isLoadingUserId) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
   if (!currentUserId) { return <Card className="m-4 md:m-6"><CardContent className="p-6 text-center text-muted-foreground">Please select a project.</CardContent></Card>; }
-  if (isLoadingRunDetails && !!currentUserId) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
-  if (fetchRunError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
-  if (!runDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
+  if ((isLoadingRunDetails || isLoadingRunResults) && !!currentUserId) { return ( <div className="space-y-6 p-4 md:p-6"> <Skeleton className="h-12 w-full md:w-1/3 mb-4" /> <Skeleton className="h-24 w-full mb-6" /> <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-6"> <Skeleton className="h-32 w-full" /><Skeleton className="h-32 w-full" /> <Skeleton className="h-32 w-full" /> </div> <Skeleton className="h-96 w-full" /> </div> ); }
+  if (fetchRunError || fetchRunResultsError) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="text-destructive flex items-center"><AlertTriangle className="mr-2 h-6 w-6"/>Error Loading Run Details</CardTitle></CardHeader> <CardContent><p>{fetchRunError?.message || fetchRunResultsError?.message}</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
+  if (!runDetails || !effectiveRunDetails) { return ( <Card className="shadow-lg m-4 md:m-6"> <CardHeader><CardTitle className="flex items-center"><AlertTriangle className="mr-2 h-6 w-6 text-destructive"/>Run Not Found</CardTitle></CardHeader> <CardContent><p>Run with ID "{runId}" not found.</p><Link href="/runs"><Button variant="outline" className="mt-4"><ArrowLeft className="mr-2 h-4 w-4"/>Back to Runs</Button></Link></CardContent> </Card> ); }
 
   const pageJSX = (
     <div className="space-y-6 p-4 md:p-0">
       <RunHeaderCard
-        runDetails={runDetails}
+        runDetails={effectiveRunDetails}
         isPreviewDataLoading={isPreviewDataLoading}
         canFetchData={canFetchData}
         isRunTerminal={isRunTerminal}
@@ -859,13 +929,13 @@ export default function RunDetailsPage() {
         formatTimestamp={formatTimestamp}
         getStatusBadge={getStatusBadge}
         onShowFullPromptClick={() => setIsFullPromptDialogVisible(true)} 
-        canShowFullPrompt={!!runDetails.firstRowFullPrompt} 
+        canShowFullPrompt={!!effectiveRunDetails.firstRowFullPrompt} 
         isLoadingPromptTemplate={isLoadingPromptTemplate}
       />
 
       {showProgressArea && (
         <RunProgressAndLogs
-            runDetails={runDetails}
+            runDetails={effectiveRunDetails}
             isPreviewDataLoading={isPreviewDataLoading}
             isLoadingEvalParamsForLLMHook={isLoadingEvalParamsForLLMHook}
             isLoadingSummarizationDefsForLLMHook={isLoadingSummarizationDefsForLLMHook}
@@ -884,27 +954,27 @@ export default function RunDetailsPage() {
         
         <TabsContent value="results">
           <ResultsTableTab
-            runDetails={runDetails}
+            runDetails={effectiveRunDetails}
             filteredResultsToDisplay={filteredResultsToDisplay}
             evalParamDetailsForLLM={evalParamDetailsForLLM}
             summarizationDefDetailsForLLM={summarizationDefDetailsForLLM}
             filterStates={filterStates}
             onFilterChange={handleFilterChange}
-            onOpenQuestionDialog={handleOpenQuestionDialog}
+            onOpenQuestionDialog={onOpenQuestionDialog}
             onDownloadResults={handleDownloadResults}
             canDownloadResults={canDownloadResults}
             promptTemplateText={promptTemplateTextForRun}
           />
         </TabsContent>
         <TabsContent value="metrics">
-          <MetricsBreakdownTab runDetails={runDetails} metricsBreakdownData={metricsBreakdownData} />
+          <MetricsBreakdownTab runDetails={effectiveRunDetails} metricsBreakdownData={metricsBreakdownData} />
         </TabsContent>
          <TabsContent value="preview">
-           <DatasetSampleTable displayedPreviewData={displayedPreviewData} previewTableHeaders={previewTableHeaders} runDetails={runDetails} />
+           <DatasetSampleTable displayedPreviewData={displayedPreviewData} previewTableHeaders={previewTableHeaders} runDetails={effectiveRunDetails} />
         </TabsContent>
         <TabsContent value="config">
           <RunConfigTab
-            runDetails={runDetails}
+            runDetails={effectiveRunDetails}
             evalParamDetailsForLLM={evalParamDetailsForLLM}
             summarizationDefDetailsForLLM={summarizationDefDetailsForLLM}
             selectedContextDocDetails={selectedContextDocDetails}
@@ -930,7 +1000,7 @@ export default function RunDetailsPage() {
         isAnalyzing={isAnalyzingJudgment}
         analysisError={judgmentAnalysisError}
         onSubmitAnalysis={handleSubmitQuestionAnalysis}
-        runDetails={runDetails}
+        runDetails={effectiveRunDetails}
       />
        {isFullPromptDialogVisible && (
         <Dialog open={isFullPromptDialogVisible} onOpenChange={setIsFullPromptDialogVisible}>
@@ -945,7 +1015,7 @@ export default function RunDetailsPage() {
                 <div className="flex-grow min-h-0 overflow-y-auto px-6 py-4">
                    <div className="border rounded-md bg-muted/10 p-4">
                        <pre className="text-xs whitespace-pre-wrap">
-                           {runDetails.firstRowFullPrompt || (isLoadingPromptTemplate && !runDetails.firstRowFullPrompt ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
+                           {effectiveRunDetails.firstRowFullPrompt || (isLoadingPromptTemplate && !effectiveRunDetails.firstRowFullPrompt ? "Loading prompt template..." : "Prompt for the first row was not saved or is not available for this run.")}
                        </pre>
                    </div>
                 </div>
