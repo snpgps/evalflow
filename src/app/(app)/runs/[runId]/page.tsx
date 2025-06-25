@@ -274,7 +274,7 @@ const fetchEvaluationParameterDetailsForPrompt = async (userId: string | null, p
         requiresRationale: data.requiresRationale || false,
       });
     } else {
-         console.warn(`Evaluation parameter with ID ${paramId} not found for user ${userId}.`);
+         staticAddLog(`Evaluation parameter with ID ${paramId} not found for user ${userId}.`, "error");
     }
   }
   return details;
@@ -291,7 +291,7 @@ const fetchSummarizationDefDetailsForPrompt = async (userId: string | null, defI
             const data = defDocSnap.data();
             details.push({ id: defDocSnap.id, name: data.name, definition: data.definition, example: data.example });
         } else {
-            console.warn(`Summarization definition with ID ${defId} not found for user ${userId}.`);
+            staticAddLog(`Summarization definition with ID ${defId} not found for user ${userId}.`, "error");
         }
     }
     return details;
@@ -325,7 +325,7 @@ const fetchContextDocumentDetailsForRun = async (userId: string | null, docIds: 
             const data = docSnap.data();
             details.push({ id: docSnap.id, name: data.name, fileName: data.fileName });
         } else {
-            console.warn(`Context document with ID ${docId} not found for user ${userId}.`);
+            staticAddLog(`Context document with ID ${docId} not found for user ${userId}.`, "error");
         }
     }
     return details;
@@ -475,7 +475,7 @@ export default function RunDetailsPage() {
     enabled: !!currentUserId && !!runDetails?.selectedContextDocumentIds && runDetails.selectedContextDocumentIds.length > 0,
   });
 
-  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; previewedDatasetSample?: FieldValue | any[]; totalRowsInDataset?: number | FieldValue;} >({
+  const updateRunMutation = useMutation<void, Error, Partial<Omit<EvalRun, 'updatedAt' | 'completedAt' | 'errorMessage'>> & { id: string; updatedAt?: FieldValue; completedAt?: FieldValue; firstRowFullPrompt?: string; previewedDatasetSample?: FieldValue | any[]; totalRowsInDataset?: number | FieldValue; errorMessage?: string | FieldValue;} >({
     mutationFn: async (updatePayload) => {
       if (!currentUserId) throw new Error("Project not selected.");
       const { id, ...dataFromPayload } = updatePayload; const updateForFirestore: Record<string, any> = {};
@@ -640,7 +640,7 @@ export default function RunDetailsPage() {
 
       staticAddLog(`Data Processing: Final mapped row count is ${mappedData.length}.`);
       return mappedData;
-  }, [staticAddLog]);
+  }, []);
 
   const handleFetchAndPreviewData = useCallback(async (): Promise<void> => {
       if (!runDetails || !currentUserId) {
