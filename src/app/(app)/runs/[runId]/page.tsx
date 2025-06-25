@@ -720,46 +720,45 @@ export default function RunDetailsPage() {
     try {
       const dataForExcel: any[] = [];
       const inputDataKeys = new Set<string>();
-      effectiveRunDetails.results.forEach(item => { Object.keys(item.inputData).forEach(key => inputDataKeys.add(key)); });
+      
+      // Safely collect all possible input data keys
+      effectiveRunDetails.results.forEach(item => {
+        if (item && item.inputData) {
+          Object.keys(item.inputData).forEach(key => inputDataKeys.add(key));
+        }
+      });
       const sortedInputDataKeys = Array.from(inputDataKeys).sort();
 
       effectiveRunDetails.results.forEach(item => {
         const row: Record<string, any> = {};
         
-        // Add selected visible input parameters first
-        if (effectiveRunDetails.selectedVisibleInputParamNames && effectiveRunDetails.selectedVisibleInputParamNames.length > 0) {
-            effectiveRunDetails.selectedVisibleInputParamNames.forEach(paramName => {
-                row[paramName] = item.inputData[paramName] !== undefined && item.inputData[paramName] !== null ? String(item.inputData[paramName]) : '';
-            });
-        }
-        
-        // Add all other input data keys used in prompt (original logic, but avoid duplication)
+        // Safely add all input data columns
         sortedInputDataKeys.forEach(key => {
-          if (!effectiveRunDetails.selectedVisibleInputParamNames || !effectiveRunDetails.selectedVisibleInputParamNames.includes(key)){
-             row[key] = item.inputData[key] !== undefined && item.inputData[key] !== null ? String(item.inputData[key]) : '';
-          }
+          row[key] = item.inputData?.[key] !== undefined && item.inputData?.[key] !== null ? String(item.inputData[key]) : '';
         });
 
-
+        // Add evaluation parameter columns
         if (Array.isArray(evalParamDetailsForLLM)) {
           evalParamDetailsForLLM.forEach(paramDetail => {
-            const output = item.judgeLlmOutput[paramDetail.id];
+            const output = item.judgeLlmOutput?.[paramDetail.id];
             row[`${String(paramDetail.name)} - LLM Label`] = output?.chosenLabel || (output?.error ? 'ERROR' : 'N/A');
             if (effectiveRunDetails.runType === 'GroundTruth') {
-              const gtValue = item.groundTruth ? item.groundTruth[paramDetail.id] : 'N/A';
+              const gtValue = item.groundTruth?.[paramDetail.id]; // Safe access
               row[`${String(paramDetail.name)} - Ground Truth`] = gtValue !== undefined && gtValue !== null ? String(gtValue) : 'N/A';
               const llmLabel = output?.chosenLabel;
-              row[`${String(paramDetail.name)} - Match`] = (llmLabel && gtValue !== 'N/A' && !output?.error && String(llmLabel).trim().toLowerCase() === String(gtValue).trim().toLowerCase()) ? 'Yes' : 'No';
+              row[`${String(paramDetail.name)} - Match`] = (llmLabel && gtValue !== undefined && gtValue !== null && !output?.error && String(llmLabel).trim().toLowerCase() === String(gtValue).trim().toLowerCase()) ? 'Yes' : 'No';
             }
             row[`${String(paramDetail.name)} - LLM Rationale`] = output?.rationale || '';
             if (output?.error) row[`${String(paramDetail.name)} - LLM Error`] = output.error;
           });
         }
 
+        // Add summarization definition columns
         if (Array.isArray(summarizationDefDetailsForLLM)) {
           summarizationDefDetailsForLLM.forEach(summDefDetail => {
-            const output = item.judgeLlmOutput[summDefDetail.id];
-            row[`${String(summDefDetail.name)} - LLM Summary`] = output?.generatedSummary || (output?.error ? <span className="text-destructive">ERROR: {output.error}</span> : 'N/A');
+            const output = item.judgeLlmOutput?.[summDefDetail.id];
+            const summaryText = output?.generatedSummary || (output?.error ? `ERROR: ${output.error}` : 'N/A');
+            row[`${String(summDefDetail.name)} - LLM Summary`] = summaryText;
             if (output?.error) row[`${String(summDefDetail.name)} - LLM Error`] = output.error;
           });
         }
